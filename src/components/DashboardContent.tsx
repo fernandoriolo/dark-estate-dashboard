@@ -16,6 +16,9 @@ interface DashboardContentProps {
 
 export function DashboardContent({ properties, loading, onNavigateToAgenda }: DashboardContentProps) {
   const { clients, loading: clientsLoading } = useClients();
+  // Fonte oficial agora: tabela imoveisvivareal
+  const [imoveis, setImoveis] = useState<any[]>([]);
+  const [loadingImoveis, setLoadingImoveis] = useState(true);
   const [previousMonthData, setPreviousMonthData] = useState({
     properties: 0,
     available: 0,
@@ -23,6 +26,24 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
     clients: 0,
   });
   const [loadingPreviousData, setLoadingPreviousData] = useState(true);
+
+  // Buscar imóveis da tabela imoveisvivareal
+  const fetchImoveis = async () => {
+    try {
+      setLoadingImoveis(true);
+      const { data, error } = await supabase
+        .from('imoveisvivareal')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setImoveis(data || []);
+    } catch (err) {
+      console.error('Erro ao carregar imoveisvivareal:', err);
+      setImoveis([]);
+    } finally {
+      setLoadingImoveis(false);
+    }
+  };
 
   // Função para calcular dados do mês anterior
   const fetchPreviousMonthData = async () => {
@@ -35,15 +56,15 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
       console.log('📊 Buscando dados do mês anterior...');
       console.log('📅 Período:', firstDayLastMonth.toISOString(), 'até', lastDayLastMonth.toISOString());
 
-      // Buscar propriedades do mês anterior
-      const { data: prevProperties, error: propertiesError } = await supabase
-        .from('properties')
+      // Buscar imóveis do mês anterior (imoveisvivareal)
+      const { data: prevImoveis, error: imoveisError } = await supabase
+        .from('imoveisvivareal')
         .select('*')
         .gte('created_at', firstDayLastMonth.toISOString())
         .lt('created_at', firstDayThisMonth.toISOString());
 
-      if (propertiesError) {
-        console.error('❌ Erro ao buscar propriedades do mês anterior:', propertiesError);
+      if (imoveisError) {
+        console.error('❌ Erro ao buscar imóveis do mês anterior:', imoveisError);
       }
 
       // Buscar clientes do mês anterior
@@ -57,11 +78,12 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
         console.error('❌ Erro ao buscar clientes do mês anterior:', clientsError);
       }
 
-      const prevPropertiesData = prevProperties || [];
+      const prevPropertiesData = prevImoveis || [];
       const prevClientsData = prevClients || [];
 
-      const prevAvailable = prevPropertiesData.filter(p => p.status === "available").length;
-      const prevTotalValue = prevPropertiesData.reduce((sum, prop) => sum + prop.price, 0);
+      // imoveisvivareal não tem status; considerar todos como disponíveis para métricas básicas
+      const prevAvailable = prevPropertiesData.length;
+      const prevTotalValue = prevPropertiesData.reduce((sum, prop: any) => sum + (Number(prop.preco) || 0), 0);
       const prevAveragePrice = prevPropertiesData.length > 0 ? prevTotalValue / prevPropertiesData.length : 0;
 
       setPreviousMonthData({
@@ -86,12 +108,16 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
   };
 
   useEffect(() => {
-    if (!loading && !clientsLoading) {
+    fetchImoveis();
+  }, []);
+
+  useEffect(() => {
+    if (!loadingImoveis && !clientsLoading) {
       fetchPreviousMonthData();
     }
-  }, [loading, clientsLoading]);
+  }, [loadingImoveis, clientsLoading]);
 
-  if (loading || clientsLoading || loadingPreviousData) {
+  if (loadingImoveis || clientsLoading || loadingPreviousData) {
     return (
       <div className="space-y-6">
         <div className="text-center py-12">
@@ -101,12 +127,13 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
     );
   }
 
-  const totalProperties = properties.length;
-  const availableProperties = properties.filter(p => p.status === "available").length;
-  const soldProperties = properties.filter(p => p.status === "sold").length;
-  const rentedProperties = properties.filter(p => p.status === "rented").length;
+  const totalProperties = imoveis.length;
+  // Sem status no esquema imoveisvivareal
+  const availableProperties = totalProperties;
+  const soldProperties = 0;
+  const rentedProperties = 0;
   
-  const totalValue = properties.reduce((sum, property) => sum + property.price, 0);
+  const totalValue = imoveis.reduce((sum, imovel: any) => sum + (Number(imovel.preco) || 0), 0);
   const averagePrice = totalProperties > 0 ? totalValue / totalProperties : 0;
 
   // Dados reais dos clientes por origem
@@ -172,6 +199,50 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
     },
   ];
 
+  // Normalização de tipos e ícones
+  const normalizeTypeLabel = (labelRaw: string): string => {
+    const l = (labelRaw || '').toLowerCase();
+    if (l.includes('apart') || l.includes('condo') || l.includes('condom')) return 'Apartamento/Condomínio';
+    if (l.includes('cobertura')) return 'Cobertura';
+    if (l.includes('duplex') || l.includes('triplex') || l.includes('flat') || l.includes('studio') || l.includes('kit') || l.includes('loft')) return 'Studio/Loft';
+    if (l.includes('home') || l.includes('casa') || l.includes('sobrado')) return 'Casa';
+    if (l.includes('landlot') || l.includes('land') || l.includes('terreno') || l.includes('lote')) return 'Terreno/Lote';
+    if (l.includes('agric') || l.includes('rural') || l.includes('chácara') || l.includes('chacara') || l.includes('sítio') || l.includes('sitio') || l.includes('fazenda')) return 'Rural/Agrícola';
+    if (l.includes('comerc') || l.includes('loja') || l.includes('sala') || l.includes('office')) return 'Comercial/Office';
+    if (l.includes('industrial') || l.includes('galp')) return 'Industrial/Galpão';
+    if (l.includes('hotel') || l.includes('pousada')) return 'Hotel/Pousada';
+    if (l.includes('garagem') || l.includes('garage') || l.includes('vaga')) return 'Garagem/Vaga';
+    if (l.includes('prédio') || l.includes('predio') || l.includes('edifício') || l.includes('edificio') || l.includes('building') || l.includes('tbuilding')) return 'Prédio/Edifício';
+    if (!l.trim().length) return 'Não informado';
+    return 'Outros';
+  };
+
+  const getTypeIconForNormalized = (normalized: string): string => {
+    switch (normalized) {
+      case 'Apartamento/Condomínio': return '🏢';
+      case 'Cobertura': return '🌇';
+      case 'Studio/Loft': return '🏙️';
+      case 'Casa': return '🏠';
+      case 'Terreno/Lote': return '🏞️';
+      case 'Rural/Agrícola': return '🌾';
+      case 'Comercial/Office': return '🏪';
+      case 'Industrial/Galpão': return '🏭';
+      case 'Hotel/Pousada': return '🏨';
+      case 'Garagem/Vaga': return '🚗';
+      case 'Prédio/Edifício': return '🏢';
+      case 'Não informado': return '❔';
+      default: return '🏷️';
+    }
+  };
+
+  // Distribuição por tipo normalizada
+  const typeCounts = imoveis.reduce((acc: Record<string, number>, imovel: any) => {
+    const key = normalizeTypeLabel(imovel.tipo_imovel || '');
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+  const typeEntries = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
+
   return (
     <div className="space-y-6">
       <div>
@@ -211,35 +282,29 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {properties.slice(0, 5).map((property) => (
-                <div key={property.id} className="flex items-center justify-between p-3 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 transition-colors">
+              {imoveis.slice(0, 5).map((imovel: any) => (
+                <div key={imovel.id} className="flex items-center justify-between p-3 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 transition-colors">
                   <div className="flex items-center space-x-3">
                     <div className="h-10 w-10 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center">
                       <Building2 className="h-5 w-5 text-blue-400" />
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-white">{property.title}</p>
+                      <p className="text-sm font-medium text-white">{imovel.tipo_imovel || 'Imóvel'}</p>
                       <p className="text-xs text-gray-400 flex items-center gap-1">
                         <MapPin className="h-3 w-3" />
-                        {property.city}, {property.state}
+                        {imovel.cidade || '—'}{imovel.bairro ? `, ${imovel.bairro}` : ''}
                       </p>
                     </div>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-medium text-white">
-                      R$ {(property.price / 1000).toFixed(0)}k
+                      R$ {((Number(imovel.preco) || 0) / 1000).toFixed(0)}k
                     </p>
-                    <p className={`text-xs px-2 py-1 rounded-full ${
-                      property.status === "available" ? "text-green-400 bg-green-400/10" : 
-                      property.status === "sold" ? "text-blue-400 bg-blue-400/10" : "text-yellow-400 bg-yellow-400/10"
-                    }`}>
-                      {property.status === "available" ? "Disponível" : 
-                       property.status === "sold" ? "Vendido" : "Alugado"}
-                    </p>
+                    <p className="text-xs px-2 py-1 rounded-full text-blue-400 bg-blue-400/10">VivaReal</p>
                   </div>
                 </div>
               ))}
-              {properties.length === 0 && (
+              {imoveis.length === 0 && (
                 <div className="text-center py-4 text-gray-400">
                   Nenhuma propriedade cadastrada
                 </div>
@@ -294,18 +359,16 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {[
-                { type: "house", label: "Casas", count: properties.filter(p => p.type === "house").length, icon: "🏠" },
-                { type: "apartment", label: "Apartamentos", count: properties.filter(p => p.type === "apartment").length, icon: "🏢" },
-                { type: "commercial", label: "Comercial", count: properties.filter(p => p.type === "commercial").length, icon: "🏪" },
-                { type: "land", label: "Terrenos", count: properties.filter(p => p.type === "land").length, icon: "🏞️" },
-              ].map((item) => (
-                <div key={item.type} className="p-4 rounded-lg bg-gray-700/30 text-center">
-                  <div className="text-2xl mb-2">{item.icon}</div>
-                  <div className="text-lg font-semibold text-white">{item.count}</div>
-                  <div className="text-sm text-gray-400">{item.label}</div>
+              {typeEntries.map(([label, count]) => (
+                <div key={label} className="p-4 rounded-lg bg-gray-700/30 text-center">
+                  <div className="text-2xl mb-2">{getTypeIconForNormalized(label)}</div>
+                  <div className="text-lg font-semibold text-white">{count}</div>
+                  <div className="text-sm text-gray-300 break-words">{label}</div>
                 </div>
               ))}
+              {typeEntries.length === 0 && (
+                <div className="col-span-2 md:col-span-4 text-center text-gray-400">Sem dados de tipo</div>
+              )}
             </div>
           </CardContent>
         </Card>

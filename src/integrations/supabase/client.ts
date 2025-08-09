@@ -2,12 +2,14 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const SUPABASE_URL = "https://vitiqschibbontjwhiim.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpdGlxc2NoaWJib250andoaWltIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDk5MTk4MzQsImV4cCI6MjA2NTQ5NTgzNH0.kDoZJsC1Y2Hg_8E8OMnOzhcVIw0P6u_ehN9fKzmmdX4";
+// Use variáveis de ambiente para evitar expor secrets no bundle
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-console.log('🔧 Configuração do Supabase:');
-console.log('URL:', SUPABASE_URL);
-console.log('Key (primeiros 50 chars):', SUPABASE_PUBLISHABLE_KEY.substring(0, 50) + '...');
+if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+  // Falha explícita em desenvolvimento se envs estiverem ausentes
+  console.error('Configuração do Supabase ausente. Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no arquivo .env.local');
+}
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
@@ -44,12 +46,14 @@ export const ensureAuthenticated = async () => {
   return { user };
 };
 
-// Teste básico de conectividade
-supabase.from('properties').select('count', { count: 'exact', head: true })
+// Teste básico de conectividade (silencioso caso falhe em dev)
+supabase
+  .from('properties')
+  .select('count', { count: 'exact', head: true })
   .then(({ error, count }) => {
     if (error) {
-      console.error('❌ Erro na inicialização do Supabase:', error);
+      console.warn('Supabase ainda não acessível ou sem permissões para properties.');
     } else {
-      console.log('✅ Supabase inicializado com sucesso. Propriedades encontradas:', count);
+      console.log('Supabase inicializado. Propriedades encontradas:', count);
     }
   });

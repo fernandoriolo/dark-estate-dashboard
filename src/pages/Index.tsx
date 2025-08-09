@@ -17,12 +17,12 @@ import { UserManagementView } from "@/components/UserManagementView";
 import { PermissionsManagementView } from "@/components/PermissionsManagementView";
 import { IsolationDebug } from "@/components/IsolationDebug";
 
-import { useProperties } from "@/hooks/useProperties";
+import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
 
 const Index = () => {
   const [currentView, setCurrentView] = useState<"dashboard" | "properties" | "contracts" | "agenda" | "reports" | "portals" | "clients" | "clients-crm" | "connections" | "users" | "permissions">("dashboard");
   const [isPropertyModalOpen, setIsPropertyModalOpen] = useState(false);
-  const { properties, loading, refetch } = useProperties();
+  const { imoveis, loading, refetch } = useImoveisVivaReal();
 
   const handlePropertySubmit = () => {
     refetch();
@@ -39,12 +39,13 @@ const Index = () => {
     switch (currentView) {
       case "dashboard":
         return <DashboardContent 
-          properties={properties} 
+          properties={[]} 
           loading={loading} 
           onNavigateToAgenda={() => setCurrentView("agenda")}
         />;
       case "properties":
-        return <PropertyList properties={properties} loading={loading} onAddNew={() => setIsPropertyModalOpen(true)} refetch={refetch} />;
+        // PropertyList ainda usa o modelo antigo; por ora, passa vazio
+        return <PropertyList properties={[]} loading={loading} onAddNew={() => setIsPropertyModalOpen(true)} refetch={refetch} />;
       case "contracts":
         return <ContractsView />;
       case "agenda":

@@ -7,8 +7,8 @@ import { componentTagger } from "lovable-tagger";
 export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
-    port: 8080,
-    strictPort: true, // Não trocar de porta se 8080 estiver ocupada
+    port: 8081,
+    strictPort: true, // Não trocar de porta se 8081 estiver ocupada
     proxy: {
       '/api/webhook': {
         target: 'https://webhooklabz.n8nlabz.com.br',

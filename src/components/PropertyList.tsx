@@ -30,15 +30,18 @@ import {
   CheckCircle,
   Clock,
   AlertCircle,
-  XCircle
+  XCircle,
+  Upload
 } from "lucide-react";
 import { PropertyWithImages } from "@/hooks/useProperties";
+import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
 import { PropertyDetailsPopup } from "@/components/PropertyDetailsPopup";
 import { PropertyEditForm } from "@/components/PropertyEditForm";
 import { PropertyImageGallery } from "@/components/PropertyImageGallery";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 // Componente para as partículas flutuantes
 const FloatingParticle = ({ delay = 0, duration = 20, type = 'default' }) => {
@@ -264,6 +267,7 @@ interface PropertyListProps {
 }
 
 export function PropertyList({ properties, loading, onAddNew, refetch }: PropertyListProps) {
+  const { imoveis, loading: loadingImoveis } = useImoveisVivaReal();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
@@ -279,26 +283,149 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
   const [particles, setParticles] = useState<number[]>([]);
   const { toast } = useToast();
 
+  // Estado do modal de upload VivaReal
+  const [isVivaRealModalOpen, setIsVivaRealModalOpen] = useState(false);
+  const [xmlFile, setXmlFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  // Edição VivaReal
+  const [isVivaRealEditOpen, setIsVivaRealEditOpen] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editPreco, setEditPreco] = useState<string>("");
+  const [editArea, setEditArea] = useState<string>("");
+  const [editQuartos, setEditQuartos] = useState<string>("");
+  const [editBanheiros, setEditBanheiros] = useState<string>("");
+  const [editDescricao, setEditDescricao] = useState<string>("");
+
+  // Envio do XML para o endpoint do n8n
+  const handleUploadVivaReal = async () => {
+    try {
+      if (!xmlFile) {
+        toast({ title: "Selecione um arquivo XML", variant: "destructive" });
+        return;
+      }
+      setIsUploading(true);
+      const formData = new FormData();
+      formData.append("file", xmlFile, xmlFile.name);
+
+      const resp = await fetch("https://webhook.n8nlabz.com.br/webhook/vivareal", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => "");
+        throw new Error(`Falha no envio (${resp.status}) ${text}`);
+      }
+
+      toast({ title: "XML enviado com sucesso!", description: "O processamento será iniciado." });
+      setIsVivaRealModalOpen(false);
+      setXmlFile(null);
+    } catch (err) {
+      toast({ title: "Erro ao enviar XML", description: err instanceof Error ? err.message : "Tente novamente.", variant: "destructive" });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   // Gerar partículas
   useEffect(() => {
     const particleArray = Array.from({ length: 20 }, (_, i) => i);
     setParticles(particleArray);
   }, []);
 
-  console.log('🏠 PropertyList - Estado atual:', { 
-    propertiesCount: properties.length, 
-    loading,
-    properties: properties.slice(0, 2), // Log apenas as primeiras 2 para debug
-    propertiesWithImages: properties.filter(p => p.property_images && p.property_images.length > 0).length
+  // Adaptador: converte imoveisvivareal -> shape esperado pela UI de propriedades
+  const propertiesFromImoveis: PropertyWithImages[] = (imoveis || []).map((i: any) => {
+    const tipoInferido = (() => {
+      const t = (i.tipo_imovel || '').toLowerCase();
+      if (t.includes('apart')) return 'apartment';
+      if (t.includes('casa')) return 'house';
+      if (t.includes('comerc')) return 'commercial';
+      if (t.includes('terreno') || t.includes('lote')) return 'land';
+      return 'apartment';
+    })();
+    return {
+      id: String(i.id),
+      title: i.tipo_imovel || 'Imóvel',
+      type: tipoInferido as any,
+      price: Number(i.preco) || 0,
+      area: Number(i.tamanho_m2) || 0,
+      bedrooms: i.quartos || 0,
+      bathrooms: i.banheiros || 0,
+      address: [i.endereco, i.numero, i.bairro, i.cidade].filter(Boolean).join(', '),
+      city: i.cidade || '',
+      state: '',
+      status: 'available' as any,
+      description: i.descricao || '',
+      property_purpose: 'Venda' as any,
+      created_at: i.created_at || null,
+      updated_at: i.updated_at || null,
+      property_images: (i.imagens || []).map((url: string) => ({ image_url: url })) as any,
+    } as unknown as PropertyWithImages;
   });
 
-  const filteredProperties = properties.filter(property => {
+  const isVivaRealMode = propertiesFromImoveis.length > 0;
+  const effectiveProperties: PropertyWithImages[] = isVivaRealMode ? propertiesFromImoveis : properties;
+
+  const loadingCombined = loading || loadingImoveis;
+
+  console.log('🏠 PropertyList - Estado atual:', { 
+    propertiesCount: effectiveProperties.length, 
+    loading: loadingCombined,
+    sample: effectiveProperties.slice(0, 2),
+  });
+
+  const filteredProperties = effectiveProperties.filter(property => {
     const matchesSearch = property.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          property.address.toLowerCase().includes(searchTerm.toLowerCase());
     const statusMatch = statusFilter === "all" || property.status === statusFilter;
     const typeMatch = typeFilter === "all" || property.type === typeFilter;
     return matchesSearch && statusMatch && typeMatch;
   });
+
+  const startVivaRealEdit = (property: PropertyWithImages) => {
+    setEditId(property.id);
+    setEditPreco(String(property.price || 0));
+    setEditArea(String(property.area || 0));
+    setEditQuartos(String(property.bedrooms || 0));
+    setEditBanheiros(String(property.bathrooms || 0));
+    setEditDescricao(property.description || "");
+    setIsVivaRealEditOpen(true);
+  };
+
+  const { updateImovel, deleteImovel, refetch: refetchImoveis } = useImoveisVivaReal();
+
+  const submitVivaRealEdit = async () => {
+    try {
+      if (!editId) return;
+      const idNum = Number(editId);
+      const updates: any = {
+        preco: editPreco === "" ? null : Number(editPreco),
+        tamanho_m2: editArea === "" ? null : Number(editArea),
+        quartos: editQuartos === "" ? null : Number(editQuartos),
+        banheiros: editBanheiros === "" ? null : Number(editBanheiros),
+        descricao: editDescricao,
+      };
+      const res = await updateImovel(idNum, updates);
+      if (!res) throw new Error('Falha ao atualizar imóvel');
+      toast({ title: 'Imóvel atualizado com sucesso' });
+      setIsVivaRealEditOpen(false);
+      setEditId(null);
+      refetchImoveis();
+    } catch (err) {
+      toast({ title: 'Erro ao atualizar', description: err instanceof Error ? err.message : 'Tente novamente', variant: 'destructive' });
+    }
+  };
+
+  const handleDeleteVivaReal = async (property: PropertyWithImages) => {
+    try {
+      const ok = await deleteImovel(Number(property.id));
+      if (!ok) throw new Error('Falha ao excluir');
+      toast({ title: 'Imóvel excluído com sucesso' });
+      refetchImoveis();
+    } catch (err) {
+      toast({ title: 'Erro ao excluir', description: err instanceof Error ? err.message : 'Tente novamente', variant: 'destructive' });
+    }
+  };
 
   console.log('🔍 Propriedades filtradas:', filteredProperties.length);
 
@@ -574,7 +701,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-400 text-sm font-medium">Total</p>
-                  <p className="text-3xl font-bold text-white">{properties.length}</p>
+                  <p className="text-3xl font-bold text-white">{effectiveProperties.length}</p>
                 </div>
                 <div className="bg-blue-500/20 p-3 rounded-full">
                   <Building2 className="h-6 w-6 text-blue-400" />
@@ -589,7 +716,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                 <div>
                   <p className="text-gray-400 text-sm font-medium">Disponíveis</p>
                   <p className="text-3xl font-bold text-white">
-                    {properties.filter(p => p.status === 'available').length}
+                    {effectiveProperties.filter(p => p.status === 'available').length}
                   </p>
                 </div>
                 <div className="bg-emerald-500/20 p-3 rounded-full">
@@ -605,7 +732,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                 <div>
                   <p className="text-gray-400 text-sm font-medium">Alugadas</p>
                   <p className="text-3xl font-bold text-white">
-                    {properties.filter(p => p.status === 'rented').length}
+                    {effectiveProperties.filter(p => p.status === 'rented').length}
                   </p>
                 </div>
                 <div className="bg-yellow-500/20 p-3 rounded-full">
@@ -621,7 +748,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                 <div>
                   <p className="text-gray-400 text-sm font-medium">Vendidas</p>
                   <p className="text-3xl font-bold text-white">
-                    {properties.filter(p => p.status === 'sold').length}
+                    {effectiveProperties.filter(p => p.status === 'sold').length}
                   </p>
                 </div>
                 <div className="bg-purple-500/20 p-3 rounded-full">
@@ -696,16 +823,30 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
               </Button>
             </motion.div>
 
+            {/* Botão: Adicionar Imóveis VivaReal (upload XML) */}
+            <motion.div
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <Button
+                onClick={() => setIsVivaRealModalOpen(true)}
+                className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white border-0 shadow-lg"
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                Adicionar Imóveis VivaReal
+              </Button>
+            </motion.div>
+
             {/* Results Count */}
             <div className="text-sm text-gray-400 whitespace-nowrap">
               <span className="text-blue-400 font-semibold">{filteredProperties.length}</span> de{' '}
-              <span className="text-emerald-400 font-semibold">{properties.length}</span> imóveis
+              <span className="text-emerald-400 font-semibold">{effectiveProperties.length}</span> imóveis
             </div>
           </div>
         </motion.div>
 
         {/* Loading State */}
-        {loading && (
+        {loadingCombined && (
           <motion.div 
             className="space-y-6"
             initial={{ opacity: 0 }}
@@ -750,7 +891,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
         )}
 
         {/* Properties Grid */}
-        {!loading && (
+        {!loadingCombined && (
           <motion.div 
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
             initial={{ opacity: 0, y: 30 }}
@@ -990,7 +1131,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                             variant="outline" 
                             size="sm" 
                             className="w-full bg-gray-700 border-gray-600 text-gray-100 hover:bg-gray-600 hover:text-white transition-all duration-200"
-                            onClick={() => handleEditProperty(property)}
+                            onClick={() => (isVivaRealMode ? startVivaRealEdit(property) : handleEditProperty(property))}
                           >
                             <Edit className="h-4 w-4 mr-1" />
                             Editar
@@ -1024,7 +1165,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                               </AlertDialogCancel>
                               <AlertDialogAction 
                                 className="bg-red-600 hover:bg-red-700 text-white"
-                                onClick={() => handleDeleteProperty(property)}
+                                onClick={() => (isVivaRealMode ? handleDeleteVivaReal(property) : handleDeleteProperty(property))}
                               >
                                 Deletar
                               </AlertDialogAction>
@@ -1099,6 +1240,90 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
         onClose={handleCloseImageGallery}
         initialImageIndex={galleryInitialIndex}
       />
+
+      {/* Modal de Upload VivaReal */}
+      <Dialog open={isVivaRealModalOpen} onOpenChange={setIsVivaRealModalOpen}>
+        <DialogContent className="bg-gray-900 border border-gray-700 text-white sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-xl">Importar XML do VivaReal</DialogTitle>
+            <DialogDescription className="text-gray-300">
+              Envie o arquivo XML exportado do VivaReal. As imagens são referenciadas por URL dentro do XML e serão processadas pelo conector.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <input
+                type="file"
+                accept=".xml,application/xml,text/xml"
+                onChange={(e) => setXmlFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)}
+                className="w-full file:mr-4 file:rounded-md file:border-0 file:bg-emerald-600 file:px-4 file:py-2 file:text-white file:hover:bg-emerald-700 file:cursor-pointer bg-gray-800 border border-gray-700 rounded-md text-gray-200"
+              />
+              <p className="mt-2 text-xs text-gray-400">Apenas arquivos .xml</p>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <Button
+                variant="outline"
+                className="border-gray-600 text-gray-300 hover:bg-gray-800"
+                onClick={() => setIsVivaRealModalOpen(false)}
+                disabled={isUploading}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleUploadVivaReal}
+                disabled={!xmlFile || isUploading}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                {isUploading ? 'Enviando...' : 'Enviar XML'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Edição VivaReal (campos básicos) */}
+      <Dialog open={isVivaRealEditOpen} onOpenChange={setIsVivaRealEditOpen}>
+        <DialogContent className="bg-gray-900 border border-gray-700 text-white sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-xl">Editar Imóvel (VivaReal)</DialogTitle>
+            <DialogDescription className="text-gray-300">
+              Atualize os campos básicos. Para alterar imagens e outros campos do feed, reimporte o XML.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm text-gray-300">Preço (R$)</label>
+              <Input value={editPreco} onChange={(e) => setEditPreco(e.target.value)} className="mt-1 bg-gray-800 border-gray-700 text-white" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm text-gray-300">Área (m²)</label>
+                <Input value={editArea} onChange={(e) => setEditArea(e.target.value)} className="mt-1 bg-gray-800 border-gray-700 text-white" />
+              </div>
+              <div>
+                <label className="text-sm text-gray-300">Quartos</label>
+                <Input value={editQuartos} onChange={(e) => setEditQuartos(e.target.value)} className="mt-1 bg-gray-800 border-gray-700 text-white" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm text-gray-300">Banheiros</label>
+                <Input value={editBanheiros} onChange={(e) => setEditBanheiros(e.target.value)} className="mt-1 bg-gray-800 border-gray-700 text-white" />
+              </div>
+            </div>
+            <div>
+              <label className="text-sm text-gray-300">Descrição</label>
+              <textarea value={editDescricao} onChange={(e) => setEditDescricao(e.target.value)} className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-md p-2 text-gray-200 min-h-[100px]"></textarea>
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="outline" className="border-gray-600 text-gray-300 hover:bg-gray-800" onClick={() => setIsVivaRealEditOpen(false)}>Cancelar</Button>
+              <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={submitVivaRealEdit}>Salvar</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
