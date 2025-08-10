@@ -185,3 +185,15 @@ erDiagram
 
 ---
 Última atualização: gerada automaticamente.
+
+## 2025-08-10 — Endurecimento de RLS e unificação
+- Criada migration `supabase/migrations/20250810090000_harden_rls_policies.sql` consolidando políticas RLS por `company_id` + `role` e removendo políticas permissivas/duplicadas.
+- Adicionadas funções `get_user_role()` e `get_user_company_id()` (SECURITY DEFINER) e triggers `set_row_tenant_defaults()` para popular `user_id`/`company_id` em inserts.
+- Padronizadas políticas em `properties`, `leads`, `contracts`, `contract_templates`, `property_images`, `whatsapp_*`, `companies`, `user_profiles` com `WITH CHECK (company_id = get_user_company_id())` onde aplicável.
+- Storage `property-images`: leitura pública, mutações somente autenticadas; mantida segurança mínima sem quebrar MVP.
+- Ajustado `src/integrations/supabase/client.ts` para permitir `signInAnonymously()` apenas em DEV quando `VITE_ENABLE_ANON_LOGIN=true`.
+- Atualizado `docs/hierarquia-usuarios.md` com matriz de permissões por tabela.
+
+Próximos passos sugeridos:
+- Regenerar `src/integrations/supabase/types.ts` após aplicar migrations no projeto Supabase.
+- Expandir `verify_access_levels.sql` com asserts para cada role e cenários de falha esperada.

@@ -44,7 +44,8 @@ Este documento descreve o esquema atual do banco de dados do projeto imobiproREA
 - Campos: property_id (text), image_url, image_order (default 0), created_at
 - FKs: property_id → properties.id
 - RLS: habilitado
-  - SELECT/INSERT/UPDATE/DELETE: permissivas (true) — aberto
+  - SELECT: permitido quando a imagem referencia `properties.property_id` com `properties.company_id = get_user_company_id()`
+  - INSERT/UPDATE/DELETE: permitido ao dono do imóvel (`properties.user_id = auth.uid()`) ou para `gestor/admin` da mesma empresa
 
 ### leads — Leads
 - PK: id (uuid)
@@ -59,7 +60,7 @@ Este documento descreve o esquema atual do banco de dados do projeto imobiproREA
 - Campos: name, description, file_name, file_path, file_size, file_type, template_type (default 'Locacao'), user_id, company_id, created_by, is_active (default true), created_at, updated_at
 - FKs: user_id → user_profiles.id; company_id → companies.id
 - RLS: habilitado
-  - SELECT/INSERT/UPDATE/DELETE: permissivas (true) — aberto a usuários autenticados
+  - SELECT/INSERT/UPDATE/DELETE: restritas à `company_id = get_user_company_id()`; corretor gerencia os próprios, gestor/admin gerenciam registros da empresa
 
 ### contracts — Contratos
 - PK: id (text)
