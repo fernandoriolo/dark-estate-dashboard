@@ -410,19 +410,25 @@ DROP POLICY IF EXISTS "Anyone can upload property images" ON storage.objects;
 DROP POLICY IF EXISTS "Anyone can update property images" ON storage.objects;
 DROP POLICY IF EXISTS "Anyone can delete property images" ON storage.objects;
 
+-- Limpeza de nomes que podemos (re)utilizar
+DROP POLICY IF EXISTS "Public can view property images" ON storage.objects;
+DROP POLICY IF EXISTS "Authenticated can upload property images" ON storage.objects;
+DROP POLICY IF EXISTS "Authenticated can update property images" ON storage.objects;
+DROP POLICY IF EXISTS "Authenticated can delete property images" ON storage.objects;
+
 -- Regras mínimas por bucket
-CREATE POLICY IF NOT EXISTS "Public can view property images" ON storage.objects
+CREATE POLICY "Public can view property images" ON storage.objects
   FOR SELECT USING (bucket_id = 'property-images');
 
-CREATE POLICY IF NOT EXISTS "Authenticated can upload property images" ON storage.objects
+CREATE POLICY "Authenticated can upload property images" ON storage.objects
   FOR INSERT TO authenticated
   WITH CHECK (bucket_id = 'property-images');
 
-CREATE POLICY IF NOT EXISTS "Authenticated can update property images" ON storage.objects
+CREATE POLICY "Authenticated can update property images" ON storage.objects
   FOR UPDATE TO authenticated
   USING (bucket_id = 'property-images');
 
-CREATE POLICY IF NOT EXISTS "Authenticated can delete property images" ON storage.objects
+CREATE POLICY "Authenticated can delete property images" ON storage.objects
   FOR DELETE TO authenticated
   USING (bucket_id = 'property-images');
 
