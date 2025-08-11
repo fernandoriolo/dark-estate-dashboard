@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { PropertyWithImages } from "@/hooks/useProperties";
 import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
+import { useUserProfile } from "@/hooks/useUserProfile";
 import { PropertyDetailsPopup } from "@/components/PropertyDetailsPopup";
 import { PropertyEditForm } from "@/components/PropertyEditForm";
 import { PropertyImageGallery } from "@/components/PropertyImageGallery";
@@ -42,6 +43,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 
 // Componente para as partículas flutuantes
 const FloatingParticle = ({ delay = 0, duration = 20, type = 'default' }) => {
@@ -267,10 +269,17 @@ interface PropertyListProps {
 }
 
 export function PropertyList({ properties, loading, onAddNew, refetch }: PropertyListProps) {
+  const { profile } = useUserProfile();
+  const isCorretor = profile?.role === 'corretor';
   const { imoveis, loading: loadingImoveis } = useImoveisVivaReal();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [availabilityFilter, setAvailabilityFilter] = useState<string>("all");
+  const [availabilityNote, setAvailabilityNote] = useState<string>("");
+  const [availabilityDialogOpen, setAvailabilityDialogOpen] = useState<boolean>(false);
+  const [availabilityTarget, setAvailabilityTarget] = useState<PropertyWithImages | null>(null);
+  const [availabilityValue, setAvailabilityValue] = useState<'disponivel'|'indisponivel'|'reforma'>('disponivel');
   const [selectedProperty, setSelectedProperty] = useState<PropertyWithImages | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [editingProperty, setEditingProperty] = useState<PropertyWithImages | null>(null);
@@ -379,7 +388,8 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                          property.address.toLowerCase().includes(searchTerm.toLowerCase());
     const statusMatch = statusFilter === "all" || property.status === statusFilter;
     const typeMatch = typeFilter === "all" || property.type === typeFilter;
-    return matchesSearch && statusMatch && typeMatch;
+    const availabilityMatch = availabilityFilter === "all" || (property as any).disponibilidade === availabilityFilter;
+    return matchesSearch && statusMatch && typeMatch && availabilityMatch;
   });
 
   const startVivaRealEdit = (property: PropertyWithImages) => {
@@ -814,6 +824,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
             >
+              {!isCorretor && (
               <Button 
                 onClick={onAddNew} 
                 className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0 shadow-lg"
@@ -821,6 +832,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                 <Plus className="h-4 w-4 mr-2" />
                 Adicionar Imóvel
               </Button>
+            )}
             </motion.div>
 
             {/* Botão: Adicionar Imóveis VivaReal (upload XML) */}
@@ -1126,6 +1138,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                           </Button>
                         </motion.div>
                         
+                        {!isCorretor && (
                         <motion.div className="flex-1" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                           <Button 
                             variant="outline" 
@@ -1137,8 +1150,28 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                             Editar
                           </Button>
                         </motion.div>
+                        )}
+
+                        {/* Alterar disponibilidade */}
+                        <motion.div className="flex-1" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                          <Button 
+                            variant="outline"
+                            size="sm"
+                            className="w-full bg-emerald-700 border-emerald-600 text-emerald-100 hover:bg-emerald-600 hover:text-white transition-all duration-200"
+                            onClick={() => {
+                              setAvailabilityTarget(property);
+                              setAvailabilityValue(((property as any).disponibilidade || 'disponivel') as any);
+                              setAvailabilityNote('');
+                              setAvailabilityDialogOpen(true);
+                            }}
+                          >
+                            <Shield className="h-4 w-4 mr-1" />
+                            Disponibilidade
+                          </Button>
+                        </motion.div>
                         
                         <AlertDialog>
+                          {!isCorretor && (
                           <AlertDialogTrigger asChild>
                             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                               <Button 
@@ -1151,6 +1184,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                               </Button>
                             </motion.div>
                           </AlertDialogTrigger>
+                          )}
                           <AlertDialogContent className="bg-gray-800 border-gray-700">
                             <AlertDialogHeader>
                               <AlertDialogTitle className="text-white">Confirmar Exclusão</AlertDialogTitle>
@@ -1233,6 +1267,74 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
         open={isDetailsOpen}
         onClose={handleCloseDetails}
       />
+
+      {/* Modal de Alteração de Disponibilidade */}
+      <Dialog open={availabilityDialogOpen} onOpenChange={setAvailabilityDialogOpen}>
+        <DialogContent className="bg-gray-900 border border-gray-700 text-white sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-xl">Alterar disponibilidade</DialogTitle>
+            <DialogDescription className="text-gray-300">
+              Se marcar como Indisponível ou Reforma, descreva o motivo na observação.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="flex gap-3">
+              <Select value={availabilityValue} onValueChange={(v: any) => setAvailabilityValue(v)}>
+                <SelectTrigger className="w-48 bg-gray-900/50 border-gray-600 text-white">
+                  <SelectValue placeholder="Disponibilidade" />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-900 border-gray-600">
+                  <SelectItem value="disponivel">Disponível</SelectItem>
+                  <SelectItem value="indisponivel">Indisponível</SelectItem>
+                  <SelectItem value="reforma">Reforma</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-sm text-gray-300">Observação</label>
+              <Textarea
+                value={availabilityNote}
+                onChange={(e) => setAvailabilityNote(e.target.value)}
+                className="mt-1 bg-gray-800 border-gray-700 text-white"
+                placeholder="Descreva o motivo quando marcar Indisponível ou Reforma"
+              />
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <Button
+                variant="outline"
+                className="border-gray-600 text-gray-300 hover:bg-gray-800"
+                onClick={() => setAvailabilityDialogOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={async () => {
+                  try {
+                    if (!availabilityTarget) return;
+                    const isViva = isVivaRealMode && availabilityTarget.id && !availabilityTarget.property_images;
+                    const table = isViva ? 'imoveisvivareal' : 'properties';
+                    const idCol = isViva ? 'id' : 'id';
+                    const updates: any = { disponibilidade: availabilityValue, disponibilidade_observacao: availabilityNote || null };
+                    const { error } = await supabase.from(table).update(updates).eq(idCol, isViva ? Number(availabilityTarget.id) : availabilityTarget.id);
+                    if (error) throw error;
+                    toast({ title: 'Disponibilidade atualizada com sucesso' });
+                    setAvailabilityDialogOpen(false);
+                    if (refetch) refetch();
+                  } catch (err: any) {
+                    toast({ title: 'Erro ao atualizar', description: err.message || 'Tente novamente', variant: 'destructive' });
+                  }
+                }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                Salvar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <PropertyImageGallery
         property={imageGalleryProperty}
