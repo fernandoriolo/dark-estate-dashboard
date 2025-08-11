@@ -510,6 +510,26 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
     }
   };
 
+  const getAvailabilityBadge = (availability: 'disponivel'|'indisponivel'|'reforma'|undefined) => {
+    const v = availability || 'disponivel';
+    const map: Record<string, string> = {
+      disponivel: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50',
+      indisponivel: 'bg-red-500/20 text-red-300 border-red-400/50',
+      reforma: 'bg-yellow-500/20 text-yellow-300 border-yellow-400/50'
+    };
+    const label: Record<string, string> = {
+      disponivel: 'Disponível',
+      indisponivel: 'Indisponível',
+      reforma: 'Reforma'
+    };
+    return (
+      <Badge variant="outline" className={map[v]}>
+        {label[v]}
+      </Badge>
+    );
+  };
+  };
+
   const getPurposeIcon = (purpose: "Aluguel" | "Venda") => {
     switch (purpose) {
       case "Aluguel":
@@ -1017,9 +1037,10 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                           </div>
                         )}
 
-                        {/* Status Badge - Top Left */}
-                        <div className="absolute top-3 left-3 z-20">
+                        {/* Status/Disponibilidade - Top Left */}
+                        <div className="absolute top-3 left-3 z-20 flex gap-2">
                           {getStatusBadge(property.status)}
+                          {getAvailabilityBadge((property as any).disponibilidade)}
                         </div>
 
 
