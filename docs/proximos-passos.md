@@ -1,17 +1,50 @@
-Ajustar dados legados
-Backfill de user_id/company_id nas tabelas (properties, leads, contracts, contract_templates, whatsapp_*) para registros antigos, usando user_profiles.company_id. Sem isso, RLS pode bloquear leituras/edições.
-Verificação RLS
-Rodar/estender verify_access_levels.sql com asserts para: corretor (vê só próprios), gestor/admin (vê por company_id), e writes com WITH CHECK falhando quando company_id não bate.
-Smoke tests em AccessLevelDebug/IsolationDebug.
-Perfomance/Índices
-Garantir índices em company_id, user_id, created_at, property_id nas tabelas de domínio (se faltar, criar).
-Users list (gestor/admin)
-Hoje user_profiles só permite ver/editar o próprio. Se o MVP precisa listar usuários da empresa, criar um endpoint seguro (RPC SECURITY DEFINER ou view dedicada) para gestor/admin ler perfis por company_id sem recursão de RLS.
-Storage
-Revisar bucket contract-templates: manter leitura conforme caso de uso e restringir mutações a autenticados; opcionalmente amarrar ownership via metadados.
-Frontend
-Confirmar que telas que dependem de ver “todos” (ex.: gestor) continuam funcionais com as novas RLS.
-Manter login anônimo somente em DEV via VITE_ENABLE_ANON_LOGIN=false em produção.
-CI/CD
-Adicionar etapa que roda SQL de verificação RLS no pipeline (bloqueia merge se falhar).
-Rodar pnpm lint/build e um semgrep básico.
+# Próximos passos — pendências priorizadas
+
+## P1 — Backfill de dados legados (tenant columns)
+- Criar e aplicar migration para preencher `company_id` (e onde aplicável reforçar `user_id`) em registros antigos de:
+  - `properties`, `leads`, `contracts`, `contract_templates`, `whatsapp_instances`, `imoveisvivareal`.
+- Estratégia:
+  - `company_id` ← via join em `user_profiles.company_id` pelo `user_id` da linha.
+  - Quando houver `property_id`, preferir `company_id` herdado de `properties` (se existir), senão `user_profiles`.
+- Status atual: aplicado com sucesso em todas as tabelas citadas.
+  - `imoveisvivareal`: os 124 registros sem `user_id` receberam `company_id` padrão `f07e1247-b654-4902-939e-dba0f6d0f5a3` (ImobiPro - Empresa Demo).
+- Pós-ação: validar contagens e amostras por empresa/usuário; reexecutar smoke tests de RLS.
+
+## P2 — Verificação RLS automatizada
+- Ampliar `verify_access_levels.sql` com asserts e cenários de falha esperada para:
+  - corretor: só vê/edita próprios (`user_id = auth.uid()`).
+  - gestor/admin: leitura por `company_id` + writes respeitando `WITH CHECK`.
+- Integrar execução desse SQL no CI como gate de merge.
+
+## P3 — Regenerar tipos do Supabase (frontend)
+- Rodar geração e commitar `src/integrations/supabase/types.ts` pós-migrations.
+- Revisar impactos em hooks e componentes.
+
+## P4 — Endpoint seguro de listagem de usuários por empresa
+- Confirmar RPC `list_company_users` (SECURITY DEFINER) criado.
+- Ajustar `UserManagementView`/`PermissionsManagementView` para consumir o RPC, removendo workarounds client-side.
+
+## P5 — Storage `contract-templates`: garantir ownership na criação
+- Manter policies endurecidas já criadas.
+- Garantir, no upload, vínculo consistente de ownership:
+  - Preferência: criar/atualizar registro em `contract_templates` imediatamente após upload com `user_id`/`company_id` corretos (fonte de verdade para policies que fazem join por `file_path`).
+  - Opcional (se necessário): padronizar `file_path` com prefixo de `company_id/user_id/`.
+
+## P6 — Frontend (validações e telas “gestor”)
+- Validar `AccessLevelDebug`/`IsolationDebug` e todas as telas onde gestor/admin precisam “ver todos”.
+- Ajustar queries com filtros e paginação conforme índices.
+
+## P7 — Produção/ambiente
+- Garantir `VITE_ENABLE_ANON_LOGIN=false` em produção (Hostinger).
+- Verificar variáveis `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` e CORS no projeto Supabase.
+
+## P8 — CI/CD mínimo
+- Pipeline: `pnpm lint` → testes (incl. `verify_access_levels.sql`) → `semgrep` → `pnpm build` → deploy Hostinger (SFTP `dist/`) → `supabase functions deploy` (se houver).
+- SPA fallback `.htaccess` no Hostinger.
+
+## P9 — Performance
+- Rodar `EXPLAIN` nas consultas críticas sob RLS para confirmar uso de índices.
+- Ajustar índices/coberturas se necessário.
+
+## P10 — Documentos vivos
+- Atualizar `@docs/progress_log.md`, `@docs/hierarquia-usuarios.md` e `@docs/events.md` após cada etapa relevante.

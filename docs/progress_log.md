@@ -130,7 +130,7 @@ Este documento descreve o esquema atual do banco de dados no projeto Supabase "i
 - Buckets: 'property-images' e 'contract-templates'
 - Políticas em storage.objects:
   - property-images: SELECT/INSERT/UPDATE/DELETE permissivas (qualificador por bucket)
-  - contract-templates: SELECT/INSERT/UPDATE/DELETE para usuários autenticados (auth.role()='authenticated')
+  - contract-templates: SELECT: dono, gestor da mesma empresa ou admin; INSERT: autenticados; UPDATE/DELETE: dono, gestor da mesma empresa ou admin. Usa `public.is_same_company_as(uuid)` (SECURITY DEFINER).
 
 ### Hierarquia de papéis e acessos
 - corretor: acesso aos próprios registros (OWN) via (user_id = auth.uid()) nas tabelas de domínio
@@ -197,7 +197,13 @@ erDiagram
 Próximos passos sugeridos:
 - Regenerar `src/integrations/supabase/types.ts` após aplicar migrations no projeto Supabase.
 - Expandir `verify_access_levels.sql` com asserts para cada role e cenários de falha esperada.
+- Backfill concluído: todas as tabelas com `company_id` preenchido. `imoveisvivareal` recebeu `company_id` padrão `f07e1247-b654-4902-939e-dba0f6d0f5a3` para 124 registros legados sem `user_id`.
 
 ## 2025-08-10 — Índices de performance
 - Criada migration `supabase/migrations/20250810094500_add_performance_indexes.sql` com índices em `company_id`, `user_id`, `created_at` e chaves de junção (`property_id`, `instance_id`, `chat_id`, etc.) nas tabelas de domínio.
 - Objetivo: evitar full table scans sob RLS (filtros por empresa/usuário) e melhorar paginação/ordenação.
+
+## 2025-08-11 — Storage contract-templates endurecido
+- Criadas policies canônicas para o bucket `contract-templates`: SELECT (dono, gestor da mesma empresa, admin global), INSERT (autenticados), UPDATE/DELETE (dono, gestor da mesma empresa, admin).
+- Adicionada função `public.is_same_company_as(uuid)` (SECURITY DEFINER) para checagem de empresa sem recursão de RLS.
+- Aplicadas migrations: `20250810102000_harden_contract_templates_storage_policies.sql` e fix `20250810102001_fix_is_same_company_as_cast`.

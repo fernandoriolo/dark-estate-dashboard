@@ -104,12 +104,12 @@ Este documento descreve o esquema atual do banco de dados do projeto imobiproREA
 - Buckets usados: 'property-images', 'contract-templates'
 - Policies em storage.objects:
   - property-images: SELECT/INSERT/UPDATE/DELETE liberadas por bucket
-  - contract-templates: operações permitidas para `auth.role()='authenticated'`
+  - contract-templates: SELECT: dono, gestor da mesma empresa ou admin; INSERT: autenticados; UPDATE/DELETE: dono, gestor da mesma empresa ou admin. Usa `public.is_same_company_as(uuid)` (SECURITY DEFINER) para checagem de empresa.
 
 ## Hierarquia de Papéis
 - corretor: acesso OWN (user_id = auth.uid())
 - gestor: leitura estendida por `company_id` nas tabelas de domínio
-- admin: similar ao gestor, com gestão de permissões via `role_permissions`
+- admin: similar ao gestor, com gestão de permissões via `role_permissions` e acesso global nas policies padronizadas
 
 ## Diagrama ER (Mermaid)
 ```mermaid
