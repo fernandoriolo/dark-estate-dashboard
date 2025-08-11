@@ -197,3 +197,7 @@ erDiagram
 Próximos passos sugeridos:
 - Regenerar `src/integrations/supabase/types.ts` após aplicar migrations no projeto Supabase.
 - Expandir `verify_access_levels.sql` com asserts para cada role e cenários de falha esperada.
+
+## 2025-08-10 — Índices de performance
+- Criada migration `supabase/migrations/20250810094500_add_performance_indexes.sql` com índices em `company_id`, `user_id`, `created_at` e chaves de junção (`property_id`, `instance_id`, `chat_id`, etc.) nas tabelas de domínio.
+- Objetivo: evitar full table scans sob RLS (filtros por empresa/usuário) e melhorar paginação/ordenação.

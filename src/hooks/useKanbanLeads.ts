@@ -328,7 +328,7 @@ export function useKanbanLeads() {
             const currentRole = userRole || await checkUserRole();
             
             switch (payload.eventType) {
-              case 'INSERT':
+              case 'INSERT': {
                 const newLead = databaseLeadToKanbanLead({
                   ...payload.new as DatabaseLead,
                   stage: (payload.new.stage || 'Novo Lead') as LeadStage,
@@ -347,8 +347,8 @@ export function useKanbanLeads() {
                   return prevLeads;
                 });
                 break;
-                
-              case 'UPDATE':
+              }
+              case 'UPDATE': {
                 const updatedLead = databaseLeadToKanbanLead({
                   ...payload.new as DatabaseLead,
                   stage: (payload.new.stage || 'Novo Lead') as LeadStage,
@@ -363,12 +363,13 @@ export function useKanbanLeads() {
                   )
                 );
                 break;
-                
-              case 'DELETE':
+              }
+              case 'DELETE': {
                 setLeads(prevLeads => 
                   prevLeads.filter(lead => lead.id !== payload.old.id)
                 );
                 break;
+              }
             }
           }
         );
