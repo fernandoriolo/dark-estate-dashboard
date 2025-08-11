@@ -146,15 +146,17 @@ export function useUserProfile() {
         throw new Error('Sem permissão para ver usuários');
       }
 
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('is_active', true)
-        .order('created_at', { ascending: false });
+      const { data, error } = await supabase.rpc('list_company_users', {
+        target_company_id: company?.id ?? null,
+        search: null,
+        roles: null,
+        limit_count: 100,
+        offset_count: 0,
+      });
 
       if (error) throw error;
 
-      return data || [];
+      return (data as unknown as UserProfile[]) || [];
     } catch (error: any) {
       console.error('Erro ao buscar usuários:', error);
       throw error;
