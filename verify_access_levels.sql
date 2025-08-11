@@ -127,14 +127,46 @@ SELECT public._expect_fail(
 );
 
 -- Atualizar disponibilidade com observação deve funcionar (se houver linha)
-DO $$
-BEGIN
-  BEGIN
-    PERFORM public._expect_ok($$UPDATE public.properties SET disponibilidade='indisponivel', disponibilidade_observacao='Motivo' WHERE id = (SELECT id FROM public.properties LIMIT 1)$$);
-  EXCEPTION WHEN others THEN
-    NULL; -- Se não houver linha, ignora
-  END;
-END; $$;
+SELECT public._expect_ok($$UPDATE public.properties SET disponibilidade='indisponivel', disponibilidade_observacao='Motivo' WHERE id = (SELECT id FROM public.properties LIMIT 1)$$);
+
+-- ==================================================
+-- 5) LEADS — regras por role
+-- ==================================================
+-- Corretor: cria próprios; update próprios; não pode criar para outro usuário
+SELECT set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-a000-000000000001","user_metadata":{"role":"corretor"}}', true);
+SELECT public._expect_ok($$INSERT INTO public.leads (user_id, name) VALUES (auth.uid(), 'Lead Corretor')$$);
+SELECT public._expect_fail($$INSERT INTO public.leads (user_id, name) VALUES ('00000000-0000-4000-a000-0000000000FF', 'Lead Spoof')$$, 'Corretor não deve criar lead para outro usuário');
+SELECT public._expect_ok($$UPDATE public.leads SET notes = 'ok' WHERE user_id = auth.uid()$$);
+
+-- Gestor: pode criar para qualquer usuário
+SELECT set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-a000-000000000002","user_metadata":{"role":"gestor"}}', true);
+SELECT public._expect_ok($$INSERT INTO public.leads (user_id, name) VALUES ('00000000-0000-4000-a000-0000000000AA', 'Lead Gestor')$$);
+
+-- Admin: pode remover os inseridos no teste (rollback ao final)
+SELECT set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-a000-000000000003","user_metadata":{"role":"admin"}}', true);
+SELECT public._expect_ok($$DELETE FROM public.leads WHERE name IN ('Lead Corretor','Lead Gestor')$$);
+
+-- ==================================================
+-- 6) CONTRACT_TEMPLATES — regras por role
+-- ==================================================
+-- Corretor: cria próprio; update próprio; não cria para outro
+SELECT set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-a000-000000000001","user_metadata":{"role":"corretor"}}', true);
+SELECT public._expect_ok($$INSERT INTO public.contract_templates (id, name, user_id) VALUES (gen_random_uuid()::text, 'Tpl Own', auth.uid())$$);
+SELECT public._expect_fail($$INSERT INTO public.contract_templates (id, name, user_id) VALUES (gen_random_uuid()::text, 'Tpl Spoof', '00000000-0000-4000-a000-0000000000FF')$$, 'Corretor não deve criar template para outro usuário');
+SELECT public._expect_ok($$UPDATE public.contract_templates SET description = 'ok' WHERE user_id = auth.uid()$$);
+
+-- Gestor/Admin: podem atualizar/deletar
+SELECT set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-a000-000000000002","user_metadata":{"role":"gestor"}}', true);
+SELECT public._expect_ok($$UPDATE public.contract_templates SET description = 'gestor-ok'$$);
+SELECT set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-a000-000000000003","user_metadata":{"role":"admin"}}', true);
+SELECT public._expect_ok($$DELETE FROM public.contract_templates WHERE name IN ('Tpl Own','Tpl Spoof')$$);
+
+-- ==================================================
+-- 7) WHATSAPP — checagens mínimas
+-- ==================================================
+-- Corretor: não pode criar instances
+SELECT set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-a000-000000000001","user_metadata":{"role":"corretor"}}', true);
+SELECT public._expect_fail($$INSERT INTO public.whatsapp_instances (id) VALUES (gen_random_uuid())$$, 'Corretor não deve criar whatsapp_instances');
 
 ROLLBACK;
 

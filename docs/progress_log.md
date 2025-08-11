@@ -214,3 +214,7 @@ Próximos passos sugeridos:
 - UI: adicionado botão de disponibilidade com select + observação; filtros por disponibilidade; badges de disponibilidade nos cards e detalhes.
 - Gate de merge: `verify_access_levels.sql` criado e workflow CI com job `rls-verify` adicionado.
 - Tipos TS regenerados via token da Supabase, sem Docker.
+- Performance: adicionados índices `idx_imoveisvivareal_created_at` e `idx_properties_created_at`; EXPLAIN sob RLS confirma uso do índice em `imoveisvivareal` (Index Scan + top-N). 
+- TODO produção: quando o domínio final estiver definido, configurar CORS/Site URL/Redirect URLs no Supabase com os domínios de produção e atualizar `.env.production` se necessário.
+
+- RLS: criada função `get_current_role()` (SECURITY DEFINER) e aplicadas novas policies por role (sem company_id) em `leads`, `contract_templates` e `whatsapp_*` com FORCE RLS. Índices de suporte criados (`user_id`, `created_at`).

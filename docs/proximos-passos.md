@@ -30,6 +30,7 @@
 
 ## P8 — CI/CD mínimo
 - Ativar Branch Protection exigindo os jobs: `rls-verify`, `lint-build`, `semgrep`, `types-gen-check`, `require-all`.
+- Guia: veja `docs/checklist-github-gate-merge.md`.
 
 ## P9 — Performance
 - Rodar `EXPLAIN` nas consultas críticas sob RLS para confirmar uso de índices. Ajustar se necessário.
@@ -44,6 +45,7 @@
 ## P8 — CI/CD mínimo
 - Pipeline: `pnpm lint` → testes (incl. `verify_access_levels.sql`) → `semgrep` → `pnpm build` → deploy Hostinger (SFTP `dist/`) → `supabase functions deploy` (se houver).
 - SPA fallback `.htaccess` no Hostinger.
+- Guia de proteção de branch: `docs/checklist-github-gate-merge.md`.
 
 ## P9 — Performance
 - Rodar `EXPLAIN` nas consultas críticas sob RLS para confirmar uso de índices.
