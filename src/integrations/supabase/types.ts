@@ -341,6 +341,7 @@ export type Database = {
           id: number
           imagens: string[] | null
           listing_id: string | null
+          modalidade: string | null
           numero: string | null
           preco: number | null
           quartos: number | null
@@ -369,6 +370,7 @@ export type Database = {
           id?: number
           imagens?: string[] | null
           listing_id?: string | null
+          modalidade?: string | null
           numero?: string | null
           preco?: number | null
           quartos?: number | null
@@ -397,6 +399,7 @@ export type Database = {
           id?: number
           imagens?: string[] | null
           listing_id?: string | null
+          modalidade?: string | null
           numero?: string | null
           preco?: number | null
           quartos?: number | null

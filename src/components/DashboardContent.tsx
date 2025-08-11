@@ -1,6 +1,6 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Building2, TrendingUp, DollarSign, Eye, Globe, Users, MapPin } from "lucide-react";
+import { Building2, TrendingUp, Eye, Globe, Users, MapPin } from "lucide-react";
 import { PropertyWithImages } from "@/hooks/useProperties";
 import { useClients } from "@/hooks/useClients";
 import { useState, useEffect } from "react";
@@ -24,6 +24,7 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
     available: 0,
     averagePrice: 0,
     clients: 0,
+    vgv: 0,
   });
   const [loadingPreviousData, setLoadingPreviousData] = useState(true);
 
@@ -79,18 +80,27 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
       }
 
       const prevPropertiesData = prevImoveis || [];
+      const isModalidadeVenda = (modalidade: string | null | undefined) => {
+        const m = (modalidade || '').toLowerCase();
+        return m === 'for sale' || m === 'for sale/rent' || m.includes('for sale');
+      };
       const prevClientsData = prevClients || [];
 
       // imoveisvivareal não tem status; considerar todos como disponíveis para métricas básicas
       const prevAvailable = prevPropertiesData.length;
-      const prevTotalValue = prevPropertiesData.reduce((sum, prop: any) => sum + (Number(prop.preco) || 0), 0);
-      const prevAveragePrice = prevPropertiesData.length > 0 ? prevTotalValue / prevPropertiesData.length : 0;
+      const prevVgvVenda = prevPropertiesData
+        .filter((prop: any) => isModalidadeVenda(prop?.modalidade))
+        .reduce((sum: number, prop: any) => sum + (Number(prop.preco) || 0), 0);
+      const prevAveragePrice = prevPropertiesData.length > 0
+        ? prevPropertiesData.reduce((sum: number, prop: any) => sum + (Number(prop.preco) || 0), 0) / prevPropertiesData.length
+        : 0;
 
       setPreviousMonthData({
         properties: prevPropertiesData.length,
         available: prevAvailable,
         averagePrice: prevAveragePrice,
         clients: prevClientsData.length,
+        vgv: prevVgvVenda,
       });
 
       console.log('✅ Dados do mês anterior carregados:', {
@@ -133,8 +143,17 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
   const soldProperties = 0;
   const rentedProperties = 0;
   
-  const totalValue = imoveis.reduce((sum, imovel: any) => sum + (Number(imovel.preco) || 0), 0);
-  const averagePrice = totalProperties > 0 ? totalValue / totalProperties : 0;
+  const isModalidadeVenda = (modalidade: string | null | undefined) => {
+    const m = (modalidade || '').toLowerCase();
+    return m === 'for sale' || m === 'for sale/rent' || m.includes('for sale');
+  };
+
+  const totalValueVenda = imoveis
+    .filter((imovel: any) => isModalidadeVenda(imovel?.modalidade))
+    .reduce((sum: number, imovel: any) => sum + (Number(imovel.preco) || 0), 0);
+
+  // VGV deve considerar apenas imóveis de venda (For Sale ou For Sale/Rent)
+  const totalValue = totalValueVenda;
 
   // Dados reais dos clientes por origem
   const clientsBySource = clients.reduce((acc, client) => {
@@ -165,10 +184,24 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
   // Calcular mudanças percentuais
   const propertiesChange = calculatePercentageChange(totalProperties, previousMonthData.properties);
   const availableChange = calculatePercentageChange(availableProperties, previousMonthData.available);
-  const averagePriceChange = calculatePercentageChange(averagePrice, previousMonthData.averagePrice);
   const clientsChange = calculatePercentageChange(totalClients, previousMonthData.clients);
+  const vgvChange = calculatePercentageChange(totalValue, previousMonthData.vgv);
+
+  const formatCurrencyCompact = (value: number): string => {
+    if (value >= 1_000_000_000) return `R$ ${(value / 1_000_000_000).toFixed(1)}B`;
+    if (value >= 1_000_000) return `R$ ${(value / 1_000_000).toFixed(1)}M`;
+    if (value >= 1_000) return `R$ ${(value / 1_000).toFixed(0)}k`;
+    return `R$ ${value.toFixed(0)}`;
+  };
 
   const stats = [
+    {
+      title: "VGV (Venda)",
+      value: formatCurrencyCompact(totalValue),
+      icon: TrendingUp,
+      change: vgvChange.change,
+      changeType: vgvChange.type,
+    },
     {
       title: "Total de Imóveis",
       value: totalProperties.toString(),
@@ -182,13 +215,6 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
       icon: Eye,
       change: availableChange.change, 
       changeType: availableChange.type,
-    },
-    {
-      title: "Valor Médio",
-      value: `R$ ${(averagePrice / 1000).toFixed(0)}k`,
-      icon: DollarSign,
-      change: averagePriceChange.change,
-      changeType: averagePriceChange.type,
     },
     {
       title: "Total de Leads",

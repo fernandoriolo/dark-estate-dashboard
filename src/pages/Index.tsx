@@ -16,11 +16,25 @@ import { ContractsView } from "@/components/ContractsView";
 import { UserManagementView } from "@/components/UserManagementView";
 import { PermissionsManagementView } from "@/components/PermissionsManagementView";
 import { IsolationDebug } from "@/components/IsolationDebug";
+import { InquilinatoView } from "@/components/InquilinatoView";
 
 import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
 
 const Index = () => {
-  const [currentView, setCurrentView] = useState<"dashboard" | "properties" | "contracts" | "agenda" | "reports" | "portals" | "clients" | "clients-crm" | "connections" | "users" | "permissions">("dashboard");
+  const [currentView, setCurrentView] = useState<
+    | "dashboard"
+    | "properties"
+    | "contracts"
+    | "agenda"
+    | "reports"
+    | "portals"
+    | "clients"
+    | "clients-crm"
+    | "connections"
+    | "users"
+    | "permissions"
+    | "inquilinato"
+  >("dashboard");
   const [isPropertyModalOpen, setIsPropertyModalOpen] = useState(false);
   const { imoveis, loading, refetch } = useImoveisVivaReal();
 
@@ -64,6 +78,8 @@ const Index = () => {
         return <UserManagementView />;
       case "permissions":
         return <PermissionsManagementView />;
+      case "inquilinato":
+        return <InquilinatoView />;
       default:
         return <DashboardContent properties={properties} loading={loading} />;
     }

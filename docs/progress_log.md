@@ -1,3 +1,13 @@
+## 2025-08-11
+
+- Adicionado menu `Lei do Inquilinato` com ícone de robô na sidebar (`AppSidebar`) e nova view `InquilinatoView`.
+- Atualizado roteamento por `currentView` em `src/pages/Index.tsx` para suportar `inquilinato`.
+- Incluída permissão `menu_inquilinato` para todas as roles via migration `supabase/migrations/20250811_add_menu_inquilinato.sql`.
+- Atualizado `create_permissions_system.sql` para contemplar a nova permissão (idempotente).
+
+Próximos passos:
+- Enriquecer `InquilinatoView` com conteúdo e referências oficiais (busca, filtros, links).
+- Ajustar catálogo de eventos caso haja automações relacionadas (n/a por ora).
 # ImobiPRO Dashboard — progress_log.md
 
 ## Banco de Dados (Supabase) — Inventário e Relações
