@@ -31,15 +31,38 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { useUserProfile, UserProfile } from '@/hooks/useUserProfile';
+import { supabase } from '@/integrations/supabase/client';
 
 export function UserManagementView() {
-  // TODOS OS HOOKS DEVEM VIR PRIMEIRO - NUNCA APÓS RETURNS CONDICIONAIS
-  const { profile, isManager, isAdmin, getCompanyUsers, changeUserRole, deactivateUser, createNewUser, company } = useUserProfile();
-  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+
+  const fetchUsers = async (search: string, roleFilter: string) => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase.rpc('list_company_users', {
+        target_company_id: null,
+        search: search || null,
+        roles: roleFilter === 'all' ? null : [roleFilter],
+        limit_count: 50,
+        offset_count: 0,
+      });
+      if (error) throw error;
+      setUsers(data || []);
+    } catch (err) {
+      console.error('Erro ao listar usuários:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
+  useEffect(() => { fetchUsers(searchTerm, roleFilter); }, [searchTerm, roleFilter]);
+
+  // TODOS OS HOOKS DEVEM VIR PRIMEIRO - NUNCA APÓS RETURNS CONDICIONAIS
+  const { profile, isManager, isAdmin, changeUserRole, deactivateUser, createNewUser } = useUserProfile();
+  const [error, setError] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
@@ -56,27 +79,8 @@ export function UserManagementView() {
     phone: ''
   });
 
-  // Carregar usuários - função deve estar antes do useEffect
-  const loadUsers = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const userData = await getCompanyUsers();
-      setUsers(userData);
-    } catch (error: any) {
-      console.error('Erro ao carregar usuários:', error);
-      setError(error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Removido: loadUsers/getCompanyUsers (uso substituído por RPC)
 
-  // Este useEffect também deve estar antes de qualquer return condicional
-  useEffect(() => {
-    if (isManager) {
-      loadUsers();
-    }
-  }, [isManager]);
 
   // Verificar permissões APÓS todos os hooks
   if (!isManager) {
@@ -92,8 +96,8 @@ export function UserManagementView() {
     );
   }
 
-  // Filtrar usuários
-  const filteredUsers = users.filter(user => {
+  // Filtrar usuários (origem: RPC)
+  const filteredUsers = (rpcUsers as any[]).filter(user => {
     const matchesSearch = user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          user.department?.toLowerCase().includes(searchTerm.toLowerCase());

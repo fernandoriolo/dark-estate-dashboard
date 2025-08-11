@@ -1,6 +1,7 @@
 -- ==================================================
 -- VERIFICAÇÃO DOS NÍVEIS DE ACESSO (GATE DE MERGE)
 -- Alvo: modelo sem companies; regras por role
+SET ROLE authenticated;
 -- - corretor: SELECT geral; INSERT; UPDATE apenas disponibilidade; DELETE negado
 -- - gestor/admin: CRUD completo
 -- ==================================================
