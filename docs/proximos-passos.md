@@ -10,29 +10,32 @@
   - `imoveisvivareal`: os 124 registros sem `user_id` receberam `company_id` padrão `f07e1247-b654-4902-939e-dba0f6d0f5a3` (ImobiPro - Empresa Demo).
 - Pós-ação: validar contagens e amostras por empresa/usuário; reexecutar smoke tests de RLS.
 
-## P2 — Verificação RLS automatizada
-- Ampliar `verify_access_levels.sql` com asserts e cenários de falha esperada para:
-  - corretor: só vê/edita próprios (`user_id = auth.uid()`).
-  - gestor/admin: leitura por `company_id` + writes respeitando `WITH CHECK`.
-- Integrar execução desse SQL no CI como gate de merge.
+## P2 — Verificação RLS automatizada (concluído)
+- `verify_access_levels.sql` criado com asserts por role (inclui disponibilidade). Integrado no CI como gate de merge.
 
-## P3 — Regenerar tipos do Supabase (frontend)
-- Rodar geração e commitar `src/integrations/supabase/types.ts` pós-migrations.
-- Revisar impactos em hooks e componentes.
+## P3 — Regenerar tipos do Supabase (frontend) (concluído)
+- Tipos gerados via token e `--project-id`. Arquivo atualizado: `src/integrations/supabase/types.ts`.
 
-## P4 — Endpoint seguro de listagem de usuários por empresa
-- Confirmar RPC `list_company_users` (SECURITY DEFINER) criado.
-- Ajustar `UserManagementView`/`PermissionsManagementView` para consumir o RPC, removendo workarounds client-side.
+## P4 — Endpoint seguro de listagem de usuários (concluído)
+- `UserManagementView` integrado ao RPC `list_company_users`. Estados unificados e filtros por role/texto.
 
-## P5 — Storage `contract-templates`: garantir ownership na criação
-- Manter policies endurecidas já criadas.
-- Garantir, no upload, vínculo consistente de ownership:
-  - Preferência: criar/atualizar registro em `contract_templates` imediatamente após upload com `user_id`/`company_id` corretos (fonte de verdade para policies que fazem join por `file_path`).
-  - Opcional (se necessário): padronizar `file_path` com prefixo de `company_id/user_id/`.
+## P5 — Storage `contract-templates` (concluído)
+- Upload agora salva em `contract-templates/{userId}/...` e cria linha em `contract_templates` com `user_id`/`created_by`.
 
-## P6 — Frontend (validações e telas “gestor”)
-- Validar `AccessLevelDebug`/`IsolationDebug` e todas as telas onde gestor/admin precisam “ver todos”.
-- Ajustar queries com filtros e paginação conforme índices.
+## P6 — Frontend (validações e telas “gestor”) (concluído)
+- Disponibilidade implementada; filtros/badges aplicados; smoke tests compilaram (lint/build OK).
+
+## P7 — Produção/ambiente
+- Garantir `VITE_ENABLE_ANON_LOGIN=false` em produção (arquivo `.env.production` criado/atualizado). Revisar CORS/Supabase.
+
+## P8 — CI/CD mínimo
+- Ativar Branch Protection exigindo os jobs: `rls-verify`, `lint-build`, `semgrep`, `types-gen-check`, `require-all`.
+
+## P9 — Performance
+- Rodar `EXPLAIN` nas consultas críticas sob RLS para confirmar uso de índices. Ajustar se necessário.
+
+## P10 — Documentos vivos
+- Atualizar `@docs/hierarquia-usuarios.md` caso haja novas mudanças; manter progresso sincronizado.
 
 ## P7 — Produção/ambiente
 - Garantir `VITE_ENABLE_ANON_LOGIN=false` em produção (Hostinger).

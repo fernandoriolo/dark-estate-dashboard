@@ -113,11 +113,14 @@ export const ContractTemplatesProvider: React.FC<ContractTemplatesProviderProps>
         throw new Error(validation.error);
       }
 
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData.user?.id || 'anonymous';
+
       const timestamp = Date.now();
       const randomString = Math.random().toString(36).substring(2, 15);
       const fileExtension = file.name.split('.').pop();
       const fileName = `${timestamp}-${randomString}.${fileExtension}`;
-      const filePath = `contract-templates/${fileName}`;
+      const filePath = `contract-templates/${userId}/${fileName}`;
 
       setUploadProgress({ loaded: file.size * 0.1, total: file.size, percentage: 10 });
 
@@ -176,6 +179,7 @@ export const ContractTemplatesProvider: React.FC<ContractTemplatesProviderProps>
         file_path: uploadResult.filePath!,
         file_size: file.size,
         file_type: file.type,
+        user_id: user?.id || null,
         created_by: user?.id || null,
         is_active: true
       };

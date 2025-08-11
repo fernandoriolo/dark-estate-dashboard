@@ -528,7 +528,6 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
       </Badge>
     );
   };
-  };
 
   const getPurposeIcon = (purpose: "Aluguel" | "Venda") => {
     switch (purpose) {

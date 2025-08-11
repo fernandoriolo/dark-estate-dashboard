@@ -207,3 +207,10 @@ Próximos passos sugeridos:
 - Criadas policies canônicas para o bucket `contract-templates`: SELECT (dono, gestor da mesma empresa, admin global), INSERT (autenticados), UPDATE/DELETE (dono, gestor da mesma empresa, admin).
 - Adicionada função `public.is_same_company_as(uuid)` (SECURITY DEFINER) para checagem de empresa sem recursão de RLS.
 - Aplicadas migrations: `20250810102000_harden_contract_templates_storage_policies.sql` e fix `20250810102001_fix_is_same_company_as_cast`.
+- Frontend ajustado: upload agora salva em `contract-templates/{userId}/{arquivo}` e cria linha em `contract_templates` com `user_id`/`created_by` preenchidos.
+
+## 2025-08-11 — RLS por role (sem companies) e disponibilidade
+- `properties`/`imoveisvivareal`: leitura para autenticados; INSERT para todos; UPDATE/DELETE apenas admin/gestor. Corretores podem alterar somente disponibilidade (gatilhos), exigindo observação quando indisponível/reforma.
+- UI: adicionado botão de disponibilidade com select + observação; filtros por disponibilidade; badges de disponibilidade nos cards e detalhes.
+- Gate de merge: `verify_access_levels.sql` criado e workflow CI com job `rls-verify` adicionado.
+- Tipos TS regenerados via token da Supabase, sem Docker.
