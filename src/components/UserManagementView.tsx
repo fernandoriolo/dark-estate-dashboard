@@ -96,8 +96,8 @@ export function UserManagementView() {
     );
   }
 
-  // Filtrar usuários (origem: RPC)
-  const filteredUsers = (rpcUsers as any[]).filter(user => {
+  // Filtrar usuários (origem: estado `users` preenchido via RPC)
+  const filteredUsers = (users as any[]).filter(user => {
     const matchesSearch = user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          user.department?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -113,7 +113,7 @@ export function UserManagementView() {
 
     try {
       await changeUserRole(selectedUser.id, newRole);
-      await loadUsers(); // Recarregar a lista
+      await fetchUsers(searchTerm, roleFilter); // Recarregar a lista
       setShowEditModal(false);
       setSelectedUser(null);
     } catch (error: any) {
@@ -126,7 +126,7 @@ export function UserManagementView() {
     if (window.confirm('Tem certeza que deseja desativar este usuário?')) {
       try {
         await deactivateUser(userId);
-        await loadUsers(); // Recarregar a lista
+        await fetchUsers(searchTerm, roleFilter); // Recarregar a lista
       } catch (error: any) {
         setError(error.message);
       }
@@ -151,7 +151,7 @@ export function UserManagementView() {
     setCreateLoading(true);
     try {
       await createNewUser(createForm);
-      await loadUsers(); // Recarregar a lista
+      await fetchUsers(searchTerm, roleFilter); // Recarregar a lista
       setShowCreateModal(false);
       
       // Resetar formulário
@@ -245,7 +245,7 @@ export function UserManagementView() {
           )}
           <Button 
             variant="outline" 
-            onClick={loadUsers}
+            onClick={() => fetchUsers(searchTerm, roleFilter)}
             disabled={loading}
             className="border-gray-600 text-gray-300 hover:bg-gray-800"
           >
