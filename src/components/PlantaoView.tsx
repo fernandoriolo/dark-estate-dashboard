@@ -636,7 +636,7 @@ export const PlantaoView = () => {
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'calendarios' | 'escala')} className="w-full">
         <TabsList className="bg-gray-800 border border-gray-700">
           <TabsTrigger value="calendarios">Calendários</TabsTrigger>
-          <TabsTrigger value="escala">Escala</TabsTrigger>
+          <TabsTrigger value="escala">Escala do Plantão</TabsTrigger>
         </TabsList>
 
         <TabsContent value="calendarios" className="mt-4">
@@ -840,7 +840,7 @@ export const PlantaoView = () => {
         <TabsContent value="escala" className="mt-4">
           <Card className="border-gray-800 bg-gray-900">
             <CardHeader>
-              <CardTitle className="text-white">Escala</CardTitle>
+              <CardTitle className="text-white">Escala do Plantão</CardTitle>
               <CardDescription className="text-xs mt-1">Configure horários de plantão por calendário</CardDescription>
             </CardHeader>
             <CardContent>
