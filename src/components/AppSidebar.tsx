@@ -1,4 +1,4 @@
-import { Building2, Home, BarChart3, Settings, Users, Globe, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, MessageSquare } from "lucide-react";
+import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare } from "lucide-react";
 import { useState, useEffect } from "react";
 import {
   Sidebar,
@@ -22,13 +22,6 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { usePermissions } from '@/hooks/usePermissions';
 
 const menuItems = [
-  {
-    title: "Painel",
-    url: "#",
-    icon: BarChart3,
-    view: "dashboard" as const,
-    permissionKey: "menu_dashboard",
-  },
   {
     title: "Propriedades",
     url: "#",
@@ -79,20 +72,6 @@ const menuItems = [
     // Sem permissionKey para aparecer por padrão (pode ser protegido depois)
   },
   {
-    title: "Relatórios",
-    url: "#",
-    icon: TrendingUp,
-    view: "reports" as const,
-    permissionKey: "menu_reports",
-  },
-  {
-    title: "Portais",
-    url: "#",
-    icon: Globe,
-    view: "portals" as const,
-    permissionKey: "menu_portals",
-  },
-  {
     title: "Conexões",
     url: "#",
     icon: Wifi,
@@ -120,20 +99,29 @@ const menuItems = [
     view: "inquilinato" as const,
     permissionKey: "menu_inquilinato",
   },
+  {
+    title: "Disparador",
+    url: "#",
+    icon: Send,
+    view: "disparador" as const,
+    permissionKey: "menu_disparador",
+  },
 ];
 
 const analyticsItems = [
+  {
+    title: "Painel",
+    url: "#",
+    icon: BarChart3,
+    view: "dashboard" as const,
+    permissionKey: "menu_dashboard",
+  },
   {
     title: "Relatórios",
     url: "#",
     icon: TrendingUp,
     view: "reports" as const,
-  },
-  {
-    title: "Portais",
-    url: "#",
-    icon: Globe,
-    view: "portals" as const,
+    permissionKey: "menu_reports",
   },
 ];
 
@@ -147,7 +135,7 @@ const secondaryItems = [
 
 interface AppSidebarProps {
   currentView: string;
-  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "plantao" | "reports" | "portals" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "chats") => void;
+  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "plantao" | "reports" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "disparador" | "chats" | "profile") => void;
 }
 
 export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
@@ -207,6 +195,11 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
     if (!profile) return false; // Se não tem perfil, não mostrar menus
     return hasPermission(item.permissionKey);
   });
+  const filteredAnalyticsItems = analyticsItems.filter(item => {
+    if (!('permissionKey' in item) || !item.permissionKey) return true;
+    if (!profile) return false;
+    return hasPermission(item.permissionKey);
+  });
 
   return (
     <Sidebar className="border-r border-gray-800 bg-gray-900 text-white">
@@ -264,7 +257,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {analyticsItems.map((item) => (
+              {filteredAnalyticsItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton 
                     asChild
