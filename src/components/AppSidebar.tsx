@@ -23,13 +23,6 @@ import { usePermissions } from '@/hooks/usePermissions';
 
 const menuItems = [
   {
-    title: "Painel",
-    url: "#",
-    icon: BarChart3,
-    view: "dashboard" as const,
-    permissionKey: "menu_dashboard",
-  },
-  {
     title: "Propriedades",
     url: "#",
     icon: Building2,
@@ -65,20 +58,6 @@ const menuItems = [
     permissionKey: "menu_clients_crm",
   },
   {
-    title: "Relatórios",
-    url: "#",
-    icon: TrendingUp,
-    view: "reports" as const,
-    permissionKey: "menu_reports",
-  },
-  {
-    title: "Portais",
-    url: "#",
-    icon: Globe,
-    view: "portals" as const,
-    permissionKey: "menu_portals",
-  },
-  {
     title: "Conexões",
     url: "#",
     icon: Wifi,
@@ -110,16 +89,25 @@ const menuItems = [
 
 const analyticsItems = [
   {
+    title: "Painel",
+    url: "#",
+    icon: BarChart3,
+    view: "dashboard" as const,
+    permissionKey: "menu_dashboard",
+  },
+  {
     title: "Relatórios",
     url: "#",
     icon: TrendingUp,
     view: "reports" as const,
+    permissionKey: "menu_reports",
   },
   {
     title: "Portais",
     url: "#",
     icon: Globe,
     view: "portals" as const,
+    permissionKey: "menu_portals",
   },
 ];
 
@@ -193,6 +181,11 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
     if (!profile) return false; // Se não tem perfil, não mostrar menus
     return hasPermission(item.permissionKey);
   });
+  const filteredAnalyticsItems = analyticsItems.filter(item => {
+    if (!('permissionKey' in item) || !item.permissionKey) return true;
+    if (!profile) return false;
+    return hasPermission(item.permissionKey);
+  });
 
   return (
     <Sidebar className="border-r border-gray-800 bg-gray-900 text-white">
@@ -250,7 +243,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {analyticsItems.map((item) => (
+              {filteredAnalyticsItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton 
                     asChild
