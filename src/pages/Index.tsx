@@ -11,6 +11,7 @@ import { ClientsView } from "@/components/ClientsView";
 import { ClientsCRMView } from "@/components/ClientsCRMView";
 
 import { AgendaView } from "@/components/AgendaView";
+import { PlantaoView } from "@/components/PlantaoView";
 import { ConnectionsViewSimplified } from "@/components/ConnectionsViewSimplified";
 import { ContractsView } from "@/components/ContractsView";
 import { UserManagementView } from "@/components/UserManagementView";
@@ -26,6 +27,7 @@ const Index = () => {
     | "properties"
     | "contracts"
     | "agenda"
+    | "plantao"
     | "reports"
     | "portals"
     | "clients"
@@ -64,6 +66,8 @@ const Index = () => {
         return <ContractsView />;
       case "agenda":
         return <AgendaView />;
+      case "plantao":
+        return <PlantaoView />;
       case "reports":
         return <ReportsView />;
       case "portals":

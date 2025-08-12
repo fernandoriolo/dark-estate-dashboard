@@ -108,6 +108,12 @@ Este documento reflete o estado ATUAL do schema e das políticas RLS, após a mi
 - Índices: `user_id`, `created_at DESC`
 
 ### whatsapp_messages — Mensagens
+- ### oncall_schedules — Escalas de plantão por calendário
+  - PK: `id (uuid)`
+  - Campos: `user_id`, `company_id`, `calendar_id`, `calendar_name`, `mon_*`..`sun_*` (flags `*_works` + `*_start`/`*_end`), `created_at`, `updated_at`
+  - Índices: `user_id`, `company_id`, `calendar_id`
+  - RLS: dono (`user_id`) ou `gestor/admin` da mesma empresa; `WITH CHECK` garante `company_id` consistente
+
 - PK: `id (uuid)`
 - Campos: `chat_id`, `instance_id`, `user_id`, `from_me`, `content`, timestamps
 - RLS: HABILITADO + FORCE RLS

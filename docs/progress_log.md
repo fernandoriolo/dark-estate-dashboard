@@ -5,6 +5,14 @@
 - Incluída permissão `menu_inquilinato` para todas as roles via migration `supabase/migrations/20250811_add_menu_inquilinato.sql`.
 - Atualizado `create_permissions_system.sql` para contemplar a nova permissão (idempotente).
 
+- Adicionado menu `Plantão` na sidebar (`AppSidebar`) com permissão `menu_plantao`.
+- Criada `src/components/PlantaoView.tsx` (placeholder inicial) e roteamento em `src/pages/Index.tsx` (case `plantao`).
+- Migration `supabase/migrations/20250811165000_add_menu_plantao_permission.sql` para inserir a permissão `menu_plantao` para `corretor`, `gestor` e `admin`.
+- Atualizado `create_permissions_system.sql` para incluir `menu_plantao` (idempotente).
+
+- Criada tabela `oncall_schedules` com RLS e índices para armazenar escala por calendário (segunda a domingo).
+- Atualizado `docs/schema-db-imobipro.md` com a nova tabela e políticas.
+
 Próximos passos:
 - Enriquecer `InquilinatoView` com conteúdo e referências oficiais (busca, filtros, links).
 - Ajustar catálogo de eventos caso haja automações relacionadas (n/a por ora).

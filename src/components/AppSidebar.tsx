@@ -51,6 +51,13 @@ const menuItems = [
     permissionKey: "menu_agenda",
   },
   {
+    title: "Plantão",
+    url: "#",
+    icon: Calendar,
+    view: "plantao" as const,
+    permissionKey: "menu_plantao",
+  },
+  {
     title: "Pipeline Clientes",
     url: "#",
     icon: UserCheck,
@@ -133,7 +140,7 @@ const secondaryItems = [
 
 interface AppSidebarProps {
   currentView: string;
-  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "reports" | "portals" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato") => void;
+  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "plantao" | "reports" | "portals" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato") => void;
 }
 
 export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
