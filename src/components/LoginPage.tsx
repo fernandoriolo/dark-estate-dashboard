@@ -37,11 +37,11 @@ const FloatingParticle = ({ delay = 0, duration = 20, type = 'default' }) => {
   };
 
   return (
-    <motion.div
+      <motion.div
       className={`absolute ${particleVariants[type]}`}
       initial={{ 
-        x: Math.random() * window.innerWidth,
-        y: window.innerHeight + 20,
+        x: Math.random() * (typeof window !== 'undefined' ? window.innerWidth : 1200),
+        y: (typeof window !== 'undefined' ? window.innerHeight : 800) + 20,
         opacity: 0,
         scale: 0
       }}

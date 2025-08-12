@@ -180,6 +180,14 @@ export const PlantaoView = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
+  // Corretores só podem ver a aba "Escala" (sem acesso a "Calendários")
+  useEffect(() => {
+    if (!isManager && activeTab !== 'escala') {
+      setActiveTab('escala');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isManager]);
+
   // Ações Calendários
   const handleAddAgenda = async () => {
     setIsAddAgendaOpen(true);
@@ -396,12 +404,25 @@ export const PlantaoView = () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { data } = await supabase
+      // Buscar primeiro por assigned_user_id (quando o calendário foi vinculado pelo gestor)
+      let { data, error } = await supabase
         .from('oncall_schedules')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('assigned_user_id', user.id)
         .eq('calendar_id', calendarId)
         .maybeSingle();
+
+      if (error && error.code !== 'PGRST116') throw error;
+      // Se não houver linha por assigned_user_id, tentar pelo owner (user_id)
+      if (!data) {
+        const res2 = await supabase
+          .from('oncall_schedules')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('calendar_id', calendarId)
+          .maybeSingle();
+        data = res2.data as any;
+      }
 
       if (data) {
         const slots = [
@@ -430,11 +451,12 @@ export const PlantaoView = () => {
       if (!user) return;
       if (!calendars || calendars.length === 0) return;
       const calendarIds = calendars.map(c => c.id);
+      // Buscar linhas onde o usuário é owner OU assigned_user
       const { data, error } = await supabase
         .from('oncall_schedules')
         .select('*')
-        .eq('user_id', user.id)
-        .in('calendar_id', calendarIds);
+        .in('calendar_id', calendarIds)
+        .or(`user_id.eq.${user.id},assigned_user_id.eq.${user.id}`);
       if (error) throw error;
 
       const next: typeof escalas = { ...escalas };
@@ -554,12 +576,14 @@ export const PlantaoView = () => {
           // fallback: permitir null em ambiente MVP
           console.warn('company_id não encontrado; gravando com company_id nulo (MVP)');
         }
+        const effectiveAssigned = (assignedOverride ?? cfg.assignedUserId) || null;
+        const rowUserId = effectiveAssigned || user.id;
         const payload = {
           calendar_id: calendarId,
           calendar_name: cfg.calendarName,
-          user_id: user.id,
+          user_id: rowUserId,
           company_id,
-          assigned_user_id: (assignedOverride ?? cfg.assignedUserId) || null,
+          assigned_user_id: effectiveAssigned,
           mon_works: dayMap['Segunda'].works, mon_start: dayMap['Segunda'].start, mon_end: dayMap['Segunda'].end,
           tue_works: dayMap['Terça'].works, tue_start: dayMap['Terça'].start, tue_end: dayMap['Terça'].end,
           wed_works: dayMap['Quarta'].works, wed_start: dayMap['Quarta'].start, wed_end: dayMap['Quarta'].end,
@@ -568,10 +592,11 @@ export const PlantaoView = () => {
           sat_works: dayMap['Sábado'].works, sat_start: dayMap['Sábado'].start, sat_end: dayMap['Sábado'].end,
           sun_works: dayMap['Domingo'].works, sun_start: dayMap['Domingo'].start, sun_end: dayMap['Domingo'].end,
         } as any;
-        // upsert por (user_id, calendar_id)
+        // upsert por (calendar_id, assigned_user_id) quando houver assignation; senão por (user_id, calendar_id)
+        const onConflictKeys = effectiveAssigned ? 'calendar_id,assigned_user_id' : 'user_id,calendar_id';
         const { error } = await supabase
           .from('oncall_schedules')
-          .upsert(payload, { onConflict: 'user_id,calendar_id' });
+          .upsert(payload, { onConflict: onConflictKeys });
         if (error) throw error;
         toast({ description: 'Escala salva no banco de dados' });
         setDirtyCalendars(prev => ({ ...prev, [calendarId]: false }));
@@ -635,10 +660,11 @@ export const PlantaoView = () => {
       {/* Abas Plantão */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'calendarios' | 'escala')} className="w-full">
         <TabsList className="bg-gray-800 border border-gray-700">
-          <TabsTrigger value="calendarios">Calendários</TabsTrigger>
+          {isManager && (<TabsTrigger value="calendarios">Calendários</TabsTrigger>)}
           <TabsTrigger value="escala">Escala do Plantão</TabsTrigger>
         </TabsList>
 
+        {isManager && (
         <TabsContent value="calendarios" className="mt-4">
           <Card className="border-gray-800 bg-gray-900">
             <CardHeader>
@@ -836,6 +862,7 @@ export const PlantaoView = () => {
             </CardContent>
           </Card>
         </TabsContent>
+        )}
 
         <TabsContent value="escala" className="mt-4">
           <Card className="border-gray-800 bg-gray-900">
@@ -849,8 +876,9 @@ export const PlantaoView = () => {
                 {calendars.length === 0 ? (
                   <p className="text-sm text-gray-400">Nenhuma agenda encontrada.</p>
                 ) : (
-                  calendars.map((c) => {
+                  (isManager ? calendars : calendars.filter((c) => (escalas[c.id]?.assignedUserId) === profile?.id)).map((c) => {
                     const cfg = escalas[c.id] || { calendarName: c.name, slots: [] };
+                    const canEdit = isManager || (cfg.assignedUserId === profile?.id);
                     const resumo = buildScheduleSummary(cfg);
                     const dayMap = getDayMapFromSlots(cfg.slots);
                     const ownerName = cfg.assignedUserId ? (companyUsers.find(u => u.id === cfg.assignedUserId)?.full_name || companyUsers.find(u => u.id === cfg.assignedUserId)?.email || 'Usuário') : 'Não vinculado';
@@ -867,6 +895,7 @@ export const PlantaoView = () => {
                             <p className="text-xs text-gray-400 mt-1">Usuário: <span className="text-gray-200">{ownerName}</span></p>
                           </div>
                           <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                            {isManager && (
                             <Dialog open={isConfigOpen && configCalendarId === c.id} onOpenChange={(v) => { setIsConfigOpen(v); if (!v) setConfigCalendarId(null); }}>
                               <DialogTrigger asChild>
                                 <Button variant="ghost" className="text-white hover:bg-transparent" onClick={() => { setConfigCalendarId(c.id); setAssignedUserLocal(escalas[c.id]?.assignedUserId || ""); }}>Configurar</Button>
@@ -904,14 +933,17 @@ export const PlantaoView = () => {
                                 </div>
                               </DialogContent>
                              </Dialog>
-                             <Button
-                               variant="ghost"
-                               className={`hover:bg-transparent ${dirtyCalendars[c.id] ? 'text-emerald-300' : 'text-white/70'}`}
-                               disabled={!!savingCalendars[c.id]}
-                               onClick={() => salvarCalendario(c.id)}
-                             >
-                               {savingCalendars[c.id] ? 'Salvando...' : (dirtyCalendars[c.id] ? 'Salvar alterações' : 'Salvar')}
-                             </Button>
+                            )}
+                            {(canEdit) && (
+                              <Button
+                                variant="ghost"
+                                className={`hover:bg-transparent ${dirtyCalendars[c.id] ? 'text-emerald-300' : 'text-white/70'}`}
+                                disabled={!!savingCalendars[c.id]}
+                                onClick={() => salvarCalendario(c.id)}
+                              >
+                                {savingCalendars[c.id] ? 'Salvando...' : (dirtyCalendars[c.id] ? 'Salvar alterações' : 'Salvar')}
+                              </Button>
+                            )}
                           </div>
                         </div>
                         {isOpen && (
@@ -928,25 +960,25 @@ export const PlantaoView = () => {
                                     <span className="text-sm font-medium text-white">{d}</span>
                                     <div className="flex items-center gap-2">
                                       <span className="text-[11px] text-gray-400">{active ? 'Trabalha' : 'Não trabalha'}</span>
-                                      <Switch checked={!!active} onCheckedChange={(v) => setDayWorking(c.id, d, v)} />
+                                      <Switch checked={!!active} disabled={!canEdit} onCheckedChange={(v) => { if (canEdit) setDayWorking(c.id, d, v); }} />
                                     </div>
                                   </div>
                                   <div className="mt-3 grid grid-cols-2 gap-2">
                                     <div>
                                       <label className="text-[10px] text-gray-400">Início</label>
-                                      <TimePicker
-                                        value={(info?.start as string) || '09:00'}
-                                        disabled={!active}
-                                        onChange={(val) => setDayTime(c.id, d, 'inicio', val)}
-                                      />
+                                       <TimePicker
+                                         value={(info?.start as string) || '09:00'}
+                                         disabled={!canEdit || !active}
+                                         onChange={(val) => { if (canEdit) setDayTime(c.id, d, 'inicio', val); }}
+                                       />
                                     </div>
                                     <div>
                                       <label className="text-[10px] text-gray-400">Fim</label>
-                                      <TimePicker
-                                        value={(info?.end as string) || '18:00'}
-                                        disabled={!active}
-                                        onChange={(val) => setDayTime(c.id, d, 'fim', val)}
-                                      />
+                                       <TimePicker
+                                         value={(info?.end as string) || '18:00'}
+                                         disabled={!canEdit || !active}
+                                         onChange={(val) => { if (canEdit) setDayTime(c.id, d, 'fim', val); }}
+                                       />
                                     </div>
                                   </div>
                                   
@@ -969,3 +1001,4 @@ export const PlantaoView = () => {
 };
 
 
+export default PlantaoView;
