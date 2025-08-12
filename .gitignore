@@ -25,3 +25,4 @@ dist-ssr
 
 # MCP configuration with sensitive tokens
 .cursor/mcp.json
+.env.example

@@ -12,35 +12,35 @@ Este documento descreve, de forma didática, como as políticas RLS aplicam a hi
 - `user_profiles`
   - SELECT/UPDATE: somente o próprio registro (`id = auth.uid()`).
 
-- `companies`
-  - SELECT: usuário vê a empresa à qual pertence (`company_id = get_user_company_id()`).
-
-- `properties`
-  - corretor: SELECT/ALL sobre os próprios (`user_id = auth.uid()`), sempre com `WITH CHECK company_id = get_user_company_id()`.
-  - gestor/admin: SELECT/ALL para registros com `company_id = get_user_company_id()`.
+- `properties` / `imoveisvivareal`
+  - Admin/Gestor: CRUD global
+  - Corretor: leitura de todos; pode adicionar; pode alterar disponibilidade (com observação); não pode editar/deletar
 
 - `property_images`
-  - Escopo herdado de `properties.property_id` e `properties.company_id`.
-  - Mutações apenas quando o usuário é dono do imóvel ou gestor/admin da empresa.
+  - Leitura para autenticados; mutações por admin/gestor
 
 - `leads`
-  - corretor: SELECT/ALL sobre os próprios (`user_id = auth.uid()`), `WITH CHECK company_id`.
-  - gestor/admin: SELECT/ALL por `company_id`.
+  - Admin/Gestor: leitura e CRUD de todos
+  - Corretor: leitura/criação/atualização dos próprios (`user_id = auth.uid()`), delete negado
 
-- `contract_templates`
-  - Leitura e mutação restritas à `company_id` do usuário; corretor gerencia os próprios, gestor/admin gerenciam todos na empresa.
+- `contract_templates` (tabela)
+  - Leitura/criação para todos autenticados; update/delete por admin/gestor ou autor (`user_id`)
 
 - `contracts`
-  - corretor: SELECT/ALL sobre os próprios, `WITH CHECK company_id`.
-  - gestor/admin: SELECT/ALL por `company_id`.
+  - Admin/Gestor: leitura e CRUD de todos
+  - Corretor: leitura/escopo próprio (a definir conforme evolução do módulo)
 
 - `whatsapp_instances`
-  - corretor: SELECT/ALL das próprias instâncias.
-  - gestor/admin: SELECT/ALL por `company_id`.
+  - Admin/Gestor: leitura e CRUD
+  - Corretor: sem acesso
 
-- `whatsapp_chats` e `whatsapp_messages`
-  - corretor: SELECT/ALL dos próprios (`user_id = auth.uid()`).
-  - gestor/admin: SELECT/ALL por `company_id` via associação com `whatsapp_instances.company_id`.
+- `whatsapp_chats`
+  - Admin/Gestor: todos
+  - Corretor: apenas os próprios (`user_id = auth.uid()`)
+
+- `whatsapp_messages`
+  - Admin/Gestor: todos
+  - Corretor: apenas as próprias (envio `from_me=true`) e leitura das suas
 
 ## Observações
 - Triggers BEFORE INSERT definem automaticamente `user_id` e `company_id` quando nulos.

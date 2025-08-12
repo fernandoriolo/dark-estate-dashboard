@@ -16,6 +16,8 @@ import {
   Trash2, 
   ChevronLeft, 
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   Search,
   Eye,
   Edit,
@@ -34,7 +36,8 @@ import {
   Upload
 } from "lucide-react";
 import { PropertyWithImages } from "@/hooks/useProperties";
-import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
+import { useImoveisVivaReal, suggestCities, suggestNeighborhoods, suggestAddresses, suggestSearch } from "@/hooks/useImoveisVivaReal";
+import { useUserProfile } from "@/hooks/useUserProfile";
 import { PropertyDetailsPopup } from "@/components/PropertyDetailsPopup";
 import { PropertyEditForm } from "@/components/PropertyEditForm";
 import { PropertyImageGallery } from "@/components/PropertyImageGallery";
@@ -42,6 +45,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 
 // Componente para as partículas flutuantes
 const FloatingParticle = ({ delay = 0, duration = 20, type = 'default' }) => {
@@ -267,10 +271,32 @@ interface PropertyListProps {
 }
 
 export function PropertyList({ properties, loading, onAddNew, refetch }: PropertyListProps) {
-  const { imoveis, loading: loadingImoveis } = useImoveisVivaReal();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const { profile } = useUserProfile();
+  const isCorretor = profile?.role === 'corretor';
+  const {
+    imoveis,
+    loading: loadingImoveis,
+    page,
+    setPage,
+    pageSize,
+    setPageSize,
+    orderBy,
+    setOrderBy,
+    filters,
+    setFilters,
+    total,
+    refetch: refetchImoveisList,
+  } = useImoveisVivaReal();
+  const [searchTerm, setSearchTerm] = useState(filters.search ?? '');
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+  const [citySuggestions, setCitySuggestions] = useState<string[]>([]);
+  const [neighborhoodSuggestions, setNeighborhoodSuggestions] = useState<string[]>([]);
+  const [addressSuggestions, setAddressSuggestions] = useState<string[]>([]);
+  const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
+  const [availabilityNote, setAvailabilityNote] = useState<string>("");
+  const [availabilityDialogOpen, setAvailabilityDialogOpen] = useState<boolean>(false);
+  const [availabilityTarget, setAvailabilityTarget] = useState<PropertyWithImages | null>(null);
+  const [availabilityValue, setAvailabilityValue] = useState<'disponivel'|'indisponivel'|'reforma'>('disponivel');
   const [selectedProperty, setSelectedProperty] = useState<PropertyWithImages | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [editingProperty, setEditingProperty] = useState<PropertyWithImages | null>(null);
@@ -333,6 +359,22 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
     setParticles(particleArray);
   }, []);
 
+  // Debounce da busca principal para filtros server-side + sugestões
+  useEffect(() => {
+    const id = setTimeout(async () => {
+      const term = searchTerm.trim();
+      setPage(1);
+      setFilters(prev => ({ ...prev, search: term || undefined }));
+      if (term.length >= 2) {
+        const s = await suggestSearch(term);
+        setSearchSuggestions(s);
+      } else {
+        setSearchSuggestions([]);
+      }
+    }, 350);
+    return () => clearTimeout(id);
+  }, [searchTerm, setFilters, setPage]);
+
   // Adaptador: converte imoveisvivareal -> shape esperado pela UI de propriedades
   const propertiesFromImoveis: PropertyWithImages[] = (imoveis || []).map((i: any) => {
     const tipoInferido = (() => {
@@ -374,13 +416,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
     sample: effectiveProperties.slice(0, 2),
   });
 
-  const filteredProperties = effectiveProperties.filter(property => {
-    const matchesSearch = property.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         property.address.toLowerCase().includes(searchTerm.toLowerCase());
-    const statusMatch = statusFilter === "all" || property.status === statusFilter;
-    const typeMatch = typeFilter === "all" || property.type === typeFilter;
-    return matchesSearch && statusMatch && typeMatch;
-  });
+  const filteredProperties = effectiveProperties; // server-side filters
 
   const startVivaRealEdit = (property: PropertyWithImages) => {
     setEditId(property.id);
@@ -498,6 +534,25 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
       default:
         return "bg-gray-500/20 text-gray-300 border-gray-400/50";
     }
+  };
+
+  const getAvailabilityBadge = (availability: 'disponivel'|'indisponivel'|'reforma'|undefined) => {
+    const v = availability || 'disponivel';
+    const map: Record<string, string> = {
+      disponivel: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50',
+      indisponivel: 'bg-red-500/20 text-red-300 border-red-400/50',
+      reforma: 'bg-yellow-500/20 text-yellow-300 border-yellow-400/50'
+    };
+    const label: Record<string, string> = {
+      disponivel: 'Disponível',
+      indisponivel: 'Indisponível',
+      reforma: 'Reforma'
+    };
+    return (
+      <Badge variant="outline" className={map[v]}>
+        {label[v]}
+      </Badge>
+    );
   };
 
   const getPurposeIcon = (purpose: "Aluguel" | "Venda") => {
@@ -766,76 +821,238 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.6, duration: 0.6 }}
         >
-          <div className="flex flex-col lg:flex-row gap-4 items-center">
+          <div className={`flex ${isFiltersOpen ? 'flex-col' : 'flex-col lg:flex-row'} gap-4 items-stretch lg:items-center`}>
             {/* Search */}
-            <div className="relative flex-1 max-w-md">
+            <div className={`relative flex-1 ${isFiltersOpen ? 'w-full' : 'max-w-2xl'}`}>
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
               <Input
                 placeholder="Pesquisar imóveis..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 bg-gray-900/50 border-gray-600 text-white placeholder-gray-400 focus:border-blue-400 focus:ring-blue-400/20"
+                className="pl-10 bg-gray-900/70 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-blue-500/20"
               />
+              {searchSuggestions.length > 0 && (
+                <div className="absolute z-50 mt-1 w-full bg-gray-900 border border-gray-700 rounded-md max-h-56 overflow-auto shadow-xl">
+                  {searchSuggestions.map((item) => (
+                    <div key={item} className="px-3 py-2 hover:bg-gray-800 cursor-pointer" onMouseDown={() => {
+                      setSearchTerm(item);
+                      setFilters(prev => ({ ...prev, search: item }));
+                      setSearchSuggestions([]);
+                    }}>
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Filters */}
-            <div className="flex gap-3">
-              <div className="flex items-center gap-2">
-                <Filter className="h-4 w-4 text-gray-400" />
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-40 bg-gray-900/50 border-gray-600 text-white">
-                    <SelectValue placeholder="Situação" />
+            {/* Campo de filtros minimalista com expansão vertical */}
+            <div className="w-full">
+              <div className="bg-gray-900/70 border border-gray-700/70 rounded-xl p-4">
+                <div className="flex items-center gap-3">
+                  <Button variant="outline" size="sm" className="bg-gray-900/70 border-gray-600 text-white hover:bg-gray-800" onClick={() => setIsFiltersOpen(v => !v)}>
+                    <Filter className="h-4 w-4 mr-2" /> {isFiltersOpen ? 'Ocultar filtros' : 'Filtros'}
+                  </Button>
+                  <div className="ml-auto flex items-center gap-2">
+                    {/* Ordenação */}
+                    <div className="hidden md:flex items-center gap-1 mr-2">
+                      <span className="text-xs text-gray-400">Ordenar por</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={`bg-gray-900/70 border-gray-600 text-white hover:bg-gray-800 ${orderBy.column==='created_at' ? 'ring-1 ring-blue-500/50' : ''}`}
+                        onClick={() => setOrderBy({ column: 'created_at', ascending: !orderBy.ascending })}
+                        title="Data de Adição"
+                      >
+                        Data
+                        {orderBy.column==='created_at' ? (orderBy.ascending ? <ChevronDown className="h-4 w-4 ml-1"/> : <ChevronUp className="h-4 w-4 ml-1"/>) : null}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={`bg-gray-900/70 border-gray-600 text-white hover:bg-gray-800 ${orderBy.column==='preco' ? 'ring-1 ring-blue-500/50' : ''}`}
+                        onClick={() => setOrderBy({ column: 'preco', ascending: !orderBy.ascending })}
+                        title="Valor"
+                      >
+                        Valor
+                        {orderBy.column==='preco' ? (orderBy.ascending ? <ChevronDown className="h-4 w-4 ml-1"/> : <ChevronUp className="h-4 w-4 ml-1"/>) : null}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={`bg-gray-900/70 border-gray-600 text-white hover:bg-gray-800 ${orderBy.column==='tamanho_m2' ? 'ring-1 ring-blue-500/50' : ''}`}
+                        onClick={() => setOrderBy({ column: 'tamanho_m2', ascending: !orderBy.ascending })}
+                        title="Área m²"
+                      >
+                        Área m²
+                        {orderBy.column==='tamanho_m2' ? (orderBy.ascending ? <ChevronDown className="h-4 w-4 ml-1"/> : <ChevronUp className="h-4 w-4 ml-1"/>) : null}
+                      </Button>
+                    </div>
+                    <span className="text-xs text-gray-400">Imóveis por Página</span>
+                    <Select value={String(pageSize)} onValueChange={(v) => { setPage(1); setPageSize(Number(v) as 12 | 24 | 50 | 100); }}>
+                      <SelectTrigger className="w-[100px] bg-gray-900/70 border-gray-600 text-white">
+                        <SelectValue placeholder="12" />
                   </SelectTrigger>
-                  <SelectContent className="bg-gray-900 border-gray-600">
-                    <SelectItem value="all">Todos</SelectItem>
-                    <SelectItem value="available">Disponível</SelectItem>
-                    <SelectItem value="sold">Vendido</SelectItem>
-                    <SelectItem value="rented">Alugado</SelectItem>
+                      <SelectContent className="bg-gray-900 border-gray-700">
+                        <SelectItem value="12">12</SelectItem>
+                        <SelectItem value="24">24</SelectItem>
+                        <SelectItem value="50">50</SelectItem>
+                        <SelectItem value="100">100</SelectItem>
                   </SelectContent>
                 </Select>
+                  </div>
               </div>
               
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="w-40 bg-gray-900/50 border-gray-600 text-white">
-                  <SelectValue placeholder="Tipo" />
-                </SelectTrigger>
-                <SelectContent className="bg-gray-900 border-gray-600">
-                  <SelectItem value="all">Todos</SelectItem>
-                  <SelectItem value="house">Casa</SelectItem>
-                  <SelectItem value="apartment">Apartamento</SelectItem>
-                  <SelectItem value="commercial">Comercial</SelectItem>
-                  <SelectItem value="land">Terreno</SelectItem>
-                </SelectContent>
-              </Select>
+                {isFiltersOpen && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-4">
+                    <Input placeholder="ID do Imóvel" className="w-full h-10 min-w-[200px] bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" defaultValue={filters.listingId || ''}
+                      onBlur={(e) => { setPage(1); setFilters(prev => ({ ...prev, listingId: e.target.value || undefined })); }} />
+                    <Input placeholder="Categoria (venda, aluguel)" className="w-full h-10 min-w-[200px] bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" defaultValue={(filters.tipoCategoria?.[0]) || ''}
+                      onBlur={(e) => { setPage(1); const v = e.target.value.trim(); setFilters(prev => ({ ...prev, tipoCategoria: v ? [v] : undefined })); }} />
+                    <Input placeholder="Imóvel (casa, apartamento, comercial, terreno)" className="w-full h-10 min-w-[200px] bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" defaultValue={(filters.tipoImovel?.[0]) || ''}
+                      onBlur={(e) => { setPage(1); const v = e.target.value.trim(); setFilters(prev => ({ ...prev, tipoImovel: v ? [v] : undefined })); }} />
+
+                    <div className="grid grid-cols-2 gap-2 min-w-[200px]">
+                      <Input type="number" placeholder="Preço mín." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, preco: { ...(p.preco||{}), min: e.target.value?Number(e.target.value):undefined } }))} />
+                      <Input type="number" placeholder="Preço máx." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, preco: { ...(p.preco||{}), max: e.target.value?Number(e.target.value):undefined } }))} />
             </div>
 
-            {/* Add Button */}
-            <motion.div
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
+                    <div className="grid grid-cols-2 gap-2 min-w-[200px]">
+                      <Input type="number" placeholder="Área mín. (m²)" className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, tamanho: { ...(p.tamanho||{}), min: e.target.value?Number(e.target.value):undefined } }))} />
+                      <Input type="number" placeholder="Área máx. (m²)" className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, tamanho: { ...(p.tamanho||{}), max: e.target.value?Number(e.target.value):undefined } }))} />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 min-w-[200px]">
+                      <Input type="number" placeholder="Quartos mín." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, quartos: { ...(p.quartos||{}), min: e.target.value?Number(e.target.value):undefined } }))} />
+                      <Input type="number" placeholder="Quartos máx." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, quartos: { ...(p.quartos||{}), max: e.target.value?Number(e.target.value):undefined } }))} />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 min-w-[200px]">
+                      <Input type="number" placeholder="Banheiros mín." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, banheiros: { ...(p.banheiros||{}), min: e.target.value?Number(e.target.value):undefined } }))} />
+                      <Input type="number" placeholder="Banheiros máx." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, banheiros: { ...(p.banheiros||{}), max: e.target.value?Number(e.target.value):undefined } }))} />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 min-w-[200px]">
+                      <Input type="number" placeholder="Suítes mín." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, suite: { ...(p.suite||{}), min: e.target.value?Number(e.target.value):undefined } }))} />
+                      <Input type="number" placeholder="Suítes máx." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, suite: { ...(p.suite||{}), max: e.target.value?Number(e.target.value):undefined } }))} />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 min-w-[200px]">
+                      <Input type="number" placeholder="Garagens mín." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, garagem: { ...(p.garagem||{}), min: e.target.value?Number(e.target.value):undefined } }))} />
+                      <Input type="number" placeholder="Garagens máx." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, garagem: { ...(p.garagem||{}), max: e.target.value?Number(e.target.value):undefined } }))} />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 min-w-[200px]">
+                      <Input type="number" placeholder="Andar mín." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, andar: { ...(p.andar||{}), min: e.target.value?Number(e.target.value):undefined } }))} />
+                      <Input type="number" placeholder="Andar máx." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, andar: { ...(p.andar||{}), max: e.target.value?Number(e.target.value):undefined } }))} />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 min-w-[200px]">
+                      <Input type="number" placeholder="Ano mín." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, anoConstrucao: { ...(p.anoConstrucao||{}), min: e.target.value?Number(e.target.value):undefined } }))} />
+                      <Input type="number" placeholder="Ano máx." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, anoConstrucao: { ...(p.anoConstrucao||{}), max: e.target.value?Number(e.target.value):undefined } }))} />
+                    </div>
+
+                    <div className="relative min-w-[200px]">
+                      <Input placeholder="Cidade" className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" defaultValue={filters.cidade || ''}
+                        onChange={async (e) => { const v = e.target.value; setFilters(prev => ({ ...prev, cidade: v || undefined })); setPage(1); setCitySuggestions(await suggestCities(v)); setNeighborhoodSuggestions([]); }} />
+                      {citySuggestions.length > 0 && (
+                        <div className="absolute z-50 mt-1 w-full bg-gray-900 border border-gray-700 rounded-md max-h-56 overflow-auto shadow-xl">
+                          {citySuggestions.map((c) => (
+                            <div key={c} className="px-3 py-2 hover:bg-gray-800 cursor-pointer" onMouseDown={() => { setFilters(prev => ({ ...prev, cidade: c })); setCitySuggestions([]); }}>
+                              {c}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="relative min-w-[200px]">
+                      <Input placeholder="Bairro" disabled={!filters.cidade} className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 disabled:opacity-50 disabled:cursor-not-allowed focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" defaultValue={filters.bairro || ''}
+                        onChange={async (e) => { const v = e.target.value; setFilters(prev => ({ ...prev, bairro: v || undefined })); setPage(1); setNeighborhoodSuggestions(await suggestNeighborhoods(filters.cidade || '', v)); }} />
+                      {neighborhoodSuggestions.length > 0 && (
+                        <div className="absolute z-50 mt-1 w-full bg-gray-900 border border-gray-700 rounded-md max-h-56 overflow-auto shadow-xl">
+                          {neighborhoodSuggestions.map((b) => (
+                            <div key={b} className="px-3 py-2 hover:bg-gray-800 cursor-pointer" onMouseDown={() => { setFilters(prev => ({ ...prev, bairro: b })); setNeighborhoodSuggestions([]); }}>
+                              {b}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="relative min-w-[200px]">
+                      <Input placeholder="Endereço" className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" defaultValue={filters.endereco || ''}
+                        onChange={async (e) => { const v = e.target.value; setFilters(prev => ({ ...prev, endereco: v || undefined })); setPage(1); setAddressSuggestions(await suggestAddresses(v)); }} />
+                      {addressSuggestions.length > 0 && (
+                        <div className="absolute z-50 mt-1 w-full bg-gray-900 border border-gray-700 rounded-md max-h-56 overflow-auto shadow-xl">
+                          {addressSuggestions.map((a) => (
+                            <div key={a} className="px-3 py-2 hover:bg-gray-800 cursor-pointer" onMouseDown={() => { setFilters(prev => ({ ...prev, endereco: a })); setAddressSuggestions([]); }}>
+                              {a}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <Input placeholder="CEP" className="w-full h-10 min-w-[200px] bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" defaultValue={filters.cep || ''}
+                      onBlur={(e) => { setPage(1); setFilters(prev => ({ ...prev, cep: e.target.value || undefined })); }} />
+
+                    <Input placeholder="Modalidade" className="w-full h-10 min-w-[200px] bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" defaultValue={(filters.tipoCategoria?.[0]) || ''}
+                      onBlur={(e) => { setPage(1); const v = e.target.value.trim(); setFilters(prev => ({ ...prev, tipoCategoria: v ? [v] : undefined })); }} />
+
+                    {/* Linha de ações dos filtros (vazia para ocupar colunas do grid) */}
+                    <div className="md:col-span-2 xl:col-span-3 flex items-center justify-end gap-2 mt-1">
+                      <Button
+                        variant="ghost"
+                        className="text-gray-300 hover:text-white"
+                        onClick={() => {
+                          setPage(1);
+                          setFilters({ search: filters.search });
+                          setCitySuggestions([]);
+                          setNeighborhoodSuggestions([]);
+                          setAddressSuggestions([]);
+                        }}
+                      >
+                        Limpar
+                      </Button>
+                      <Button
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                        onClick={() => {
+                          setPage(1);
+                          refetchImoveisList();
+                        }}
+                      >
+                        Aplicar Filtros
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Ações (empilhar quando filtros abertos) */}
+            <div className={isFiltersOpen ? "flex flex-col gap-2 w-full md:w-auto" : "flex gap-3"}>
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+              {!isCorretor && (
               <Button 
                 onClick={onAddNew} 
-                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0 shadow-lg"
+                    className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0 shadow-lg"
               >
                 <Plus className="h-4 w-4 mr-2" />
                 Adicionar Imóvel
               </Button>
+            )}
             </motion.div>
-
-            {/* Botão: Adicionar Imóveis VivaReal (upload XML) */}
-            <motion.div
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
               <Button
                 onClick={() => setIsVivaRealModalOpen(true)}
-                className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white border-0 shadow-lg"
+                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white border-0 shadow-lg"
               >
                 <Upload className="h-4 w-4 mr-2" />
                 Adicionar Imóveis VivaReal
               </Button>
             </motion.div>
+            </div>
 
             {/* Results Count */}
             <div className="text-sm text-gray-400 whitespace-nowrap">
@@ -1005,9 +1222,10 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                           </div>
                         )}
 
-                        {/* Status Badge - Top Left */}
-                        <div className="absolute top-3 left-3 z-20">
+                        {/* Status/Disponibilidade - Top Left */}
+                        <div className="absolute top-3 left-3 z-20 flex gap-2">
                           {getStatusBadge(property.status)}
+                          {getAvailabilityBadge((property as any).disponibilidade)}
                         </div>
 
 
@@ -1039,8 +1257,8 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                             <Badge variant="outline" className={getTypeColor(property.type)}>
                               {getTypeLabel(property.type)}
                             </Badge>
-                            <Badge variant="outline" className={getPurposeColor(property.property_purpose)}>
-                              {getPurposeIcon(property.property_purpose)} {property.property_purpose}
+                            <Badge variant="outline" className={getPurposeColor((property.property_purpose as 'Venda'|'Aluguel') || 'Venda')}>
+                              {getPurposeIcon((property.property_purpose as 'Venda'|'Aluguel') || 'Venda')} {property.property_purpose}
                             </Badge>
                           </div>
                         </motion.div>
@@ -1054,10 +1272,9 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                           <div className="flex items-center text-emerald-400 mb-1">
                             <DollarSign className="h-4 w-4 mr-1" />
                             <span className="text-2xl font-bold">
-                              {(property.price / 1000).toFixed(0)}k
+                              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(property.price || 0)}
                             </span>
                           </div>
-                          <span className="text-xs text-gray-400">R$ {property.price.toLocaleString('pt-BR')}</span>
                         </motion.div>
                       </div>
                       
@@ -1109,12 +1326,12 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
 
                       {/* Action Buttons */}
                       <motion.div 
-                        className="flex gap-2"
+                        className="flex flex-wrap gap-2"
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.7 }}
                       >
-                        <motion.div className="flex-1" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                        <motion.div className="flex-1 min-w-[120px]" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                           <Button 
                             variant="outline" 
                             size="sm" 
@@ -1126,7 +1343,8 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                           </Button>
                         </motion.div>
                         
-                        <motion.div className="flex-1" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                        {!isCorretor && (
+                        <motion.div className="flex-1 min-w-[120px]" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                           <Button 
                             variant="outline" 
                             size="sm" 
@@ -1137,20 +1355,41 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                             Editar
                           </Button>
                         </motion.div>
+                        )}
+
+                        {/* Alterar disponibilidade */}
+                        <motion.div className="flex-1 min-w-[120px]" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                          <Button 
+                            variant="outline"
+                            size="sm"
+                            className="w-full bg-emerald-700 border-emerald-600 text-emerald-100 hover:bg-emerald-600 hover:text-white transition-all duration-200"
+                            onClick={() => {
+                              setAvailabilityTarget(property);
+                              setAvailabilityValue(((property as any).disponibilidade || 'disponivel') as any);
+                              setAvailabilityNote('');
+                              setAvailabilityDialogOpen(true);
+                            }}
+                          >
+                            <Shield className="h-4 w-4 mr-1" />
+                            Disponibilidade
+                          </Button>
+                        </motion.div>
                         
                         <AlertDialog>
+                          {!isCorretor && (
                           <AlertDialogTrigger asChild>
-                            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                            <motion.div className="flex-none" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                               <Button 
                                 variant="outline" 
                                 size="sm" 
-                                className="bg-red-700 border-red-600 text-red-100 hover:bg-red-600 hover:text-white transition-all duration-200"
+                                className="bg-red-700 border-red-600 text-red-100 hover:bg-red-600 hover:text-white transition-all duration-200 w-9 h-9 p-0"
                                 onClick={() => setDeletingProperty(property)}
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                             </motion.div>
                           </AlertDialogTrigger>
+                          )}
                           <AlertDialogContent className="bg-gray-800 border-gray-700">
                             <AlertDialogHeader>
                               <AlertDialogTitle className="text-white">Confirmar Exclusão</AlertDialogTitle>
@@ -1179,6 +1418,42 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
               ))}
             </AnimatePresence>
           </motion.div>
+        )}
+
+        {/* Paginação */}
+        {!loadingCombined && total > 0 && (
+          <div className="flex items-center justify-between mt-8">
+            <div className="text-sm text-gray-400">
+              Página <span className="text-white font-semibold">{page}</span> de{' '}
+              <span className="text-white font-semibold">{Math.max(1, Math.ceil(total / pageSize))}</span>
+              <span className="ml-2 text-gray-500">({total} imóveis)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" className="bg-gray-900/50 border-gray-600 text-white" disabled={page <= 1} onClick={() => setPage(Math.max(1, page - 1))}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <div className="hidden sm:flex items-center gap-1">
+                {(() => {
+                  const totalPages = Math.ceil(total / pageSize);
+                  const window = 7;
+                  const half = Math.floor(window / 2);
+                  let start = Math.max(1, page - half);
+                  const end = Math.min(totalPages, start + window - 1);
+                  start = Math.max(1, end - window + 1);
+                  const pages = [] as number[];
+                  for (let p = start; p <= end; p++) pages.push(p);
+                  return pages.map((p) => (
+                    <Button key={p} size="sm" variant={p === page ? 'default' : 'outline'} className={p === page ? 'bg-blue-600 text-white' : 'bg-gray-900/50 border-gray-600 text-white'} onClick={() => setPage(p)}>
+                      {p}
+                    </Button>
+                  ));
+                })()}
+              </div>
+              <Button variant="outline" className="bg-gray-900/50 border-gray-600 text-white" disabled={page >= Math.ceil(total / pageSize)} onClick={() => setPage(page + 1)}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
         )}
 
         {/* Empty State */}
@@ -1233,6 +1508,74 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
         open={isDetailsOpen}
         onClose={handleCloseDetails}
       />
+
+      {/* Modal de Alteração de Disponibilidade */}
+      <Dialog open={availabilityDialogOpen} onOpenChange={setAvailabilityDialogOpen}>
+        <DialogContent className="bg-gray-900 border border-gray-700 text-white sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-xl">Alterar disponibilidade</DialogTitle>
+            <DialogDescription className="text-gray-300">
+              Se marcar como Indisponível ou Reforma, descreva o motivo na observação.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="flex gap-3">
+              <Select value={availabilityValue} onValueChange={(v: any) => setAvailabilityValue(v)}>
+                <SelectTrigger className="w-48 bg-gray-900/50 border-gray-600 text-white">
+                  <SelectValue placeholder="Disponibilidade" />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-900 border-gray-600">
+                  <SelectItem value="disponivel">Disponível</SelectItem>
+                  <SelectItem value="indisponivel">Indisponível</SelectItem>
+                  <SelectItem value="reforma">Reforma</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-sm text-gray-300">Observação</label>
+              <Textarea
+                value={availabilityNote}
+                onChange={(e) => setAvailabilityNote(e.target.value)}
+                className="mt-1 bg-gray-800 border-gray-700 text-white"
+                placeholder="Descreva o motivo quando marcar Indisponível ou Reforma"
+              />
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <Button
+                variant="outline"
+                className="border-gray-600 text-gray-300 hover:bg-gray-800"
+                onClick={() => setAvailabilityDialogOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={async () => {
+                  try {
+                    if (!availabilityTarget) return;
+                    const isViva = isVivaRealMode && availabilityTarget.id && !availabilityTarget.property_images;
+                    const table = isViva ? 'imoveisvivareal' : 'properties';
+                    const idCol = isViva ? 'id' : 'id';
+                    const updates: any = { disponibilidade: availabilityValue, disponibilidade_observacao: availabilityNote || null };
+                    const { error } = await supabase.from(table).update(updates).eq(idCol, isViva ? Number(availabilityTarget.id) : availabilityTarget.id);
+                    if (error) throw error;
+                    toast({ title: 'Disponibilidade atualizada com sucesso' });
+                    setAvailabilityDialogOpen(false);
+                    if (refetch) refetch();
+                  } catch (err: any) {
+                    toast({ title: 'Erro ao atualizar', description: err.message || 'Tente novamente', variant: 'destructive' });
+                  }
+                }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                Salvar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <PropertyImageGallery
         property={imageGalleryProperty}

@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -427,6 +427,69 @@ export type Database = {
           },
         ]
       }
+      inquilinato_conversations: {
+        Row: {
+          company_id: string | null
+          created_at: string
+          id: string
+          last_message_at: string
+          title: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string
+          id?: string
+          last_message_at?: string
+          title?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string
+          id?: string
+          last_message_at?: string
+          title?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      inquilinato_messages: {
+        Row: {
+          company_id: string | null
+          content: string
+          conversation_id: string | null
+          created_at: string
+          email: string | null
+          id: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          company_id?: string | null
+          content: string
+          conversation_id?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          role: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string | null
+          content?: string
+          conversation_id?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       leads: {
         Row: {
           company_id: string | null
@@ -525,6 +588,8 @@ export type Database = {
           company_id: string | null
           created_at: string | null
           description: string | null
+          disponibilidade: string | null
+          disponibilidade_observacao: string | null
           id: string
           price: number
           property_purpose: string | null
@@ -549,6 +614,8 @@ export type Database = {
           company_id?: string | null
           created_at?: string | null
           description?: string | null
+          disponibilidade?: string | null
+          disponibilidade_observacao?: string | null
           id?: string
           price: number
           property_purpose?: string | null
@@ -573,6 +640,8 @@ export type Database = {
           company_id?: string | null
           created_at?: string | null
           description?: string | null
+          disponibilidade?: string | null
+          disponibilidade_observacao?: string | null
           id?: string
           price?: number
           property_purpose?: string | null
@@ -962,6 +1031,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      _admin_global: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
       get_user_company: {
         Args: { user_uuid?: string }
         Returns: string
@@ -991,6 +1064,28 @@ export type Database = {
       is_manager: {
         Args: { user_uuid?: string }
         Returns: boolean
+      }
+      is_same_company_as: {
+        Args: { target_user_id: string }
+        Returns: boolean
+      }
+      list_company_users: {
+        Args: {
+          target_company_id?: string
+          search?: string
+          roles?: string[]
+          limit_count?: number
+          offset_count?: number
+        }
+        Returns: {
+          id: string
+          email: string
+          full_name: string
+          role: string
+          company_id: string
+          is_active: boolean
+          created_at: string
+        }[]
       }
     }
     Enums: {
