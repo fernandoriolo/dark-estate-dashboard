@@ -14,6 +14,56 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useUserProfile } from "@/hooks/useUserProfile";
 
+type TimePickerProps = {
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+};
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+// Normaliza tempo vindo do banco (ex.: '09:00:00') para 'HH:MM'
+const toHHMM = (t: any): string => {
+  if (!t || typeof t !== 'string') return '';
+  const parts = t.split(':');
+  if (parts.length >= 2) return `${pad2(parseInt(parts[0] || '0', 10))}:${pad2(parseInt(parts[1] || '0', 10))}`;
+  return t;
+};
+
+// Ajusta minutos para 00 ou 30 para o seletor atual
+const toHalfHour = (hhmm: string): string => {
+  const [hStr, mStr] = (hhmm || '').split(':');
+  const h = Math.min(23, Math.max(0, parseInt(hStr || '0', 10) || 0));
+  const mRaw = Math.min(59, Math.max(0, parseInt(mStr || '0', 10) || 0));
+  const m = mRaw < 30 ? 0 : 30;
+  return `${pad2(h)}:${pad2(m)}`;
+};
+
+function TimePicker({ value, onChange, disabled }: TimePickerProps) {
+  // opções de 08:00 até 19:30, a cada 30 minutos
+  const times: string[] = [];
+  for (let h = 8; h <= 19; h++) {
+    for (const m of [0, 30]) {
+      times.push(`${pad2(h)}:${pad2(m)}`);
+    }
+  }
+
+  return (
+    <Select value={value} onValueChange={onChange} disabled={disabled}>
+      <SelectTrigger className={`bg-gray-800 border-gray-700 text-white h-9 ${disabled ? 'opacity-60' : ''}`}>
+        <SelectValue placeholder="—:—" />
+      </SelectTrigger>
+      <SelectContent className="bg-gray-900 border border-gray-800 text-white max-h-64">
+        {times.map((t) => (
+          <SelectItem key={t} value={t} className="text-white font-mono">
+            {t}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 export const PlantaoView = () => {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -311,14 +361,36 @@ export const PlantaoView = () => {
     if (!current) return;
     let nextSlots = [...current.slots];
     const idx = nextSlots.findIndex(s => s.dia === dia);
+    // util: validação de horários (inicio < fim)
+    const toMinutes = (t: string) => {
+      const [hh, mm] = (t || '00:00').split(':');
+      const h = parseInt(hh || '0', 10);
+      const m = parseInt(mm || '0', 10);
+      return (isNaN(h) ? 0 : h) * 60 + (isNaN(m) ? 0 : m);
+    };
+
+    const currentInicio = idx === -1 ? '09:00' : nextSlots[idx].inicio;
+    const currentFim = idx === -1 ? '18:00' : nextSlots[idx].fim;
+    const candidateInicio = field === 'inicio' ? value : currentInicio;
+    const candidateFim = field === 'fim' ? value : currentFim;
+
+    if (toMinutes(candidateInicio) >= toMinutes(candidateFim)) {
+      toast({ description: 'Horário inválido: o início deve ser antes do fim.' });
+      return; // não persiste alteração inválida
+    }
+
     if (idx === -1) {
-      nextSlots.push({ dia, inicio: field === 'inicio' ? value : '09:00', fim: field === 'fim' ? value : '18:00' });
+      nextSlots.push({ dia, inicio: candidateInicio, fim: candidateFim });
     } else {
-      nextSlots[idx] = { ...nextSlots[idx], [field]: value } as EscalaSlot;
+      nextSlots[idx] = { ...nextSlots[idx], inicio: candidateInicio, fim: candidateFim } as EscalaSlot;
     }
     persistEscalas({ ...escalas, [calendarId]: { ...current, slots: nextSlots } });
     setDirtyCalendars(prev => ({ ...prev, [calendarId]: true }));
   };
+
+  // (Removido) copiar/colar horários — simplificado conforme solicitação
+
+  // (Removido) presets de dias e limpar tudo — a pedido do usuário
 
   const loadSchedule = async (calendarId: string, calendarName: string) => {
     try {
@@ -333,13 +405,13 @@ export const PlantaoView = () => {
 
       if (data) {
         const slots = [
-          data.mon_works ? { dia: 'Segunda', inicio: data.mon_start, fim: data.mon_end } : null,
-          data.tue_works ? { dia: 'Terça', inicio: data.tue_start, fim: data.tue_end } : null,
-          data.wed_works ? { dia: 'Quarta', inicio: data.wed_start, fim: data.wed_end } : null,
-          data.thu_works ? { dia: 'Quinta', inicio: data.thu_start, fim: data.thu_end } : null,
-          data.fri_works ? { dia: 'Sexta', inicio: data.fri_start, fim: data.fri_end } : null,
-          data.sat_works ? { dia: 'Sábado', inicio: data.sat_start, fim: data.sat_end } : null,
-          data.sun_works ? { dia: 'Domingo', inicio: data.sun_start, fim: data.sun_end } : null,
+          (data as any).mon_works ? { dia: 'Segunda', inicio: toHalfHour(toHHMM((data as any).mon_start)), fim: toHalfHour(toHHMM((data as any).mon_end)) } : null,
+          (data as any).tue_works ? { dia: 'Terça', inicio: toHalfHour(toHHMM((data as any).tue_start)), fim: toHalfHour(toHHMM((data as any).tue_end)) } : null,
+          (data as any).wed_works ? { dia: 'Quarta', inicio: toHalfHour(toHHMM((data as any).wed_start)), fim: toHalfHour(toHHMM((data as any).wed_end)) } : null,
+          (data as any).thu_works ? { dia: 'Quinta', inicio: toHalfHour(toHHMM((data as any).thu_start)), fim: toHalfHour(toHHMM((data as any).thu_end)) } : null,
+          (data as any).fri_works ? { dia: 'Sexta', inicio: toHalfHour(toHHMM((data as any).fri_start)), fim: toHalfHour(toHHMM((data as any).fri_end)) } : null,
+          (data as any).sat_works ? { dia: 'Sábado', inicio: toHalfHour(toHHMM((data as any).sat_start)), fim: toHalfHour(toHHMM((data as any).sat_end)) } : null,
+          (data as any).sun_works ? { dia: 'Domingo', inicio: toHalfHour(toHHMM((data as any).sun_start)), fim: toHalfHour(toHHMM((data as any).sun_end)) } : null,
         ].filter(Boolean) as EscalaSlot[];
         persistEscalas({ ...escalas, [calendarId]: { calendarName, assignedUserId: (data as any).assigned_user_id || undefined, slots } });
       } else {
@@ -348,6 +420,52 @@ export const PlantaoView = () => {
     } catch (e) {
       console.error('Falha ao carregar escala:', e);
       persistEscalas({ ...escalas, [calendarId]: { calendarName, assignedUserId: undefined, slots: [] } });
+    }
+  };
+
+  // Carrega todas as escalas do usuário para os calendários atuais
+  const loadAllSchedules = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      if (!calendars || calendars.length === 0) return;
+      const calendarIds = calendars.map(c => c.id);
+      const { data, error } = await supabase
+        .from('oncall_schedules')
+        .select('*')
+        .eq('user_id', user.id)
+        .in('calendar_id', calendarIds);
+      if (error) throw error;
+
+      const next: typeof escalas = { ...escalas };
+      // Inicializa todas as agendas conhecidas com slots vazios caso não haja registro
+      for (const c of calendars) {
+        if (!next[c.id]) {
+          next[c.id] = { calendarName: c.name, assignedUserId: undefined, slots: [] };
+        }
+      }
+      // Preenche com as escalas vindas do banco
+      for (const row of (data || [])) {
+        const calendarId = (row as any).calendar_id as string;
+        const calendarName = calendars.find(x => x.id === calendarId)?.name || (row as any).calendar_name || '';
+        const slots: EscalaSlot[] = [
+          (row as any).mon_works ? { dia: 'Segunda', inicio: toHalfHour(toHHMM((row as any).mon_start)), fim: toHalfHour(toHHMM((row as any).mon_end)) } : null,
+          (row as any).tue_works ? { dia: 'Terça', inicio: toHalfHour(toHHMM((row as any).tue_start)), fim: toHalfHour(toHHMM((row as any).tue_end)) } : null,
+          (row as any).wed_works ? { dia: 'Quarta', inicio: toHalfHour(toHHMM((row as any).wed_start)), fim: toHalfHour(toHHMM((row as any).wed_end)) } : null,
+          (row as any).thu_works ? { dia: 'Quinta', inicio: toHalfHour(toHHMM((row as any).thu_start)), fim: toHalfHour(toHHMM((row as any).thu_end)) } : null,
+          (row as any).fri_works ? { dia: 'Sexta', inicio: toHalfHour(toHHMM((row as any).fri_start)), fim: toHalfHour(toHHMM((row as any).fri_end)) } : null,
+          (row as any).sat_works ? { dia: 'Sábado', inicio: toHalfHour(toHHMM((row as any).sat_start)), fim: toHalfHour(toHHMM((row as any).sat_end)) } : null,
+          (row as any).sun_works ? { dia: 'Domingo', inicio: toHalfHour(toHHMM((row as any).sun_start)), fim: toHalfHour(toHHMM((row as any).sun_end)) } : null,
+        ].filter(Boolean) as EscalaSlot[];
+        next[calendarId] = {
+          calendarName,
+          assignedUserId: (row as any).assigned_user_id || undefined,
+          slots,
+        };
+      }
+      persistEscalas(next);
+    } catch (e) {
+      console.error('Falha ao carregar escalas:', e);
     }
   };
 
@@ -484,6 +602,27 @@ export const PlantaoView = () => {
     };
     loadUsers();
   }, [isManager, profile, getCompanyUsers]);
+
+  // Ao entrar na aba Escala, garantir carregamento das agendas e escalas do banco
+  useEffect(() => {
+    const ensureData = async () => {
+      if (activeTab !== 'escala') return;
+      if (calendars.length === 0) {
+        await puxarAgendas('auto');
+      }
+      await loadAllSchedules();
+    };
+    ensureData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  // Quando a lista de calendários mudar e a aba Escala estiver ativa, recarregar escalas
+  useEffect(() => {
+    if (activeTab === 'escala' && calendars.length > 0) {
+      loadAllSchedules();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calendars]);
 
   return (
     <div className="space-y-6">
@@ -795,25 +934,22 @@ export const PlantaoView = () => {
                                   <div className="mt-3 grid grid-cols-2 gap-2">
                                     <div>
                                       <label className="text-[10px] text-gray-400">Início</label>
-                                      <Input
-                                        type="time"
+                                      <TimePicker
                                         value={(info?.start as string) || '09:00'}
                                         disabled={!active}
-                                        onChange={(e) => setDayTime(c.id, d, 'inicio', e.target.value)}
-                                        className="bg-gray-800 border-gray-700 text-white h-9"
+                                        onChange={(val) => setDayTime(c.id, d, 'inicio', val)}
                                       />
                                     </div>
                                     <div>
                                       <label className="text-[10px] text-gray-400">Fim</label>
-                                      <Input
-                                        type="time"
+                                      <TimePicker
                                         value={(info?.end as string) || '18:00'}
                                         disabled={!active}
-                                        onChange={(e) => setDayTime(c.id, d, 'fim', e.target.value)}
-                                        className="bg-gray-800 border-gray-700 text-white h-9"
+                                        onChange={(val) => setDayTime(c.id, d, 'fim', val)}
                                       />
                                     </div>
                                   </div>
+                                  
                                 </div>
                               );
                             })}
