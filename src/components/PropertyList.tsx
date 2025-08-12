@@ -936,6 +936,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
               
                 {isFiltersOpen && (
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-4">
+                    {/* 1ª linha: ID do Imóvel - Categoria - Modalidade */}
                     <Input placeholder="ID do Imóvel" className="w-full h-10 min-w-[200px] bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" defaultValue={filters.listingId || ''}
                       onBlur={(e) => { setPage(1); setFilters(prev => ({ ...prev, listingId: e.target.value || undefined })); }} />
                     {/* Categoria (Residencial/Comercial) */}
@@ -974,12 +975,48 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                         </label>
                       </div>
                     </div>
-                    {/* Removido filtro por tipo_imovel conforme solicitação */}
+                    {/* Modalidade (Aluguel/Venda) */}
+                    <div className="w-full min-w-[200px] bg-gray-900/80 border border-gray-600 rounded-md p-2 text-white">
+                      <div className="text-xs text-gray-400 mb-2">Modalidade</div>
+                      <div className="flex gap-4 items-center">
+                        <label className="flex items-center gap-2 text-sm text-gray-200">
+                          <Checkbox
+                            checked={!!filters.tipoCategoria?.includes('Rent')}
+                            onCheckedChange={(checked) => {
+                              setPage(1);
+                              setFilters(prev => {
+                                const current = new Set(prev.tipoCategoria || []);
+                                if (checked) current.add('Rent'); else current.delete('Rent');
+                                const arr = Array.from(current);
+                                return { ...prev, tipoCategoria: arr.length ? arr : undefined };
+                              });
+                            }}
+                          />
+                          Aluguel
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-gray-200">
+                          <Checkbox
+                            checked={!!filters.tipoCategoria?.includes('For Sale')}
+                            onCheckedChange={(checked) => {
+                              setPage(1);
+                              setFilters(prev => {
+                                const current = new Set(prev.tipoCategoria || []);
+                                if (checked) current.add('For Sale'); else current.delete('For Sale');
+                                const arr = Array.from(current);
+                                return { ...prev, tipoCategoria: arr.length ? arr : undefined };
+                              });
+                            }}
+                          />
+                          Venda
+                        </label>
+                      </div>
+                    </div>
 
+                    {/* 1ª linha (abaixo): Preço mín/máx – ocupa uma coluna inteira */}
                     <div className="grid grid-cols-2 gap-2 min-w-[200px]">
                       <Input type="number" placeholder="Preço mín." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, preco: { ...(p.preco||{}), min: e.target.value?Number(e.target.value):undefined } }))} />
                       <Input type="number" placeholder="Preço máx." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, preco: { ...(p.preco||{}), max: e.target.value?Number(e.target.value):undefined } }))} />
-            </div>
+                    </div>
 
                     <div className="grid grid-cols-2 gap-2 min-w-[200px]">
                       <Input type="number" placeholder="Área mín. (m²)" className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, tamanho: { ...(p.tamanho||{}), min: e.target.value?Number(e.target.value):undefined } }))} />
@@ -1060,44 +1097,6 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
 
                     <Input placeholder="CEP" className="w-full h-10 min-w-[200px] bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" defaultValue={filters.cep || ''}
                       onBlur={(e) => { setPage(1); setFilters(prev => ({ ...prev, cep: e.target.value || undefined })); }} />
-
-                    {/* Modalidade (Aluguel/Venda) */}
-                    <div className="w-full min-w-[200px] bg-gray-900/80 border border-gray-600 rounded-md p-2 text-white">
-                      <div className="text-xs text-gray-400 mb-2">Modalidade</div>
-                      <div className="flex gap-4 items-center">
-                        <label className="flex items-center gap-2 text-sm text-gray-200">
-                          <Checkbox
-                            checked={!!filters.tipoCategoria?.includes('Rent')}
-                            onCheckedChange={(checked) => {
-                              setPage(1);
-                              setFilters(prev => {
-                                const current = new Set(prev.tipoCategoria || []);
-                                if (checked) current.add('Rent'); else current.delete('Rent');
-                                // Sale/Rent deve aparecer em ambos os casos, o filtro no hook já usa IN
-                                const arr = Array.from(current);
-                                return { ...prev, tipoCategoria: arr.length ? arr : undefined };
-                              });
-                            }}
-                          />
-                          Aluguel
-                        </label>
-                        <label className="flex items-center gap-2 text-sm text-gray-200">
-                          <Checkbox
-                            checked={!!filters.tipoCategoria?.includes('For Sale')}
-                            onCheckedChange={(checked) => {
-                              setPage(1);
-                              setFilters(prev => {
-                                const current = new Set(prev.tipoCategoria || []);
-                                if (checked) current.add('For Sale'); else current.delete('For Sale');
-                                const arr = Array.from(current);
-                                return { ...prev, tipoCategoria: arr.length ? arr : undefined };
-                              });
-                            }}
-                          />
-                          Venda
-                        </label>
-                      </div>
-                    </div>
 
                     {/* Linha de ações dos filtros (vazia para ocupar colunas do grid) */}
                     <div className="md:col-span-2 xl:col-span-3 flex items-center justify-end gap-2 mt-1">
