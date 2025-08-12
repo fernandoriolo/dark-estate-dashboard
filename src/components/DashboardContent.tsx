@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { UpcomingAppointments } from "@/components/UpcomingAppointments";
 import { LayoutPreview } from "@/components/LayoutPreview";
 import { RecentActivitiesCard } from "@/components/RecentActivitiesCard";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend, LabelList } from 'recharts';
 
 interface DashboardContentProps {
   properties: PropertyWithImages[];
@@ -192,6 +193,11 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
     acc[client.source] = (acc[client.source] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
+  const clientsPieData = Object.entries(clientsBySource).map(([name, value]) => ({ name, value }));
+  const PIE_COLORS = [
+    '#60a5fa', '#34d399', '#f59e0b', '#a78bfa', '#f472b6',
+    '#22d3ee', '#f43f5e', '#10b981', '#eab308', '#3b82f6'
+  ];
 
   // Função para calcular percentual de mudança
   const calculatePercentageChange = (current: number, previous: number): { change: string, type: "positive" | "negative" | "neutral" } => {
@@ -394,6 +400,33 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
                   <span className="text-white font-medium">{totalLeads}</span>
                 </div>
               </div>
+
+              {/* Pie Chart Responsivo */}
+              {clientsPieData.length > 0 && (
+                <div className="mt-4 h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <RechartsTooltip wrapperStyle={{ backgroundColor: '#111827', border: '1px solid #374151', color: '#e5e7eb' }} />
+                      <Legend />
+                      <Pie
+                        data={clientsPieData}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={50}
+                        outerRadius={90}
+                        paddingAngle={3}
+                      >
+                        {clientsPieData.map((entry, index) => (
+                          <Cell key={`cell-${entry.name}-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                        ))}
+                        <LabelList dataKey="value" position="outside" className="fill-gray-300" />
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
