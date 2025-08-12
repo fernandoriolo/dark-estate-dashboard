@@ -23,7 +23,6 @@ import {
   Eye,
   Edit,
   Home,
-  DollarSign,
   Star,
   Sparkles,
   Zap,
@@ -802,31 +801,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
           </div>
         </motion.div>
 
-        {/* Campo de Pesquisa abaixo dos filtros */}
-        <div className="relative z-10 px-8 mb-8">
-          <div className="relative max-w-5xl mx-auto">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-            <Input
-              placeholder="Pesquisar imóveis..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 bg-gray-900/70 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-blue-500/20"
-            />
-            {searchSuggestions.length > 0 && (
-              <div className="absolute z-50 mt-1 w-full bg-gray-900 border border-gray-700 rounded-md max-h-56 overflow-auto shadow-xl">
-                {searchSuggestions.map((item) => (
-                  <div key={item} className="px-3 py-2 hover:bg-gray-800 cursor-pointer" onMouseDown={() => {
-                    setSearchTerm(item);
-                    setFilters(prev => ({ ...prev, search: item }));
-                    setSearchSuggestions([]);
-                  }}>
-                    {item}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+        {/* Campo de Pesquisa ficará logo após a seção de filtros (renderizado mais abaixo) */}
 
         {/* Stats Cards */}
         <motion.div 
@@ -1186,6 +1161,34 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
           </div>
         </motion.div>
 
+        {/* Campo de Pesquisa — imediatamente após a seção de filtros */}
+        <div className="relative z-10 mb-8">
+          <div className="relative bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <Input
+                placeholder="Pesquisar imóveis..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 bg-gray-900/70 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-blue-500/20 w-full"
+              />
+            </div>
+            {searchSuggestions.length > 0 && (
+              <div className="mt-1 w-full bg-gray-900 border border-gray-700 rounded-md max-h-56 overflow-auto shadow-xl">
+                {searchSuggestions.map((item) => (
+                  <div key={item} className="px-3 py-2 hover:bg-gray-800 cursor-pointer" onMouseDown={() => {
+                    setSearchTerm(item);
+                    setFilters(prev => ({ ...prev, search: item }));
+                    setSearchSuggestions([]);
+                  }}>
+                    {item}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Loading State */}
         {loadingCombined && (
           <motion.div 
@@ -1392,8 +1395,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                           animate={{ opacity: 1, x: 0 }}
                           transition={{ delay: 0.3 }}
                         >
-                          <div className="flex items-center text-emerald-400 mb-1">
-                            <DollarSign className="h-4 w-4 mr-1" />
+                          <div className="text-emerald-400 mb-1">
                             <span className="text-2xl font-bold">
                               {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(property.price || 0)}
                             </span>
