@@ -166,8 +166,26 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
 
   const isExpanded = (title: string) => expandedItems.includes(title);
 
-  // Pegar primeira letra do email para o avatar
-  const avatarLetter = user?.email?.charAt(0).toUpperCase() || 'U';
+  // Nome e role do usuário (prioriza perfil do banco)
+  const displayName =
+    (profile?.full_name && profile.full_name.trim())
+      ? profile.full_name
+      : (user?.user_metadata?.name || user?.email || 'Usuário');
+
+  const roleLabelMap: Record<'admin' | 'gestor' | 'corretor', string> = {
+    admin: 'Administrador',
+    gestor: 'Gestor',
+    corretor: 'Corretor',
+  };
+
+  const roleClassMap: Record<'admin' | 'gestor' | 'corretor', string> = {
+    admin: 'bg-red-500/15 text-red-300 border border-red-500/30',
+    gestor: 'bg-amber-500/15 text-amber-300 border border-amber-500/30',
+    corretor: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30',
+  };
+
+  // Letra do avatar (primeira letra do nome ou email)
+  const avatarLetter = (displayName?.charAt(0) || user?.email?.charAt(0) || 'U').toUpperCase();
 
   // Filtrar menus baseado nas permissões
   const filteredMenuItems = menuItems.filter(item => {
@@ -285,13 +303,23 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
 
       <SidebarFooter className="p-4 border-t border-gray-800 bg-gray-900">
         <div className="space-y-3">
-          <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-800/70 hover:bg-gray-800 transition-colors cursor-pointer">
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-800/70 hover:bg-gray-800 transition-colors">
             <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center">
               <span className="text-sm font-medium text-white">{avatarLetter}</span>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate">{user?.user_metadata.name || 'Admin'}</p>
-              <p className="text-xs text-gray-400 truncate">{user?.email || 'admin@imobipro.com'}</p>
+              <p className="text-sm font-medium text-white truncate">{displayName}</p>
+              <div className="mt-0.5 flex items-center gap-2">
+                <p className="text-xs text-gray-400 truncate max-w-[12rem]">{user?.email}</p>
+                {profile?.role && (
+                  <span
+                    className={`text-[10px] leading-4 px-2 py-0.5 rounded-full whitespace-nowrap ${roleClassMap[profile.role]}`}
+                    title={roleLabelMap[profile.role]}
+                  >
+                    {roleLabelMap[profile.role]}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           <Button 
