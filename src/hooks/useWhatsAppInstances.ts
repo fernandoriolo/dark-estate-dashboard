@@ -92,10 +92,9 @@ export function useWhatsAppInstances() {
       if (profile.role === 'corretor') {
         query = query.eq('user_id', profile.id);
       } 
-      // Se for gestor/admin, buscar todas as instâncias
+      // Se for gestor/admin, buscar todas as instâncias (sem filtro extra)
       else if (isManager) {
-        // Gestores veem todas as instâncias
-        query = query;
+        // no-op
       } else {
         // Fallback para apenas próprias instâncias
         query = query.eq('user_id', profile.id);
@@ -163,11 +162,11 @@ export function useWhatsAppInstances() {
           });
           
           // Mapear status
-          const statusMap: { [key: string]: any } = {
-            'open': 'connected',
-            'connecting': 'connecting',
-            'close': 'disconnected',
-            'closed': 'disconnected'
+          const statusMap: Record<string, 'connected' | 'connecting' | 'disconnected'> = {
+            open: 'connected',
+            connecting: 'connecting',
+            close: 'disconnected',
+            closed: 'disconnected'
           };
           
           return {
@@ -213,11 +212,11 @@ export function useWhatsAppInstances() {
             });
             
             // Mapear status
-            const statusMap: { [key: string]: any } = {
-              'open': 'connected',
-              'connecting': 'connecting',
-              'close': 'disconnected',
-              'closed': 'disconnected'
+            const statusMap: Record<string, 'connected' | 'connecting' | 'disconnected'> = {
+              open: 'connected',
+              connecting: 'connecting',
+              close: 'disconnected',
+              closed: 'disconnected'
             };
             
             return {

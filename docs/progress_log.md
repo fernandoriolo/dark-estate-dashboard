@@ -1,3 +1,13 @@
+## 2025-08-11
+
+- Adicionado menu `Lei do Inquilinato` com ícone de robô na sidebar (`AppSidebar`) e nova view `InquilinatoView`.
+- Atualizado roteamento por `currentView` em `src/pages/Index.tsx` para suportar `inquilinato`.
+- Incluída permissão `menu_inquilinato` para todas as roles via migration `supabase/migrations/20250811_add_menu_inquilinato.sql`.
+- Atualizado `create_permissions_system.sql` para contemplar a nova permissão (idempotente).
+
+Próximos passos:
+- Enriquecer `InquilinatoView` com conteúdo e referências oficiais (busca, filtros, links).
+- Ajustar catálogo de eventos caso haja automações relacionadas (n/a por ora).
 # ImobiPRO Dashboard — progress_log.md
 
 ## Banco de Dados (Supabase) — Inventário e Relações
@@ -185,3 +195,19 @@ erDiagram
 
 ---
 Última atualização: gerada automaticamente.
+
+## 2025-08-10 — Endurecimento de RLS e unificação
+- Criada migration `supabase/migrations/20250810090000_harden_rls_policies.sql` consolidando políticas RLS por `company_id` + `role` e removendo políticas permissivas/duplicadas.
+- Adicionadas funções `get_user_role()` e `get_user_company_id()` (SECURITY DEFINER) e triggers `set_row_tenant_defaults()` para popular `user_id`/`company_id` em inserts.
+- Padronizadas políticas em `properties`, `leads`, `contracts`, `contract_templates`, `property_images`, `whatsapp_*`, `companies`, `user_profiles` com `WITH CHECK (company_id = get_user_company_id())` onde aplicável.
+- Storage `property-images`: leitura pública, mutações somente autenticadas; mantida segurança mínima sem quebrar MVP.
+- Ajustado `src/integrations/supabase/client.ts` para permitir `signInAnonymously()` apenas em DEV quando `VITE_ENABLE_ANON_LOGIN=true`.
+- Atualizado `docs/hierarquia-usuarios.md` com matriz de permissões por tabela.
+
+Próximos passos sugeridos:
+- Regenerar `src/integrations/supabase/types.ts` após aplicar migrations no projeto Supabase.
+- Expandir `verify_access_levels.sql` com asserts para cada role e cenários de falha esperada.
+
+## 2025-08-10 — Índices de performance
+- Criada migration `supabase/migrations/20250810094500_add_performance_indexes.sql` com índices em `company_id`, `user_id`, `created_at` e chaves de junção (`property_id`, `instance_id`, `chat_id`, etc.) nas tabelas de domínio.
+- Objetivo: evitar full table scans sob RLS (filtros por empresa/usuário) e melhorar paginação/ordenação.

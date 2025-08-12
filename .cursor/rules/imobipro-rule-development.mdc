@@ -167,8 +167,8 @@ src/
 ## 9. Documentos vivos (obrigatórios)
 
 * `@docs/progress_log.md` — documento com estrutura resumida das ações realizadas. Atualizar ao final de cada PR (SUMÁRIO). A IA deve escrever entradas claras e resumidas automaticamente e possíveis próximos passos.
-* `@docs/database-schema.md` — refletir migrations. Este arquivo pode e deve ser atualizado quando houverem atualizações no supabase.
-* `@docs/hierarquia-usuarios.md` — conter matrizes de permissão por tabela.
+* `@docs/database-schema.md` — refletir migrations. Este arquivo pode e deve ser atualizado quando houverem atualizações no supabase. As RLS e como as tabelas conversam entrem si devem ser comentados de forma didática para que leigos entendam.
+* `@docs/hierarquia-usuarios.md` — conter matrizes de permissão por tabela. Comentar de forma didática as hierarquias e como tudo está funcionando.
 * `@docs/events.md` — catálogo versionado de eventos n8n.
 
 ---

@@ -26,6 +26,7 @@ export interface ImovelVivaReal {
   cep: string | null;
   user_id: string | null;
   company_id: string | null;
+  modalidade: string | null;
   created_at: string | null;
   updated_at: string | null;
 }
