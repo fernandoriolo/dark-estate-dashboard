@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { DashboardHeader } from "@/components/DashboardHeader";
@@ -21,6 +21,7 @@ import { InquilinatoView } from "@/components/InquilinatoView";
 import { ChatsView } from "@/components/ChatsView";
 
 import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
+import { usePermissions } from "@/hooks/usePermissions";
 
 const Index = () => {
   const [currentView, setCurrentView] = useState<
@@ -41,6 +42,51 @@ const Index = () => {
   >("dashboard");
   const [isPropertyModalOpen, setIsPropertyModalOpen] = useState(false);
   const { imoveis, loading, refetch } = useImoveisVivaReal();
+  const { hasPermission } = usePermissions();
+
+  // Views em ordem de prioridade para fallback de navegação quando dashboard não é permitido
+  const fallbackViews = useMemo(
+    () => [
+      "properties",
+      "clients",
+      "clients-crm",
+      "agenda",
+      "reports",
+      "portals",
+      "connections",
+      "users",
+      "permissions",
+      "inquilinato",
+    ] as const,
+    []
+  );
+
+  // Se o usuário não tem acesso ao dashboard, escolher a primeira view permitida como default
+  useEffect(() => {
+    // Evita rodar antes das permissões estarem disponíveis
+    const canSeeDashboard = hasPermission?.("menu_dashboard");
+    if (currentView === "dashboard" && canSeeDashboard === false) {
+      const next = fallbackViews.find((v) => {
+        const keyMap: Record<string, string> = {
+          dashboard: "menu_dashboard",
+          properties: "menu_properties",
+          contracts: "menu_contracts",
+          agenda: "menu_agenda",
+          reports: "menu_reports",
+          portals: "menu_portals",
+          clients: "menu_clients",
+          "clients-crm": "menu_clients_crm",
+          connections: "menu_connections",
+          users: "menu_users",
+          permissions: "menu_permissions",
+          inquilinato: "menu_inquilinato",
+        };
+        const key = keyMap[v as string];
+        return key ? hasPermission?.(key) : true;
+      });
+      if (next) setCurrentView(next as typeof currentView);
+    }
+  }, [currentView, hasPermission, fallbackViews]);
 
   const handlePropertySubmit = () => {
     refetch();
