@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   Building2, 
@@ -308,6 +309,60 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
   const [galleryInitialIndex, setGalleryInitialIndex] = useState(0);
   const [particles, setParticles] = useState<number[]>([]);
   const { toast } = useToast();
+  
+  // Estatísticas do cabeçalho (baseadas em public.imoveisvivareal)
+  const [statsLoading, setStatsLoading] = useState<boolean>(true);
+  const [stats, setStats] = useState<{ total: number; disponiveis: number; aluguel: number; venda: number }>({ total: 0, disponiveis: 0, aluguel: 0, venda: 0 });
+
+  const fetchImoveisStats = async () => {
+    try {
+      setStatsLoading(true);
+      const totalResPromise = (supabase as any).from('imoveisvivareal').select('id', { count: 'exact', head: true }) as Promise<any>;
+      const dispResPromise = (supabase as any).from('imoveisvivareal').select('id', { count: 'exact', head: true }).eq('disponibilidade', 'disponivel') as Promise<any>;
+      const aluguelResPromise = (supabase as any)
+        .from('imoveisvivareal')
+        .select('id', { count: 'exact', head: true })
+        .in('modalidade', ['Rent', 'Sale/Rent']) as Promise<any>;
+      const vendaResPromise = (supabase as any)
+        .from('imoveisvivareal')
+        .select('id', { count: 'exact', head: true })
+        .in('modalidade', ['For Sale', 'Sale/Rent']) as Promise<any>;
+
+      const [totalRes, dispRes, aluguelRes, vendaRes] = await Promise.all([totalResPromise, dispResPromise, aluguelResPromise, vendaResPromise]);
+
+      setStats({
+        total: (totalRes && totalRes.count) ?? 0,
+        disponiveis: (dispRes && dispRes.count) ?? 0,
+        aluguel: (aluguelRes && aluguelRes.count) ?? 0,
+        venda: (vendaRes && vendaRes.count) ?? 0,
+      });
+    } finally {
+      setStatsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchImoveisStats();
+  }, []);
+
+  // Real-time: atualiza métricas quando houver qualquer mudança em public.imoveisvivareal
+  useEffect(() => {
+    const channel = supabase
+      .channel(`imoveis-stats-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'imoveisvivareal' },
+        () => fetchImoveisStats()
+      );
+
+    channel.subscribe();
+
+    return () => {
+      try { supabase.removeChannel(channel); } catch (e) {
+        // noop
+      }
+    };
+  }, []);
 
   // Estado do modal de upload VivaReal
   const [isVivaRealModalOpen, setIsVivaRealModalOpen] = useState(false);
@@ -402,6 +457,9 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
       created_at: i.created_at || null,
       updated_at: i.updated_at || null,
       property_images: (i.imagens || []).map((url: string) => ({ image_url: url })) as any,
+      // Campos extras (fora do tipo PropertyWithImages) para integração de disponibilidade
+      ...(i.disponibilidade ? { disponibilidade: i.disponibilidade } : {}),
+      ...(i.disponibilidade_observacao ? { disponibilidade_observacao: i.disponibilidade_observacao } : {}),
     } as unknown as PropertyWithImages;
   });
 
@@ -469,9 +527,9 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
 
   const getStatusBadge = (status: PropertyWithImages["status"]) => {
     const variants = {
-      available: "bg-emerald-500/20 text-emerald-300 border-emerald-400/50",
-      sold: "bg-blue-500/20 text-blue-300 border-blue-400/50", 
-      rented: "bg-yellow-500/20 text-yellow-300 border-yellow-400/50"
+      available: "bg-emerald-700 text-white border-emerald-600",
+      sold: "bg-blue-700 text-white border-blue-600", 
+      rented: "bg-yellow-700 text-white border-yellow-600"
     };
     
     const labels = {
@@ -539,9 +597,9 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
   const getAvailabilityBadge = (availability: 'disponivel'|'indisponivel'|'reforma'|undefined) => {
     const v = availability || 'disponivel';
     const map: Record<string, string> = {
-      disponivel: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50',
-      indisponivel: 'bg-red-500/20 text-red-300 border-red-400/50',
-      reforma: 'bg-yellow-500/20 text-yellow-300 border-yellow-400/50'
+      disponivel: 'bg-emerald-700 text-white border-emerald-600',
+      indisponivel: 'bg-red-700 text-white border-red-600',
+      reforma: 'bg-yellow-700 text-white border-yellow-600'
     };
     const label: Record<string, string> = {
       disponivel: 'Disponível',
@@ -744,6 +802,32 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
           </div>
         </motion.div>
 
+        {/* Campo de Pesquisa abaixo dos filtros */}
+        <div className="relative z-10 px-8 mb-8">
+          <div className="relative max-w-5xl mx-auto">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+            <Input
+              placeholder="Pesquisar imóveis..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 bg-gray-900/70 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-blue-500/20"
+            />
+            {searchSuggestions.length > 0 && (
+              <div className="absolute z-50 mt-1 w-full bg-gray-900 border border-gray-700 rounded-md max-h-56 overflow-auto shadow-xl">
+                {searchSuggestions.map((item) => (
+                  <div key={item} className="px-3 py-2 hover:bg-gray-800 cursor-pointer" onMouseDown={() => {
+                    setSearchTerm(item);
+                    setFilters(prev => ({ ...prev, search: item }));
+                    setSearchSuggestions([]);
+                  }}>
+                    {item}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Stats Cards */}
         <motion.div 
           className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8"
@@ -756,7 +840,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-400 text-sm font-medium">Total</p>
-                  <p className="text-3xl font-bold text-white">{effectiveProperties.length}</p>
+                  <p className="text-3xl font-bold text-white">{statsLoading ? '—' : stats.total}</p>
                 </div>
                 <div className="bg-blue-500/20 p-3 rounded-full">
                   <Building2 className="h-6 w-6 text-blue-400" />
@@ -770,9 +854,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-400 text-sm font-medium">Disponíveis</p>
-                  <p className="text-3xl font-bold text-white">
-                    {effectiveProperties.filter(p => p.status === 'available').length}
-                  </p>
+                  <p className="text-3xl font-bold text-white">{statsLoading ? '—' : stats.disponiveis}</p>
                 </div>
                 <div className="bg-emerald-500/20 p-3 rounded-full">
                   <CheckCircle className="h-6 w-6 text-emerald-400" />
@@ -785,10 +867,8 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-400 text-sm font-medium">Alugadas</p>
-                  <p className="text-3xl font-bold text-white">
-                    {effectiveProperties.filter(p => p.status === 'rented').length}
-                  </p>
+                  <p className="text-gray-400 text-sm font-medium">Imóveis para Aluguel</p>
+                  <p className="text-3xl font-bold text-white">{statsLoading ? '—' : stats.aluguel}</p>
                 </div>
                 <div className="bg-yellow-500/20 p-3 rounded-full">
                   <Key className="h-6 w-6 text-yellow-400" />
@@ -801,10 +881,8 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-400 text-sm font-medium">Vendidas</p>
-                  <p className="text-3xl font-bold text-white">
-                    {effectiveProperties.filter(p => p.status === 'sold').length}
-                  </p>
+                  <p className="text-gray-400 text-sm font-medium">Imóveis para Venda</p>
+                  <p className="text-3xl font-bold text-white">{statsLoading ? '—' : stats.venda}</p>
                 </div>
                 <div className="bg-purple-500/20 p-3 rounded-full">
                   <Shield className="h-6 w-6 text-purple-400" />
@@ -814,37 +892,15 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
           </Card>
         </motion.div>
 
-        {/* Controls Section */}
+        {/* Controls Section (somente filtros) */}
         <motion.div 
-          className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 mb-8"
+          className="bg-gray-800/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 mb-4"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.6, duration: 0.6 }}
         >
           <div className={`flex ${isFiltersOpen ? 'flex-col' : 'flex-col lg:flex-row'} gap-4 items-stretch lg:items-center`}>
-            {/* Search */}
-            <div className={`relative flex-1 ${isFiltersOpen ? 'w-full' : 'max-w-2xl'}`}>
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-              <Input
-                placeholder="Pesquisar imóveis..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 bg-gray-900/70 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-blue-500/20"
-              />
-              {searchSuggestions.length > 0 && (
-                <div className="absolute z-50 mt-1 w-full bg-gray-900 border border-gray-700 rounded-md max-h-56 overflow-auto shadow-xl">
-                  {searchSuggestions.map((item) => (
-                    <div key={item} className="px-3 py-2 hover:bg-gray-800 cursor-pointer" onMouseDown={() => {
-                      setSearchTerm(item);
-                      setFilters(prev => ({ ...prev, search: item }));
-                      setSearchSuggestions([]);
-                    }}>
-                      {item}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* Search movido para abaixo dos filtros */}
 
             {/* Campo de filtros minimalista com expansão vertical */}
             <div className="w-full">
@@ -907,10 +963,43 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-4">
                     <Input placeholder="ID do Imóvel" className="w-full h-10 min-w-[200px] bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" defaultValue={filters.listingId || ''}
                       onBlur={(e) => { setPage(1); setFilters(prev => ({ ...prev, listingId: e.target.value || undefined })); }} />
-                    <Input placeholder="Categoria (venda, aluguel)" className="w-full h-10 min-w-[200px] bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" defaultValue={(filters.tipoCategoria?.[0]) || ''}
-                      onBlur={(e) => { setPage(1); const v = e.target.value.trim(); setFilters(prev => ({ ...prev, tipoCategoria: v ? [v] : undefined })); }} />
-                    <Input placeholder="Imóvel (casa, apartamento, comercial, terreno)" className="w-full h-10 min-w-[200px] bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" defaultValue={(filters.tipoImovel?.[0]) || ''}
-                      onBlur={(e) => { setPage(1); const v = e.target.value.trim(); setFilters(prev => ({ ...prev, tipoImovel: v ? [v] : undefined })); }} />
+                    {/* Categoria (Residencial/Comercial) */}
+                    <div className="w-full min-w-[200px] bg-gray-900/80 border border-gray-600 rounded-md p-2 text-white">
+                      <div className="text-xs text-gray-400 mb-2">Categoria</div>
+                      <div className="flex gap-4 items-center">
+                        <label className="flex items-center gap-2 text-sm text-gray-200">
+                          <Checkbox
+                            checked={!!filters.tipoCategoria?.includes('Residential')}
+                            onCheckedChange={(checked) => {
+                              setPage(1);
+                              setFilters(prev => {
+                                const current = new Set(prev.tipoCategoria || []);
+                                if (checked) current.add('Residential'); else current.delete('Residential');
+                                const arr = Array.from(current);
+                                return { ...prev, tipoCategoria: arr.length ? arr : undefined };
+                              });
+                            }}
+                          />
+                          Residencial
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-gray-200">
+                          <Checkbox
+                            checked={!!filters.tipoCategoria?.includes('Commercial')}
+                            onCheckedChange={(checked) => {
+                              setPage(1);
+                              setFilters(prev => {
+                                const current = new Set(prev.tipoCategoria || []);
+                                if (checked) current.add('Commercial'); else current.delete('Commercial');
+                                const arr = Array.from(current);
+                                return { ...prev, tipoCategoria: arr.length ? arr : undefined };
+                              });
+                            }}
+                          />
+                          Comercial
+                        </label>
+                      </div>
+                    </div>
+                    {/* Removido filtro por tipo_imovel conforme solicitação */}
 
                     <div className="grid grid-cols-2 gap-2 min-w-[200px]">
                       <Input type="number" placeholder="Preço mín." className="w-full h-10 bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" onBlur={(e) => setFilters(p => ({ ...p, preco: { ...(p.preco||{}), min: e.target.value?Number(e.target.value):undefined } }))} />
@@ -997,8 +1086,43 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                     <Input placeholder="CEP" className="w-full h-10 min-w-[200px] bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" defaultValue={filters.cep || ''}
                       onBlur={(e) => { setPage(1); setFilters(prev => ({ ...prev, cep: e.target.value || undefined })); }} />
 
-                    <Input placeholder="Modalidade" className="w-full h-10 min-w-[200px] bg-gray-900/80 border-gray-600 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20" defaultValue={(filters.tipoCategoria?.[0]) || ''}
-                      onBlur={(e) => { setPage(1); const v = e.target.value.trim(); setFilters(prev => ({ ...prev, tipoCategoria: v ? [v] : undefined })); }} />
+                    {/* Modalidade (Aluguel/Venda) */}
+                    <div className="w-full min-w-[200px] bg-gray-900/80 border border-gray-600 rounded-md p-2 text-white">
+                      <div className="text-xs text-gray-400 mb-2">Modalidade</div>
+                      <div className="flex gap-4 items-center">
+                        <label className="flex items-center gap-2 text-sm text-gray-200">
+                          <Checkbox
+                            checked={!!filters.tipoCategoria?.includes('Rent')}
+                            onCheckedChange={(checked) => {
+                              setPage(1);
+                              setFilters(prev => {
+                                const current = new Set(prev.tipoCategoria || []);
+                                if (checked) current.add('Rent'); else current.delete('Rent');
+                                // Sale/Rent deve aparecer em ambos os casos, o filtro no hook já usa IN
+                                const arr = Array.from(current);
+                                return { ...prev, tipoCategoria: arr.length ? arr : undefined };
+                              });
+                            }}
+                          />
+                          Aluguel
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-gray-200">
+                          <Checkbox
+                            checked={!!filters.tipoCategoria?.includes('For Sale')}
+                            onCheckedChange={(checked) => {
+                              setPage(1);
+                              setFilters(prev => {
+                                const current = new Set(prev.tipoCategoria || []);
+                                if (checked) current.add('For Sale'); else current.delete('For Sale');
+                                const arr = Array.from(current);
+                                return { ...prev, tipoCategoria: arr.length ? arr : undefined };
+                              });
+                            }}
+                          />
+                          Venda
+                        </label>
+                      </div>
+                    </div>
 
                     {/* Linha de ações dos filtros (vazia para ocupar colunas do grid) */}
                     <div className="md:col-span-2 xl:col-span-3 flex items-center justify-end gap-2 mt-1">
@@ -1222,9 +1346,8 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                           </div>
                         )}
 
-                        {/* Status/Disponibilidade - Top Left */}
+                        {/* Disponibilidade - Top Left (única etiqueta) */}
                         <div className="absolute top-3 left-3 z-20 flex gap-2">
-                          {getStatusBadge(property.status)}
                           {getAvailabilityBadge((property as any).disponibilidade)}
                         </div>
 
@@ -1555,7 +1678,8 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                 onClick={async () => {
                   try {
                     if (!availabilityTarget) return;
-                    const isViva = isVivaRealMode && availabilityTarget.id && !availabilityTarget.property_images;
+                    // Quando exibindo itens do VivaReal, toda a lista vem de `imoveisvivareal`
+                    const isViva = isVivaRealMode;
                     const table = isViva ? 'imoveisvivareal' : 'properties';
                     const idCol = isViva ? 'id' : 'id';
                     const updates: any = { disponibilidade: availabilityValue, disponibilidade_observacao: availabilityNote || null };
@@ -1563,7 +1687,13 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                     if (error) throw error;
                     toast({ title: 'Disponibilidade atualizada com sucesso' });
                     setAvailabilityDialogOpen(false);
-                    if (refetch) refetch();
+                    if (isViva) {
+                      // Atualiza a lista do VivaReal imediatamente
+                      refetchImoveisList();
+                    } else if (refetch) {
+                      // Atualiza a lista de `properties` se o parent tiver passado refetch
+                      refetch();
+                    }
                   } catch (err: any) {
                     toast({ title: 'Erro ao atualizar', description: err.message || 'Tente novamente', variant: 'destructive' });
                   }

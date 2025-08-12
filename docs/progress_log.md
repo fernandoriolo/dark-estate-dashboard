@@ -236,3 +236,10 @@ Próximos passos sugeridos:
 - TODO produção: quando o domínio final estiver definido, configurar CORS/Site URL/Redirect URLs no Supabase com os domínios de produção e atualizar `.env.production` se necessário.
 
 - RLS: criada função `get_current_role()` (SECURITY DEFINER) e aplicadas novas policies por role (sem company_id) em `leads`, `contract_templates` e `whatsapp_*` com FORCE RLS. Índices de suporte criados (`user_id`, `created_at`).
+
+## 2025-08-12 — Conexões (WhatsApp) — permitir gestor vincular a outros usuários
+- Criada migration `supabase/migrations/20250812110000_whatsapp_instances_gestor_assign.sql` que:
+  - Recria as políticas de `whatsapp_instances` para permitir que **gestores/admins** façam INSERT/UPDATE (incluindo reatribuição de `user_id`) desde que o usuário alvo pertença à **mesma company**.
+  - Garante `WITH CHECK` com validação por `company_id` e `EXISTS` em `user_profiles` para o `user_id` destino.
+  - Mantém corretores limitados às próprias instâncias.
+  - Adiciona índices `idx_whatsapp_instances_company_id` e `idx_whatsapp_instances_user_id` (idempotentes).
