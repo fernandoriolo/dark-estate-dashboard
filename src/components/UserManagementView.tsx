@@ -31,6 +31,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { useUserProfile, UserProfile } from '@/hooks/useUserProfile';
 import { supabase } from '@/integrations/supabase/client';
+import { logAudit } from '@/lib/audit/logger';
 
 export function UserManagementView() {
   const [users, setUsers] = useState<any[]>([]);
@@ -124,6 +125,7 @@ export function UserManagementView() {
         .update(updates)
         .eq('id', selectedUser.id);
       if (upErr) throw upErr;
+      try { await logAudit({ action: 'user.profile_updated', resource: 'user_profile', resourceId: selectedUser.id, meta: updates }); } catch {}
       await fetchUsers(searchTerm, roleFilter);
       setShowEditModal(false);
       setSelectedUser(null);
@@ -138,6 +140,7 @@ export function UserManagementView() {
     if (window.confirm('Tem certeza que deseja desativar este usuário?')) {
       try {
         await deactivateUser(userId);
+        try { await logAudit({ action: 'user.deactivated', resource: 'user_profile', resourceId: userId, meta: null }); } catch {}
         await fetchUsers(searchTerm, roleFilter); // Recarregar a lista
       } catch (error: any) {
         setError(error.message);
@@ -163,6 +166,7 @@ export function UserManagementView() {
     setCreateLoading(true);
     try {
       await createNewUser(createForm);
+      try { await logAudit({ action: 'user.created', resource: 'user_profile', resourceId: undefined, meta: { email: createForm.email, role: createForm.role } }); } catch {}
       await fetchUsers(searchTerm, roleFilter); // Recarregar a lista
       setShowCreateModal(false);
       

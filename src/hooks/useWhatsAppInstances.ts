@@ -408,6 +408,7 @@ export function useWhatsAppInstances() {
       };
 
       setInstances(prev => [combinedData, ...prev]);
+      try { await logAudit({ action: 'whatsapp.instance_created', resource: 'whatsapp_instance', resourceId: (combinedData as any)?.id, meta: { instance_name: instanceData.instance_name } }); } catch {}
       return combinedData;
 
     } catch (error: any) {
@@ -439,6 +440,7 @@ export function useWhatsAppInstances() {
           instance.id === instanceId ? data : instance
         )
       );
+      try { await logAudit({ action: 'whatsapp.instance_status_updated', resource: 'whatsapp_instance', resourceId: instanceId, meta: { status } }); } catch {}
 
       return data;
 
@@ -549,6 +551,7 @@ export function useWhatsAppInstances() {
       if (data.success) {
         // Atualizar status no Supabase
         await updateInstanceStatus(instanceId, 'connected');
+        try { await logAudit({ action: 'whatsapp.instance_connected', resource: 'whatsapp_instance', resourceId: instanceId, meta: null }); } catch {}
         console.log(`✅ Instância ${instance.instance_name} conectada com sucesso`);
         return data;
       } else {
@@ -596,6 +599,7 @@ export function useWhatsAppInstances() {
       if (data.success) {
         // Atualizar status no Supabase
         await updateInstanceStatus(instanceId, 'disconnected');
+        try { await logAudit({ action: 'whatsapp.instance_disconnected', resource: 'whatsapp_instance', resourceId: instanceId, meta: null }); } catch {}
         console.log(`✅ Instância ${instance.instance_name} desconectada com sucesso`);
         return data;
       } else {
@@ -659,14 +663,17 @@ export function useWhatsAppInstances() {
       if (data.success && data.data?.qrcode) {
         // Atualizar status da instância
         await updateInstanceStatus(instanceId, 'qr_code');
+        try { await logAudit({ action: 'whatsapp.instance_qr_generated', resource: 'whatsapp_instance', resourceId: instanceId, meta: null }); } catch {}
         return data.data.qrcode;
       } else if (data.success && data.qrcode) {
         // Formato alternativo da resposta
         await updateInstanceStatus(instanceId, 'qr_code');
+        try { await logAudit({ action: 'whatsapp.instance_qr_generated', resource: 'whatsapp_instance', resourceId: instanceId, meta: null }); } catch {}
         return data.qrcode;
       } else if (data.success && data.data?.base64) {
         // Novo formato com base64
         await updateInstanceStatus(instanceId, 'qr_code');
+        try { await logAudit({ action: 'whatsapp.instance_qr_generated', resource: 'whatsapp_instance', resourceId: instanceId, meta: null }); } catch {}
         return data.data.base64;
       } else {
         console.warn('⚠️ QR code não encontrado na resposta:', data);

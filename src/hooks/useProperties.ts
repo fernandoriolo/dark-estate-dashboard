@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Tables, TablesInsert, TablesUpdate } from '@/integrations/supabase/types';
+import { logAudit } from '@/lib/audit/logger';
 
 export type DatabaseProperty = Tables<'properties'>;
 export type DatabasePropertyImage = Tables<'property_images'>;
@@ -69,6 +70,8 @@ export function useProperties() {
       console.log('✅ Propriedade criada:', data);
       // Refetch para atualizar com imagens
       await fetchProperties();
+      // Audit
+      try { await logAudit({ action: 'property.created', resource: 'property', resourceId: (data as any)?.id, meta: { title: (data as any)?.title, price: (data as any)?.price } }); } catch {}
       return data;
     } catch (err) {
       console.error('❌ Erro ao criar propriedade:', err);
@@ -92,6 +95,8 @@ export function useProperties() {
       console.log('✅ Propriedade atualizada:', data);
       // Refetch para atualizar com imagens
       await fetchProperties();
+      // Audit
+      try { await logAudit({ action: 'property.updated', resource: 'property', resourceId: (data as any)?.id, meta: updates }); } catch {}
       return data;
     } catch (err) {
       console.error('❌ Erro ao atualizar propriedade:', err);
@@ -113,6 +118,8 @@ export function useProperties() {
       console.log('✅ Propriedade deletada');
       // Atualizar lista local
       setProperties(prev => prev.filter(prop => prop.id !== id));
+      // Audit
+      try { await logAudit({ action: 'property.deleted', resource: 'property', resourceId: id, meta: null }); } catch {}
       return true;
     } catch (err) {
       console.error('❌ Erro ao deletar propriedade:', err);
