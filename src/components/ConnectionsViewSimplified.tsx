@@ -67,6 +67,9 @@ export function ConnectionsViewSimplified() {
     disconnectInstance
   } = useWhatsAppInstances();
 
+  // Tornar tolerante a diferenças de carregamento entre hooks: habilita criação se qualquer fonte indicar gestor/admin
+  const canCreate = isManager || canCreateInstances;
+
   const [showAddModal, setShowAddModal] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
   const [selectedInstance, setSelectedInstance] = useState<WhatsAppInstance | null>(null);
@@ -113,14 +116,14 @@ export function ConnectionsViewSimplified() {
   // Obter estatísticas
   const stats = getInstanceStats();
 
-  // Carregar usuários quando modal abrir (apenas para gestores)
+  // Carregar usuários quando modal abrir (apenas para gestores/admin)
   useEffect(() => {
-    if (showAddModal && canCreateInstances) {
+    if (showAddModal && canCreate) {
       loadAllUsers().then(users => {
         setAvailableUsers(users);
       });
     }
-  }, [showAddModal, canCreateInstances]);
+  }, [showAddModal, canCreate]);
 
   // Timer do QR Code (15 segundos)
   useEffect(() => {
@@ -561,7 +564,7 @@ export function ConnectionsViewSimplified() {
             <RefreshCw className="mr-2 h-4 w-4" />
             Atualizar
           </Button>
-          {canCreateInstances ? (
+          {canCreate ? (
             <Button 
               className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white"
               onClick={() => setShowAddModal(true)}
@@ -670,11 +673,11 @@ export function ConnectionsViewSimplified() {
               <Smartphone className="h-12 w-12 text-gray-400 mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-white mb-2">Nenhuma conexão encontrada</h3>
               <p className="text-gray-400 mb-4">
-                {searchTerm ? 'Não encontramos conexões com os critérios de busca.' : 
-                 canCreateInstances ? 'Nenhuma conexão foi criada ainda.' :
+                 {searchTerm ? 'Não encontramos conexões com os critérios de busca.' : 
+                  canCreate ? 'Nenhuma conexão foi criada ainda.' :
                  'Você ainda não possui conexões WhatsApp atribuídas.'}
               </p>
-              {canCreateInstances ? (
+              {canCreate ? (
                 <Button 
                   className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white"
                   onClick={() => setShowAddModal(true)}
@@ -705,10 +708,10 @@ export function ConnectionsViewSimplified() {
         <DialogContent className="bg-gray-900/95 border-gray-700/50 text-white">
           <DialogHeader>
             <DialogTitle className="text-white">
-              {canCreateInstances ? 'Nova Conexão WhatsApp' : 'Conexão WhatsApp'}
+              {canCreate ? 'Nova Conexão WhatsApp' : 'Conexão WhatsApp'}
             </DialogTitle>
             <DialogDescription className="text-gray-400">
-              {canCreateInstances 
+              {canCreate 
                 ? 'Crie uma nova instância e atribua para um corretor'
                 : 'Solicite ao seu gestor para criar uma nova conexão'
               }
@@ -743,7 +746,7 @@ export function ConnectionsViewSimplified() {
               </p>
             </div>
             
-            {canCreateInstances && (
+            {canCreate && (
               <div className="space-y-2">
                 <Label htmlFor="assignedUser" className="text-gray-300">Atribuir Para *</Label>
                 <Select
@@ -788,9 +791,9 @@ export function ConnectionsViewSimplified() {
               onClick={() => setShowAddModal(false)}
               className="border-gray-600 text-gray-300 hover:bg-gray-800"
             >
-              {canCreateInstances ? 'Cancelar' : 'Fechar'}
+              {canCreate ? 'Cancelar' : 'Fechar'}
             </Button>
-            {canCreateInstances && (
+            {canCreate && (
               <Button
                 onClick={handleCreateInstance}
                 disabled={creating || !newInstanceName.trim() || !newInstancePhone.trim()}

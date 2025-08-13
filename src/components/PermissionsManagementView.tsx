@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Shield, CheckCircle, XCircle, Users, Settings, Key, Lock, Eye, RefreshCw, Crown, UserCheck } from 'lucide-react';
 import { toast } from 'sonner';
+import { logAudit } from '@/lib/audit/logger';
 
 // Componente para as partículas flutuantes
 const FloatingParticle = ({ delay = 0, duration = 20, type = 'default' }) => {
@@ -170,6 +171,7 @@ export function PermissionsManagementView() {
       setUpdatingId(id);
       await updatePermission(id, newValue);
       toast.success('✅ Permissão atualizada!');
+      try { await logAudit({ action: 'permissions.updated', resource: 'permission', resourceId: id, meta: { enabled: newValue } }); } catch {}
     } catch (error: any) {
       toast.error('❌ Erro: ' + error.message);
     } finally {

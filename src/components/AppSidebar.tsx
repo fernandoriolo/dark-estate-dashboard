@@ -1,4 +1,12 @@
-import { Building2, Home, BarChart3, Settings, Users, Globe, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, MessageSquare } from "lucide-react";
+<<<<<<< HEAD
+<<<<<<< HEAD
+import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare, KeyRound } from "lucide-react";
+=======
+import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send } from "lucide-react";
+>>>>>>> 2f9298d (style(disparador): placeholder e botão do modelo em azul claro com negrito leve)
+=======
+import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare } from "lucide-react";
+>>>>>>> 98ab36b (feat(sidebar, index): resolver conflitos e alinhar navegação com plantão, chats e disparador; remover portais; atualizar tipos de onViewChange)
 import { useState, useEffect } from "react";
 import {
   Sidebar,
@@ -20,15 +28,10 @@ import { Button } from "./ui/button";
 import { User } from '@supabase/supabase-js';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { usePermissions } from '@/hooks/usePermissions';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 
 const menuItems = [
-  {
-    title: "Painel",
-    url: "#",
-    icon: BarChart3,
-    view: "dashboard" as const,
-    permissionKey: "menu_dashboard",
-  },
   {
     title: "Propriedades",
     url: "#",
@@ -79,20 +82,6 @@ const menuItems = [
     // Sem permissionKey para aparecer por padrão (pode ser protegido depois)
   },
   {
-    title: "Relatórios",
-    url: "#",
-    icon: TrendingUp,
-    view: "reports" as const,
-    permissionKey: "menu_reports",
-  },
-  {
-    title: "Portais",
-    url: "#",
-    icon: Globe,
-    view: "portals" as const,
-    permissionKey: "menu_portals",
-  },
-  {
     title: "Conexões",
     url: "#",
     icon: Wifi,
@@ -120,20 +109,29 @@ const menuItems = [
     view: "inquilinato" as const,
     permissionKey: "menu_inquilinato",
   },
+  {
+    title: "Disparador",
+    url: "#",
+    icon: Send,
+    view: "disparador" as const,
+    permissionKey: "menu_disparador",
+  },
 ];
 
 const analyticsItems = [
+  {
+    title: "Painel",
+    url: "#",
+    icon: BarChart3,
+    view: "dashboard" as const,
+    permissionKey: "menu_dashboard",
+  },
   {
     title: "Relatórios",
     url: "#",
     icon: TrendingUp,
     view: "reports" as const,
-  },
-  {
-    title: "Portais",
-    url: "#",
-    icon: Globe,
-    view: "portals" as const,
+    permissionKey: "menu_reports",
   },
 ];
 
@@ -147,13 +145,14 @@ const secondaryItems = [
 
 interface AppSidebarProps {
   currentView: string;
-  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "plantao" | "reports" | "portals" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "chats") => void;
+  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "plantao" | "reports" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "disparador" | "chats" | "profile") => void;
 }
 
 export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const { profile, isAdmin } = useUserProfile();
+  
   const { hasPermission } = usePermissions();
 
   useEffect(() => {
@@ -205,6 +204,11 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
   const filteredMenuItems = menuItems.filter(item => {
     if (!item.permissionKey) return true; // Se não tem permissão definida, mostrar para todos
     if (!profile) return false; // Se não tem perfil, não mostrar menus
+    return hasPermission(item.permissionKey);
+  });
+  const filteredAnalyticsItems = analyticsItems.filter(item => {
+    if (!('permissionKey' in item) || !item.permissionKey) return true;
+    if (!profile) return false;
     return hasPermission(item.permissionKey);
   });
 
@@ -264,7 +268,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {analyticsItems.map((item) => (
+              {filteredAnalyticsItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton 
                     asChild
@@ -337,9 +341,16 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
             </div>
           </div>
           <Button 
+            onClick={() => setShowPasswordModal(true)}
+            variant="outline"
+            className="w-full border-gray-700 text-gray-300 hover:text-white hover:bg-gray-800"
+          >
+            <KeyRound className="mr-2 h-4 w-4" />
+            Alterar senha
+          </Button>
+          <Button 
             onClick={async () => {
               await supabase.auth.signOut();
-              window.location.reload();
             }}
             variant="outline"
             className="w-full border-gray-700 text-gray-300 hover:text-white hover:bg-gray-800"
@@ -349,6 +360,40 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
           </Button>
         </div>
       </SidebarFooter>
+      <Dialog open={showPasswordModal} onOpenChange={setShowPasswordModal}>
+        <DialogContent className="bg-gray-900 border-gray-700 max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-white">Alterar senha</DialogTitle>
+            <DialogDescription className="text-gray-400">Defina uma nova senha para sua conta.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Nova senha (mínimo 6 caracteres)"
+              className="bg-gray-800/50 border-gray-600 text-white placeholder-gray-400"
+            />
+            <Input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Confirmar nova senha"
+              className="bg-gray-800/50 border-gray-600 text-white placeholder-gray-400"
+            />
+            {changeError && <div className="text-sm text-red-400">{changeError}</div>}
+            <div className="flex justify-end gap-2">
+              <Button
+                onClick={handleChangePassword}
+                disabled={changing}
+                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+              >
+                {changing ? 'Salvando...' : 'Salvar nova senha'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Sidebar>
   );
 }

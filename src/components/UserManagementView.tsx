@@ -24,7 +24,6 @@ import {
   XCircle,
   AlertTriangle,
   MoreVertical,
-  UserCheck,
   UserX
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
@@ -32,10 +31,12 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { useUserProfile, UserProfile } from '@/hooks/useUserProfile';
 import { supabase } from '@/integrations/supabase/client';
+import { logAudit } from '@/lib/audit/logger';
 
 export function UserManagementView() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const DEFAULT_TEMP_PASSWORD = (import.meta as any).env?.VITE_DEFAULT_NEW_USER_PASSWORD || 'Imobi@1234';
 
   const fetchUsers = async (search: string, roleFilter: string) => {
     try {
@@ -61,18 +62,18 @@ export function UserManagementView() {
   useEffect(() => { fetchUsers(searchTerm, roleFilter); }, [searchTerm, roleFilter]);
 
   // TODOS OS HOOKS DEVEM VIR PRIMEIRO - NUNCA APÓS RETURNS CONDICIONAIS
-  const { profile, isManager, isAdmin, changeUserRole, deactivateUser, createNewUser } = useUserProfile();
+  const { profile, isManager, isAdmin, deactivateUser, createNewUser } = useUserProfile();
   const [error, setError] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
-  const [newRole, setNewRole] = useState<'corretor' | 'gestor' | 'admin'>('corretor');
+  const [editForm, setEditForm] = useState<{ full_name: string; email: string; phone: string; role: 'corretor' | 'gestor' | 'admin' } | null>(null);
   const [createLoading, setCreateLoading] = useState(false);
   
   // Dados do formulário de criação
   const [createForm, setCreateForm] = useState({
     email: '',
-    password: '',
+    password: DEFAULT_TEMP_PASSWORD,
     full_name: '',
     role: 'corretor' as 'corretor' | 'gestor' | 'admin',
     department: '',
@@ -100,24 +101,37 @@ export function UserManagementView() {
   const filteredUsers = (users as any[]).filter(user => {
     const matchesSearch = user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         user.department?.toLowerCase().includes(searchTerm.toLowerCase());
+                         user.phone?.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesRole = roleFilter === "all" || user.role === roleFilter;
 
     return matchesSearch && matchesRole;
   });
 
-  // Alterar role do usuário
-  const handleChangeRole = async () => {
-    if (!selectedUser) return;
-
+  // Salvar edição do usuário
+  const handleSaveUserEdit = async () => {
+    if (!selectedUser || !editForm) return;
     try {
-      await changeUserRole(selectedUser.id, newRole);
-      await fetchUsers(searchTerm, roleFilter); // Recarregar a lista
+      const updates: any = {
+        full_name: editForm.full_name,
+        email: editForm.email,
+        phone: editForm.phone,
+      };
+      if (isAdmin) {
+        updates.role = editForm.role;
+      }
+      const { error: upErr } = await supabase
+        .from('user_profiles')
+        .update(updates)
+        .eq('id', selectedUser.id);
+      if (upErr) throw upErr;
+      try { await logAudit({ action: 'user.profile_updated', resource: 'user_profile', resourceId: selectedUser.id, meta: updates }); } catch {}
+      await fetchUsers(searchTerm, roleFilter);
       setShowEditModal(false);
       setSelectedUser(null);
-    } catch (error: any) {
-      setError(error.message);
+      setEditForm(null);
+    } catch (e: any) {
+      setError(e.message || 'Erro ao salvar alterações');
     }
   };
 
@@ -126,6 +140,7 @@ export function UserManagementView() {
     if (window.confirm('Tem certeza que deseja desativar este usuário?')) {
       try {
         await deactivateUser(userId);
+        try { await logAudit({ action: 'user.deactivated', resource: 'user_profile', resourceId: userId, meta: null }); } catch {}
         await fetchUsers(searchTerm, roleFilter); // Recarregar a lista
       } catch (error: any) {
         setError(error.message);
@@ -138,7 +153,7 @@ export function UserManagementView() {
     e.preventDefault();
     
     // Validações básicas
-    if (!createForm.email.trim() || !createForm.password.trim() || !createForm.full_name.trim()) {
+    if (!createForm.email.trim() || !createForm.full_name.trim()) {
       setError('Email, senha e nome são obrigatórios');
       return;
     }
@@ -151,13 +166,14 @@ export function UserManagementView() {
     setCreateLoading(true);
     try {
       await createNewUser(createForm);
+      try { await logAudit({ action: 'user.created', resource: 'user_profile', resourceId: undefined, meta: { email: createForm.email, role: createForm.role } }); } catch {}
       await fetchUsers(searchTerm, roleFilter); // Recarregar a lista
       setShowCreateModal(false);
       
       // Resetar formulário
       setCreateForm({
         email: '',
-        password: '',
+        password: DEFAULT_TEMP_PASSWORD,
         full_name: '',
         role: 'corretor',
         department: '',
@@ -165,7 +181,7 @@ export function UserManagementView() {
       });
       
       setError(null);
-      alert(`Usuário ${createForm.full_name} criado com sucesso!\nEmail: ${createForm.email}\nO usuário deve fazer login com estes dados.`);
+      alert(`Usuário ${createForm.full_name} criado com sucesso!\nEmail: ${createForm.email}\nSenha temporária: ${createForm.password}\nO usuário deve trocar a senha no primeiro acesso.`);
     } catch (error: any) {
       setError(error.message);
     } finally {
@@ -183,7 +199,7 @@ export function UserManagementView() {
     setShowCreateModal(false);
     setCreateForm({
       email: '',
-      password: '',
+      password: DEFAULT_TEMP_PASSWORD,
       full_name: '',
       role: 'corretor',
       department: '',
@@ -338,7 +354,7 @@ export function UserManagementView() {
             
             <Select value={roleFilter} onValueChange={setRoleFilter}>
               <SelectTrigger className="w-40 bg-gray-900/50 border-gray-600 text-white">
-                <SelectValue placeholder="Cargo" />
+                <SelectValue placeholder="Hierarquia" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos</SelectItem>
@@ -371,12 +387,11 @@ export function UserManagementView() {
             <TableHeader>
               <TableRow className="border-gray-700 hover:bg-gray-800/50">
                 <TableHead className="text-gray-300">Usuário</TableHead>
-                <TableHead className="text-gray-300">Cargo</TableHead>
-                <TableHead className="text-gray-300">Departamento</TableHead>
+                <TableHead className="text-gray-300">Hierarquia</TableHead>
                 <TableHead className="text-gray-300">Contato</TableHead>
                 <TableHead className="text-gray-300">Status</TableHead>
                 <TableHead className="text-gray-300">Criado em</TableHead>
-                {isAdmin && <TableHead className="text-gray-300">Ações</TableHead>}
+                {(isAdmin || isManager) && <TableHead className="text-gray-300">Ações</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -413,10 +428,6 @@ export function UserManagementView() {
                       </TableCell>
                       
                       <TableCell className="text-gray-300">
-                        {user.department || '-'}
-                      </TableCell>
-                      
-                      <TableCell className="text-gray-300">
                         {user.phone || '-'}
                       </TableCell>
                       
@@ -443,24 +454,29 @@ export function UserManagementView() {
                         {new Date(user.created_at).toLocaleDateString('pt-BR')}
                       </TableCell>
                       
-                      {isAdmin && (
+                      {(isAdmin || isManager) && (
                         <TableCell>
-                          <DropdownMenu>
+              <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm">
-                                <MoreVertical className="h-4 w-4" />
+                  <Button variant="ghost" size="sm">
+                    <MoreVertical className="h-4 w-4 text-white" />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => {
-                                setSelectedUser(user);
-                                setNewRole(user.role);
-                                setShowEditModal(true);
-                              }}>
-                                <Edit className="h-4 w-4 mr-2" />
-                                Alterar Cargo
-                              </DropdownMenuItem>
-                              {user.is_active && (
+                  <DropdownMenuItem onClick={() => {
+                    setSelectedUser(user);
+                    setEditForm({
+                      full_name: user.full_name || '',
+                      email: user.email || '',
+                      phone: user.phone || '',
+                      role: (user.role || 'corretor') as 'corretor' | 'gestor' | 'admin',
+                    });
+                    setShowEditModal(true);
+                  }}>
+                    <Edit className="h-4 w-4 mr-2" />
+                    Editar
+                  </DropdownMenuItem>
+                              {(isAdmin || isManager) && user.is_active && (
                                 <DropdownMenuItem 
                                   onClick={() => handleDeactivateUser(user.id)}
                                   className="text-red-400 hover:text-red-300"
@@ -499,42 +515,69 @@ export function UserManagementView() {
       <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
         <DialogContent className="bg-gray-900 border-gray-700">
           <DialogHeader>
-            <DialogTitle className="text-white">Alterar Cargo do Usuário</DialogTitle>
+            <DialogTitle className="text-white">Editar Usuário</DialogTitle>
             <DialogDescription className="text-gray-400">
-              Altere o cargo de {selectedUser?.full_name}
+              Atualize os dados de {selectedUser?.full_name}
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4">
             <div>
-              <Label htmlFor="new-role" className="text-gray-300">Novo Cargo</Label>
-              <Select value={newRole} onValueChange={(value: any) => setNewRole(value)}>
-                <SelectTrigger className="bg-gray-800/50 border-gray-600 text-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="corretor">Corretor</SelectItem>
-                  <SelectItem value="gestor">Gestor</SelectItem>
-                  <SelectItem value="admin">Administrador</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label className="text-gray-300">Nome Completo</Label>
+              <Input
+                value={editForm?.full_name || ''}
+                onChange={(e) => setEditForm(prev => prev ? { ...prev, full_name: e.target.value } : prev)}
+                className="bg-gray-800/50 border-gray-600 text-white"
+              />
             </div>
+            <div>
+              <Label className="text-gray-300">Email</Label>
+              <Input
+                type="email"
+                value={editForm?.email || ''}
+                onChange={(e) => setEditForm(prev => prev ? { ...prev, email: e.target.value } : prev)}
+                className="bg-gray-800/50 border-gray-600 text-white"
+              />
+            </div>
+            <div>
+              <Label className="text-gray-300">Telefone</Label>
+              <Input
+                value={editForm?.phone || ''}
+                onChange={(e) => setEditForm(prev => prev ? { ...prev, phone: e.target.value } : prev)}
+                className="bg-gray-800/50 border-gray-600 text-white"
+              />
+            </div>
+            {isAdmin && (
+              <div>
+                <Label className="text-gray-300">Hierarquia</Label>
+                <Select value={editForm?.role || 'corretor'} onValueChange={(value: any) => setEditForm(prev => prev ? { ...prev, role: value } : prev)}>
+                  <SelectTrigger className="bg-gray-800/50 border-gray-600 text-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="corretor">Corretor</SelectItem>
+                    <SelectItem value="gestor">Gestor</SelectItem>
+                    <SelectItem value="admin">Administrador</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
           
           <div className="flex justify-end gap-3 mt-6">
             <Button 
               variant="outline" 
               onClick={() => setShowEditModal(false)}
-              className="border-gray-600 text-gray-300 hover:bg-gray-800"
+              className="border-gray-600 text-red-500 hover:bg-gray-800 hover:text-red-400"
             >
               Cancelar
             </Button>
             <Button 
-              onClick={handleChangeRole}
+              onClick={handleSaveUserEdit}
               className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
             >
-              <UserCheck className="h-4 w-4 mr-2" />
-              Alterar Cargo
+              <Edit className="h-4 w-4 mr-2" />
+              Salvar
             </Button>
           </div>
         </DialogContent>
@@ -579,18 +622,17 @@ export function UserManagementView() {
               />
             </div>
 
-            {/* Senha */}
+            {/* Senha temporária (padrão configurável) */}
             <div>
-              <Label htmlFor="password" className="text-gray-300">Senha Temporária *</Label>
+              <Label htmlFor="password" className="text-gray-300">Senha Temporária</Label>
               <Input
                 id="password"
-                type="password"
+                type="text"
                 value={createForm.password}
                 onChange={(e) => updateCreateForm('password', e.target.value)}
-                placeholder="Mínimo 6 caracteres"
+                placeholder="Senha padrão para novos usuários"
                 className="bg-gray-800/50 border-gray-600 text-white placeholder-gray-400"
                 minLength={6}
-                required
               />
             </div>
 
@@ -609,18 +651,7 @@ export function UserManagementView() {
               </Select>
             </div>
 
-            {/* Departamento */}
-            <div>
-              <Label htmlFor="department" className="text-gray-300">Departamento</Label>
-              <Input
-                id="department"
-                type="text"
-                value={createForm.department}
-                onChange={(e) => updateCreateForm('department', e.target.value)}
-                placeholder="Ex: Vendas, Marketing, Administrativo"
-                className="bg-gray-800/50 border-gray-600 text-white placeholder-gray-400"
-              />
-            </div>
+            {/* Departamento removido */}
 
             {/* Telefone */}
             <div>
@@ -651,7 +682,7 @@ export function UserManagementView() {
                 type="button"
                 variant="outline" 
                 onClick={handleCloseCreateModal}
-                className="border-gray-600 text-gray-300 hover:bg-gray-800"
+                className="border-gray-600 text-red-500 hover:bg-gray-800 hover:text-red-400"
                 disabled={createLoading}
               >
                 Cancelar

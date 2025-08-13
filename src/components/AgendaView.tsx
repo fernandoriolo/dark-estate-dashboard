@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Calendar } from "lucide-react";
 import { useProperties } from "@/hooks/useProperties";
+import { logAudit } from "@/lib/audit/logger";
 import { useClients } from "@/hooks/useClients";
 
 interface AgendaEvent {
@@ -545,6 +546,7 @@ export function AgendaView() {
       }
 
       const responseData = await response.json();
+      try { await logAudit({ action: 'agenda.event_created', resource: 'agenda_event', resourceId: undefined, meta: { summary: webhookPayload.summary, date: webhookPayload.start.dateTime } }); } catch {}
       console.log('✅ EVENTO CRIADO COM SUCESSO NO GOOGLE CALENDAR');
       console.log('📊 Resposta:', JSON.stringify(responseData, null, 2));
 
