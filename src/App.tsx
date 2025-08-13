@@ -32,7 +32,7 @@ function AppContent() {
     return <UserOnboarding onComplete={() => window.location.reload()} />;
   }
 
-  const mustChangePassword = !!profile.require_password_change;
+  const mustChangePassword = false; // revertido: sem fluxo obrigatório de troca de senha
 
   const handleChangePassword = async () => {
     try {
@@ -51,10 +51,7 @@ function AppContent() {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
       // Marcar como alterada
-      await supabase
-        .from('user_profiles')
-        .update({ require_password_change: false, password_changed_at: new Date().toISOString() })
-        .eq('id', (await supabase.auth.getUser()).data.user?.id);
+      // revertido: sem marcação no perfil
       setNewPassword("");
       setConfirmPassword("");
     } catch (err: any) {
