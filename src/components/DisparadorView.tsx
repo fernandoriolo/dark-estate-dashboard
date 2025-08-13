@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useWhatsAppInstances } from '@/hooks/useWhatsAppInstances';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { Upload, Send, FileDown } from 'lucide-react';
+import { logAudit } from '@/lib/audit/logger';
 
 type UploadRow = { nome: string; telefone: string; email?: string };
 
@@ -80,6 +81,7 @@ export function DisparadorView() {
     setSentCount(0);
     setErrorLog([]);
     try {
+      try { await logAudit({ action: 'bulk_whatsapp.started', resource: 'bulk_whatsapp', resourceId: undefined, meta: { rows: rows.length, instance_id: selectedInstance } }); } catch {}
       // Carregar chats existentes da instância para evitar conflitos de UNIQUE(instance_id, contact_phone)
       const existing = await loadChats(selectedInstance);
       const phoneToChat = new Map<string, string>(existing.map(c => [c.contact_phone, c.id]));
@@ -105,6 +107,7 @@ export function DisparadorView() {
           setErrorLog(prev => [...prev, `Erro ao enviar para ${r.telefone}: ${err?.message || err}`]);
         }
       }
+      try { await logAudit({ action: 'bulk_whatsapp.finished', resource: 'bulk_whatsapp', resourceId: undefined, meta: { sent: sentCount, total: rows.length, instance_id: selectedInstance } }); } catch {}
     } finally {
       setSending(false);
     }

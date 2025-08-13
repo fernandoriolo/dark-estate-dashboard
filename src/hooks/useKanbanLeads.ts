@@ -157,6 +157,7 @@ export function useKanbanLeads() {
             : lead
         )
       );
+      logAudit({ action: 'lead.stage_changed', resource: 'lead', resourceId: leadId, meta: { newStage } });
 
       return true;
     } catch (err) {
@@ -306,6 +307,7 @@ export function useKanbanLeads() {
 
       // Remover do estado local
       setLeads(prevLeads => prevLeads.filter(lead => lead.id !== leadId));
+      logAudit({ action: 'lead.deleted', resource: 'lead', resourceId: leadId, meta: null });
 
       return true;
     } catch (err) {
