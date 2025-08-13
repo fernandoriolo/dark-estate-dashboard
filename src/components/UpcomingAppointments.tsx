@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar, Clock, User, MapPin, ArrowRight, AlertCircle, CheckCircle2 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 interface AgendaEvent {
   id: number;
@@ -23,110 +24,38 @@ export function UpcomingAppointments({ onViewAll }: UpcomingAppointmentsProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Buscar eventos da agenda
+  // Buscar próximos compromissos a partir da tabela oncall_schedules (próximos 7 dias)
   const fetchUpcomingEvents = async () => {
     try {
       setLoading(true);
       setError(null);
-
       // Buscar eventos dos próximos 7 dias
       const today = new Date();
       const nextWeek = new Date();
       nextWeek.setDate(today.getDate() + 7);
 
-      // Converter para strings ISO
-      const dataInicial = new Date(today.getTime() - (today.getTimezoneOffset() * 60000)).toISOString();
-      const dataFinal = new Date(nextWeek.getTime() - (nextWeek.getTimezoneOffset() * 60000)).toISOString();
+      const { data, error } = await supabase
+        .from('oncall_events')
+        .select('*')
+        .gte('starts_at', today.toISOString())
+        .lt('starts_at', nextWeek.toISOString())
+        .order('starts_at', { ascending: true })
+        .limit(5);
 
-      const requestBody = {
-        data_inicial: dataInicial,
-        data_final: dataFinal,
-        periodo: `${today.toLocaleDateString('pt-BR')} até ${nextWeek.toLocaleDateString('pt-BR')}`,
-        agenda: "Todos"
-      };
+      if (error) throw error;
 
-      console.log("📅 Buscando próximos compromissos:", requestBody);
+      const processed: AgendaEvent[] = (data || []).map((row: any, idx: number) => ({
+        id: idx + 1,
+        date: new Date(row.starts_at),
+        client: row.client_name || 'Cliente não informado',
+        property: row.title || 'Compromisso',
+        address: row.address || 'Local não informado',
+        type: row.type || 'Evento',
+        status: row.status || 'Aguardando confirmação',
+        corretor: undefined,
+      }));
 
-      const response = await fetch('https://webhooklabz.n8nlabz.com.br/webhook/ver-agenda', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-        signal: AbortSignal.timeout(5000) // Timeout de 5 segundos
-      });
-
-      if (!response.ok) {
-        throw new Error(`Erro na API: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log("✅ Próximos compromissos recebidos:", data);
-
-      // Processar eventos (similar ao AgendaView)
-      const cleanData = Array.isArray(data) ? data.filter(event => {
-        return event && typeof event === 'object' && Object.keys(event).length > 0;
-      }) : [];
-
-      let processedEvents: AgendaEvent[] = [];
-
-      if (cleanData.length > 0) {
-        processedEvents = cleanData.map((event: any, index: number) => {
-          // Extrair dados do evento
-          const startDateTime = event.start?.dateTime || event.start?.date;
-          const eventDate = startDateTime ? new Date(startDateTime) : new Date();
-          
-          const summary = event.summary || 'Evento sem título';
-          const description = event.description || 'Descrição não disponível';
-          
-          // Extrair cliente
-          const clientMatch = description.match(/com (?:o cliente |a cliente )?([^(\n\r]+?)(?:\s*\(|$)/i);
-          const clientName = clientMatch ? clientMatch[1].trim() : 'Cliente não informado';
-          
-          // Extrair tipo
-          let eventType = 'Reunião';
-          const descLower = description.toLowerCase();
-          if (descLower.includes('visita')) eventType = 'Visita';
-          else if (descLower.includes('avaliação') || descLower.includes('avaliacao')) eventType = 'Avaliação';
-          else if (descLower.includes('apresentação') || descLower.includes('apresentacao')) eventType = 'Apresentação';
-          else if (descLower.includes('vistoria')) eventType = 'Vistoria';
-          
-          // Status
-          let status = 'Aguardando confirmação';
-          if (event.attendees && event.attendees.length > 0) {
-            const firstAttendee = event.attendees[0];
-            switch (firstAttendee.responseStatus) {
-              case 'accepted': status = 'Confirmado'; break;
-              case 'declined': status = 'Cancelado'; break;
-              case 'tentative': status = 'Talvez'; break;
-            }
-          }
-
-          // Extrair corretor
-          const corretorMatch = description.match(/corretor[:\s]*([^(\n\r]+?)(?:\s*\(|$)/i);
-          const corretor = corretorMatch ? corretorMatch[1].trim() : undefined;
-
-          return {
-            id: event.id ? parseInt(event.id.replace(/\D/g, '')) || (index + 1) : (index + 1),
-            date: eventDate,
-            client: clientName,
-            property: summary.replace(/^(Visita|Avaliação|Apresentação|Vistoria)\s*-?\s*/i, '').trim() || 'Imóvel não especificado',
-            address: event.location || 'Local não informado',
-            type: eventType,
-            status: status,
-            corretor: corretor
-          };
-        });
-
-        // Filtrar eventos futuros e ordenar por data
-        const now = new Date();
-        processedEvents = processedEvents
-          .filter(event => event.date > now)
-          .sort((a, b) => a.date.getTime() - b.date.getTime())
-          .slice(0, 5); // Mostrar apenas os próximos 5
-      }
-
-      setEvents(processedEvents);
+      setEvents(processed);
       
     } catch (error) {
       console.error("❌ Erro ao buscar próximos compromissos:", error);
@@ -162,10 +91,13 @@ export function UpcomingAppointments({ onViewAll }: UpcomingAppointmentsProps) {
 
   useEffect(() => {
     fetchUpcomingEvents();
-    
-    // Atualizar a cada 5 minutos
+    // Realtime para atualizações
+    const channel = supabase
+      .channel(`oncall_events_${Date.now()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'oncall_events' }, () => fetchUpcomingEvents())
+      .subscribe();
     const interval = setInterval(fetchUpcomingEvents, 5 * 60 * 1000);
-    return () => clearInterval(interval);
+    return () => { clearInterval(interval); supabase.removeChannel(channel); };
   }, []);
 
   // Função para determinar se o compromisso é urgente (próximas 2 horas)
