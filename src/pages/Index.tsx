@@ -6,10 +6,6 @@ import { DashboardContent } from "@/components/DashboardContent";
 import { PropertyForm } from "@/components/PropertyForm";
 import { PropertyList } from "@/components/PropertyList";
 import { ReportsView } from "@/components/ReportsView";
-<<<<<<< HEAD
-// Portals removido do menu principal
-=======
->>>>>>> 3826e04 (feat(AppSidebar, Index): remover referência a portais e ajustar tipagens)
 import { ClientsView } from "@/components/ClientsView";
 import { ClientsCRMView } from "@/components/ClientsCRMView";
 
@@ -21,11 +17,8 @@ import { UserManagementView } from "@/components/UserManagementView";
 import { PermissionsManagementView } from "@/components/PermissionsManagementView";
 import { IsolationDebug } from "@/components/IsolationDebug";
 import { InquilinatoView } from "@/components/InquilinatoView";
-<<<<<<< HEAD
-import { ChatsView } from "@/components/ChatsView";
-=======
 import { DisparadorView } from "@/components/DisparadorView";
->>>>>>> 2f9298d (style(disparador): placeholder e botão do modelo em azul claro com negrito leve)
+import { ChatsView } from "@/components/ChatsView";
 import { UserProfileView } from "@/components/UserProfileView";
 
 import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
@@ -45,11 +38,8 @@ const Index = () => {
     | "users"
     | "permissions"
     | "inquilinato"
-<<<<<<< HEAD
-    | "chats"
-=======
     | "disparador"
->>>>>>> 2f9298d (style(disparador): placeholder e botão do modelo em azul claro com negrito leve)
+    | "chats"
     | "profile"
   >("dashboard");
   const [isPropertyModalOpen, setIsPropertyModalOpen] = useState(false);
@@ -159,7 +149,7 @@ const Index = () => {
       case "profile":
         return <UserProfileView />;
       default:
-        return <DashboardContent properties={properties} loading={loading} />;
+        return <DashboardContent properties={[]} loading={loading} />;
     }
   };
 
