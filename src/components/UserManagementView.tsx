@@ -113,16 +113,7 @@ export function UserManagementView() {
     if (!selectedUser) return;
 
     try {
-      if (isAdmin) {
-        await changeUserRole(selectedUser.id, newRole);
-      } else if (isManager) {
-        // Gestor: usar RPC seguro
-        const { error } = await supabase.rpc('update_user_role_in_company', {
-          target_user_id: selectedUser.id,
-          new_role: newRole,
-        });
-        if (error) throw error;
-      }
+      await changeUserRole(selectedUser.id, newRole);
       await fetchUsers(searchTerm, roleFilter); // Recarregar a lista
       setShowEditModal(false);
       setSelectedUser(null);
@@ -135,12 +126,7 @@ export function UserManagementView() {
   const handleDeactivateUser = async (userId: string) => {
     if (window.confirm('Tem certeza que deseja desativar este usuário?')) {
       try {
-        if (isAdmin) {
-          await deactivateUser(userId);
-        } else if (isManager) {
-          const { error } = await supabase.rpc('deactivate_user_in_company', { target_user_id: userId });
-          if (error) throw error;
-        }
+        await deactivateUser(userId);
         await fetchUsers(searchTerm, roleFilter); // Recarregar a lista
       } catch (error: any) {
         setError(error.message);
