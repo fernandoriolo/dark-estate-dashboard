@@ -1,6 +1,6 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Building2, TrendingUp, Eye, Globe, Users, MapPin } from "lucide-react";
+import { Building2, TrendingUp, Eye, Globe, Users, MapPin, ListChecks } from "lucide-react";
 import { PropertyWithImages } from "@/hooks/useProperties";
 import { useClients } from "@/hooks/useClients";
 import { useState, useEffect } from "react";
@@ -34,6 +34,7 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
   const [imoveis, setImoveis] = useState<any[]>([]);
   const [loadingImoveis, setLoadingImoveis] = useState(true);
   const [typeEntries, setTypeEntries] = useState<[string, number][]>([]);
+  const [stageEntries, setStageEntries] = useState<[string, number][]>([]);
 
   // Buscar últimas propriedades recentes
   const fetchImoveis = async () => {
@@ -71,6 +72,26 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
     } catch (err) {
       console.error('Erro ao carregar distribuição por tipo:', err);
       setTypeEntries([]);
+    }
+  };
+
+  // Buscar distribuição por status (stage) dos leads
+  const fetchLeadStages = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('leads')
+        .select('stage');
+      if (error) throw error;
+      const counts = (data || []).reduce((acc: Record<string, number>, row: any) => {
+        const key = (row?.stage || 'Não informado') as string;
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      setStageEntries(entries);
+    } catch (err) {
+      console.error('Erro ao carregar distribuição por stage:', err);
+      setStageEntries([]);
     }
   };
 
@@ -168,11 +189,12 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
     fetchImoveis();
     fetchTypeDistribution();
     fetchKpis();
+    fetchLeadStages();
     // Realtime
     const channel = supabase
       .channel(`dashboard_kpis_${Date.now()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'imoveisvivareal' }, () => { fetchImoveis(); fetchKpis(); fetchTypeDistribution(); })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => { fetchKpis(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => { fetchKpis(); fetchLeadStages(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'contracts' }, () => { fetchKpis(); })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -194,6 +216,7 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
     return acc;
   }, {} as Record<string, number>);
   const clientsPieData = Object.entries(clientsBySource).map(([name, value]) => ({ name, value }));
+  const stagesPieData = stageEntries.map(([name, value]) => ({ name, value }));
   const PIE_COLORS = [
     '#60a5fa', '#34d399', '#f59e0b', '#a78bfa', '#f472b6',
     '#22d3ee', '#f43f5e', '#10b981', '#eab308', '#3b82f6'
@@ -328,8 +351,8 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="bg-gray-800/50 border-gray-700/50 backdrop-blur-sm lg:col-span-2">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="bg-gray-800/50 border-gray-700/50 backdrop-blur-sm">
           <CardHeader>
             <CardTitle className="text-white flex items-center gap-2">
               <Building2 className="h-5 w-5" />
@@ -371,62 +394,89 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
 
         <Card className="bg-gray-800/50 border-gray-700/50 backdrop-blur-sm">
           <CardHeader>
-            <CardTitle className="text-white flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              Origem dos Clientes
-            </CardTitle>
+            <div className="grid grid-cols-1 md:grid-cols-2 items-center gap-2">
+              <div className="flex items-center justify-center gap-2">
+                <Users className="h-5 w-5 text-gray-300" />
+                <span className="text-white font-semibold tracking-wide uppercase">ORIGEM DOS CLIENTES</span>
+              </div>
+              <div className="flex items-center justify-center gap-2">
+                <ListChecks className="h-5 w-5 text-gray-300" />
+                <span className="text-white font-semibold tracking-wide uppercase">STATUS DOS CLIENTES</span>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                {Object.entries(clientsBySource).map(([source, count]) => (
-                  <div key={source} className="flex items-center justify-between">
-                    <span className="text-sm text-gray-300">{source}</span>
-                    <span className="text-sm font-medium text-white">{count}</span>
-                  </div>
-                ))}
-                {Object.keys(clientsBySource).length === 0 && (
-                  <div className="text-center py-4 text-gray-400">
-                    Nenhum cliente cadastrado
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+              {/* Origem */}
+              <div className="space-y-4">
+                <div className="space-y-2 h-40 overflow-auto">
+                  {Object.entries(clientsBySource).map(([source, count]) => (
+                    <div key={source} className="flex items-center justify-between">
+                      <span className="text-sm text-gray-300">{source}</span>
+                      <span className="text-sm font-medium text-white">{count}</span>
+                    </div>
+                  ))}
+                  {Object.keys(clientsBySource).length === 0 && (
+                    <div className="text-center py-4 text-gray-400">Nenhum cliente cadastrado</div>
+                  )}
+                </div>
+                {clientsPieData.length > 0 && (
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <RechartsTooltip wrapperStyle={{ backgroundColor: '#111827', border: '1px solid #374151', color: '#e5e7eb' }} />
+                        <Legend />
+                        <Pie data={clientsPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={3}>
+                          {clientsPieData.map((entry, index) => (
+                            <Cell key={`cell-origin-${entry.name}-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                          ))}
+                          <LabelList dataKey="value" position="outside" className="fill-gray-300" />
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
                   </div>
                 )}
               </div>
-              <div className="mt-4 pt-4 border-t border-gray-700">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-300 flex items-center gap-1">
-                    <Globe className="h-4 w-4" />
-                    Total de Leads
-                  </span>
-                  <span className="text-white font-medium">{totalLeads}</span>
-                </div>
-              </div>
 
-              {/* Pie Chart Responsivo */}
-              {clientsPieData.length > 0 && (
-                <div className="mt-4 h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <RechartsTooltip wrapperStyle={{ backgroundColor: '#111827', border: '1px solid #374151', color: '#e5e7eb' }} />
-                      <Legend />
-                      <Pie
-                        data={clientsPieData}
-                        dataKey="value"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={50}
-                        outerRadius={90}
-                        paddingAngle={3}
-                      >
-                        {clientsPieData.map((entry, index) => (
-                          <Cell key={`cell-${entry.name}-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                        ))}
-                        <LabelList dataKey="value" position="outside" className="fill-gray-300" />
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
+              {/* Status (stage) */}
+              <div className="space-y-4 md:border-l md:border-gray-700 md:pl-6">
+                <div className="space-y-2 h-40 overflow-auto">
+                  {stageEntries.map(([stage, count]) => (
+                    <div key={stage} className="flex items-center justify-between">
+                      <span className="text-sm text-gray-300">{stage}</span>
+                      <span className="text-sm font-medium text-white">{count}</span>
+                    </div>
+                  ))}
+                  {stageEntries.length === 0 && (
+                    <div className="text-center py-4 text-gray-400">Sem dados de status</div>
+                  )}
                 </div>
-              )}
+                {stagesPieData.length > 0 && (
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <RechartsTooltip wrapperStyle={{ backgroundColor: '#111827', border: '1px solid #374151', color: '#e5e7eb' }} />
+                        <Legend />
+                        <Pie data={stagesPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={3}>
+                          {stagesPieData.map((entry, index) => (
+                            <Cell key={`cell-stage-${entry.name}-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                          ))}
+                          <LabelList dataKey="value" position="outside" className="fill-gray-300" />
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="mt-4 pt-4 border-t border-gray-700">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-300 flex items-center gap-1">
+                  <Globe className="h-4 w-4" />
+                  Total de Leads
+                </span>
+                <span className="text-white font-medium">{totalLeads}</span>
+              </div>
             </div>
           </CardContent>
         </Card>
