@@ -1,4 +1,4 @@
-import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot } from "lucide-react";
+import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send } from "lucide-react";
 import { useState, useEffect } from "react";
 import {
   Sidebar,
@@ -87,6 +87,13 @@ const menuItems = [
     view: "inquilinato" as const,
     permissionKey: "menu_inquilinato",
   },
+  {
+    title: "Disparador",
+    url: "#",
+    icon: Send,
+    view: "disparador" as const,
+    permissionKey: "menu_disparador",
+  },
 ];
 
 const analyticsItems = [
@@ -116,7 +123,7 @@ const secondaryItems = [
 
 interface AppSidebarProps {
   currentView: string;
-  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "reports" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "profile") => void;
+  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "reports" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "disparador" | "profile") => void;
 }
 
 export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {

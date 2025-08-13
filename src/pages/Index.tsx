@@ -16,6 +16,7 @@ import { UserManagementView } from "@/components/UserManagementView";
 import { PermissionsManagementView } from "@/components/PermissionsManagementView";
 import { IsolationDebug } from "@/components/IsolationDebug";
 import { InquilinatoView } from "@/components/InquilinatoView";
+import { DisparadorView } from "@/components/DisparadorView";
 import { UserProfileView } from "@/components/UserProfileView";
 
 import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
@@ -34,6 +35,7 @@ const Index = () => {
     | "users"
     | "permissions"
     | "inquilinato"
+    | "disparador"
     | "profile"
   >("dashboard");
   const [isPropertyModalOpen, setIsPropertyModalOpen] = useState(false);
@@ -52,6 +54,7 @@ const Index = () => {
       "users",
       "permissions",
       "inquilinato",
+      "disparador",
     ] as const,
     []
   );
@@ -74,6 +77,7 @@ const Index = () => {
           users: "menu_users",
           permissions: "menu_permissions",
           inquilinato: "menu_inquilinato",
+          disparador: "menu_disparador",
         };
         const key = keyMap[v as string];
         return key ? hasPermission?.(key) : true;
@@ -132,6 +136,8 @@ const Index = () => {
         return <PermissionsManagementView />;
       case "inquilinato":
         return <InquilinatoView />;
+      case "disparador":
+        return <DisparadorView />;
       case "profile":
         return <UserProfileView />;
       default:
