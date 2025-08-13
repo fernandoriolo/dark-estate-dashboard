@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, FileText, BarChart3, Download } from "lucide-react";
+import { FileText, BarChart3, Download } from "lucide-react";
 import { useProperties } from "@/hooks/useProperties";
 import { useClients } from "@/hooks/useClients";
 import { useToast } from "@/hooks/use-toast";
@@ -13,133 +13,6 @@ export function ReportsView() {
   const { toast } = useToast();
 
   const isLoading = propertiesLoading || clientsLoading;
-
-  const handleSalesExport = () => {
-    try {
-      console.log('Iniciando geração do relatório de vendas...');
-      
-      if (!properties || properties.length === 0) {
-        toast({
-          title: "Aviso",
-          description: "Não há propriedades para gerar o relatório de vendas.",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const doc = new jsPDF();
-      const today = new Date().toLocaleDateString('pt-BR');
-      
-      // Configurar título
-      doc.setFontSize(20);
-      doc.text('Relatório de Vendas Mensais', 20, 20);
-      
-      doc.setFontSize(12);
-      doc.text(`Gerado em: ${today}`, 20, 35);
-      
-      // Resumo geral
-      doc.setFontSize(14);
-      doc.text('Resumo de Vendas', 20, 55);
-      
-      const soldProperties = properties.filter(p => p && p.status === 'sold') || [];
-      const rentedProperties = properties.filter(p => p && p.status === 'rented') || [];
-      const totalSales = soldProperties.length + rentedProperties.length;
-      
-      doc.setFontSize(10);
-      doc.text(`Total de Transações: ${totalSales}`, 20, 70);
-      doc.text(`Propriedades Vendidas: ${soldProperties.length}`, 20, 80);
-      doc.text(`Propriedades Alugadas: ${rentedProperties.length}`, 20, 90);
-      doc.text(`Total de Propriedades no Sistema: ${properties.length}`, 20, 100);
-      
-      // Tabela de vendas por tipo
-      doc.setFontSize(14);
-      doc.text('Vendas por Tipo de Propriedade', 20, 120);
-      
-      const soldHouses = soldProperties.filter(p => p && p.type === 'house').length || 0;
-      const soldApartments = soldProperties.filter(p => p && p.type === 'apartment').length || 0;
-      const soldCommercial = soldProperties.filter(p => p && p.type === 'commercial').length || 0;
-      const soldLand = soldProperties.filter(p => p && p.type === 'land').length || 0;
-      
-      const salesData = [
-        ['Casas', soldHouses.toString(), soldProperties.length > 0 ? `${((soldHouses / soldProperties.length) * 100).toFixed(1)}%` : '0%'],
-        ['Apartamentos', soldApartments.toString(), soldProperties.length > 0 ? `${((soldApartments / soldProperties.length) * 100).toFixed(1)}%` : '0%'],
-        ['Comercial', soldCommercial.toString(), soldProperties.length > 0 ? `${((soldCommercial / soldProperties.length) * 100).toFixed(1)}%` : '0%'],
-        ['Terrenos', soldLand.toString(), soldProperties.length > 0 ? `${((soldLand / soldProperties.length) * 100).toFixed(1)}%` : '0%']
-      ];
-      
-      autoTable(doc, {
-        head: [['Tipo', 'Vendidas', '% do Total']],
-        body: salesData,
-        startY: 130,
-        styles: {
-          fontSize: 10,
-          cellPadding: 3,
-        },
-        headStyles: {
-          fillColor: [75, 85, 99],
-          textColor: 255,
-        },
-        alternateRowStyles: {
-          fillColor: [245, 245, 245],
-        },
-      });
-      
-      // Tabela de aluguéis por tipo
-      let yPosition = (doc as any).lastAutoTable ? (doc as any).lastAutoTable.finalY + 20 : 200;
-      doc.setFontSize(14);
-      doc.text('Aluguéis por Tipo de Propriedade', 20, yPosition);
-      
-      const rentedHouses = rentedProperties.filter(p => p && p.type === 'house').length || 0;
-      const rentedApartments = rentedProperties.filter(p => p && p.type === 'apartment').length || 0;
-      const rentedCommercial = rentedProperties.filter(p => p && p.type === 'commercial').length || 0;
-      const rentedLand = rentedProperties.filter(p => p && p.type === 'land').length || 0;
-      
-      const rentsData = [
-        ['Casas', rentedHouses.toString(), rentedProperties.length > 0 ? `${((rentedHouses / rentedProperties.length) * 100).toFixed(1)}%` : '0%'],
-        ['Apartamentos', rentedApartments.toString(), rentedProperties.length > 0 ? `${((rentedApartments / rentedProperties.length) * 100).toFixed(1)}%` : '0%'],
-        ['Comercial', rentedCommercial.toString(), rentedProperties.length > 0 ? `${((rentedCommercial / rentedProperties.length) * 100).toFixed(1)}%` : '0%'],
-        ['Terrenos', rentedLand.toString(), rentedProperties.length > 0 ? `${((rentedLand / rentedProperties.length) * 100).toFixed(1)}%` : '0%']
-      ];
-      
-      autoTable(doc, {
-        head: [['Tipo', 'Alugadas', '% do Total']],
-        body: rentsData,
-        startY: yPosition + 10,
-        styles: {
-          fontSize: 10,
-          cellPadding: 3,
-        },
-        headStyles: {
-          fillColor: [59, 130, 246],
-          textColor: 255,
-        },
-        alternateRowStyles: {
-          fillColor: [245, 245, 245],
-        },
-      });
-      
-      // Rodapé
-      const pageHeight = doc.internal.pageSize.height;
-      doc.setFontSize(8);
-      doc.text('Relatório gerado pelo Sistema ImobiPro', 20, pageHeight - 20);
-      doc.text(`© ${new Date().getFullYear()} - Todos os direitos reservados`, 20, pageHeight - 10);
-      
-      doc.save(`relatorio-vendas-${today.replace(/\//g, '-')}.pdf`);
-      
-      toast({
-        title: "Relatório gerado!",
-        description: "O relatório de vendas foi baixado em PDF com sucesso.",
-      });
-      
-    } catch (error) {
-      console.error('Erro detalhado ao gerar relatório de vendas:', error);
-      toast({
-        title: "Erro na geração",
-        description: `Erro: ${error.message || 'Erro desconhecido ao gerar relatório de vendas'}`,
-        variant: "destructive",
-      });
-    }
-  };
 
   const handlePropertiesExport = () => {
     try {
@@ -404,30 +277,7 @@ export function ReportsView() {
         <p className="text-gray-400">Visualize e exporte relatórios detalhados em PDF</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <Card className="bg-gray-800 border-gray-700">
-          <CardHeader>
-            <CardTitle className="text-white flex items-center gap-2">
-              <TrendingUp className="h-5 w-5" />
-              Vendas Mensais
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-gray-400 mb-4">Relatório de vendas e aluguéis realizados</p>
-            <div className="space-y-2 text-sm text-gray-300 mb-4">
-              <div>Propriedades vendidas: {properties.filter(p => p.status === 'sold').length}</div>
-              <div>Propriedades alugadas: {properties.filter(p => p.status === 'rented').length}</div>
-            </div>
-            <Button 
-              className="w-full bg-blue-600 hover:bg-blue-700"
-              onClick={handleSalesExport}
-              disabled={isLoading}
-            >
-              <Download className="h-4 w-4 mr-2" />
-              {isLoading ? "Carregando..." : "Exportar PDF"}
-            </Button>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
 
         <Card className="bg-gray-800 border-gray-700">
           <CardHeader>
