@@ -7,6 +7,7 @@ import {
   databaseLeadToKanbanLead,
   kanbanLeadToDatabaseLead 
 } from '@/types/kanban';
+import { logAudit } from '@/lib/audit/logger';
 
 type DatabaseLead = Tables<'leads'>;
 
@@ -226,6 +227,7 @@ export function useKanbanLeads() {
         updated_at: data.updated_at || null
       });
       setLeads(prevLeads => [newKanbanLead, ...prevLeads]);
+      logAudit({ action: 'lead.created', resource: 'lead', resourceId: newKanbanLead.id, meta: { nome: newKanbanLead.nome, origem: newKanbanLead.origem } });
 
       return newKanbanLead;
     } catch (err) {
@@ -280,6 +282,7 @@ export function useKanbanLeads() {
             : lead
         )
       );
+      logAudit({ action: 'lead.updated', resource: 'lead', resourceId: leadId, meta: updates });
 
       return true;
     } catch (err) {

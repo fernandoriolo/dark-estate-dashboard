@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { logAudit } from '@/lib/audit/logger';
 import { useUserProfile } from './useUserProfile';
 
 export interface WhatsAppInstance {
@@ -725,6 +726,8 @@ export function useWhatsAppInstances() {
       if (error) throw error;
 
       setChats(prev => [data, ...prev]);
+      // Audit
+      logAudit({ action: 'whatsapp.chat_created', resource: 'whatsapp_chat', resourceId: data.id, meta: { contact_phone: chatData.contact_phone, instance_id: chatData.instance_id } });
       return data;
 
     } catch (error: any) {
@@ -778,6 +781,8 @@ export function useWhatsAppInstances() {
       if (error) throw error;
 
       // Aqui você integraria com a API do WhatsApp para enviar a mensagem real
+      // Audit
+      logAudit({ action: 'whatsapp.message_sent', resource: 'whatsapp_message', resourceId: data.id, meta: { chat_id: messageData.chat_id, instance_id: messageData.instance_id, contact_phone: messageData.contact_phone } });
 
       return data;
 
