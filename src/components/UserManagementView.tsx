@@ -36,6 +36,7 @@ import { supabase } from '@/integrations/supabase/client';
 export function UserManagementView() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const DEFAULT_TEMP_PASSWORD = (import.meta as any).env?.VITE_DEFAULT_NEW_USER_PASSWORD || 'Imobi@1234';
 
   const fetchUsers = async (search: string, roleFilter: string) => {
     try {
@@ -72,7 +73,7 @@ export function UserManagementView() {
   // Dados do formulário de criação
   const [createForm, setCreateForm] = useState({
     email: '',
-    password: '',
+    password: DEFAULT_TEMP_PASSWORD,
     full_name: '',
     role: 'corretor' as 'corretor' | 'gestor' | 'admin',
     department: '',
@@ -100,7 +101,7 @@ export function UserManagementView() {
   const filteredUsers = (users as any[]).filter(user => {
     const matchesSearch = user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         user.department?.toLowerCase().includes(searchTerm.toLowerCase());
+                         user.phone?.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesRole = roleFilter === "all" || user.role === roleFilter;
 
@@ -112,7 +113,16 @@ export function UserManagementView() {
     if (!selectedUser) return;
 
     try {
-      await changeUserRole(selectedUser.id, newRole);
+      if (isAdmin) {
+        await changeUserRole(selectedUser.id, newRole);
+      } else if (isManager) {
+        // Gestor: usar RPC seguro
+        const { error } = await supabase.rpc('update_user_role_in_company', {
+          target_user_id: selectedUser.id,
+          new_role: newRole,
+        });
+        if (error) throw error;
+      }
       await fetchUsers(searchTerm, roleFilter); // Recarregar a lista
       setShowEditModal(false);
       setSelectedUser(null);
@@ -125,7 +135,12 @@ export function UserManagementView() {
   const handleDeactivateUser = async (userId: string) => {
     if (window.confirm('Tem certeza que deseja desativar este usuário?')) {
       try {
-        await deactivateUser(userId);
+        if (isAdmin) {
+          await deactivateUser(userId);
+        } else if (isManager) {
+          const { error } = await supabase.rpc('deactivate_user_in_company', { target_user_id: userId });
+          if (error) throw error;
+        }
         await fetchUsers(searchTerm, roleFilter); // Recarregar a lista
       } catch (error: any) {
         setError(error.message);
@@ -138,7 +153,7 @@ export function UserManagementView() {
     e.preventDefault();
     
     // Validações básicas
-    if (!createForm.email.trim() || !createForm.password.trim() || !createForm.full_name.trim()) {
+    if (!createForm.email.trim() || !createForm.full_name.trim()) {
       setError('Email, senha e nome são obrigatórios');
       return;
     }
@@ -157,7 +172,7 @@ export function UserManagementView() {
       // Resetar formulário
       setCreateForm({
         email: '',
-        password: '',
+        password: DEFAULT_TEMP_PASSWORD,
         full_name: '',
         role: 'corretor',
         department: '',
@@ -165,7 +180,7 @@ export function UserManagementView() {
       });
       
       setError(null);
-      alert(`Usuário ${createForm.full_name} criado com sucesso!\nEmail: ${createForm.email}\nO usuário deve fazer login com estes dados.`);
+      alert(`Usuário ${createForm.full_name} criado com sucesso!\nEmail: ${createForm.email}\nSenha temporária: ${createForm.password}\nO usuário deve trocar a senha no primeiro acesso.`);
     } catch (error: any) {
       setError(error.message);
     } finally {
@@ -183,7 +198,7 @@ export function UserManagementView() {
     setShowCreateModal(false);
     setCreateForm({
       email: '',
-      password: '',
+      password: DEFAULT_TEMP_PASSWORD,
       full_name: '',
       role: 'corretor',
       department: '',
@@ -338,7 +353,7 @@ export function UserManagementView() {
             
             <Select value={roleFilter} onValueChange={setRoleFilter}>
               <SelectTrigger className="w-40 bg-gray-900/50 border-gray-600 text-white">
-                <SelectValue placeholder="Cargo" />
+                <SelectValue placeholder="Hierarquia" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos</SelectItem>
@@ -371,12 +386,11 @@ export function UserManagementView() {
             <TableHeader>
               <TableRow className="border-gray-700 hover:bg-gray-800/50">
                 <TableHead className="text-gray-300">Usuário</TableHead>
-                <TableHead className="text-gray-300">Cargo</TableHead>
-                <TableHead className="text-gray-300">Departamento</TableHead>
+                <TableHead className="text-gray-300">Hierarquia</TableHead>
                 <TableHead className="text-gray-300">Contato</TableHead>
                 <TableHead className="text-gray-300">Status</TableHead>
                 <TableHead className="text-gray-300">Criado em</TableHead>
-                {isAdmin && <TableHead className="text-gray-300">Ações</TableHead>}
+                {(isAdmin || isManager) && <TableHead className="text-gray-300">Ações</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -413,10 +427,6 @@ export function UserManagementView() {
                       </TableCell>
                       
                       <TableCell className="text-gray-300">
-                        {user.department || '-'}
-                      </TableCell>
-                      
-                      <TableCell className="text-gray-300">
                         {user.phone || '-'}
                       </TableCell>
                       
@@ -443,7 +453,7 @@ export function UserManagementView() {
                         {new Date(user.created_at).toLocaleDateString('pt-BR')}
                       </TableCell>
                       
-                      {isAdmin && (
+                      {(isAdmin || isManager) && (
                         <TableCell>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -458,9 +468,9 @@ export function UserManagementView() {
                                 setShowEditModal(true);
                               }}>
                                 <Edit className="h-4 w-4 mr-2" />
-                                Alterar Cargo
+                                Alterar Hierarquia
                               </DropdownMenuItem>
-                              {user.is_active && (
+                              {(isAdmin || isManager) && user.is_active && (
                                 <DropdownMenuItem 
                                   onClick={() => handleDeactivateUser(user.id)}
                                   className="text-red-400 hover:text-red-300"
@@ -499,7 +509,7 @@ export function UserManagementView() {
       <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
         <DialogContent className="bg-gray-900 border-gray-700">
           <DialogHeader>
-            <DialogTitle className="text-white">Alterar Cargo do Usuário</DialogTitle>
+            <DialogTitle className="text-white">Alterar Hierarquia do Usuário</DialogTitle>
             <DialogDescription className="text-gray-400">
               Altere o cargo de {selectedUser?.full_name}
             </DialogDescription>
@@ -507,7 +517,7 @@ export function UserManagementView() {
           
           <div className="space-y-4">
             <div>
-              <Label htmlFor="new-role" className="text-gray-300">Novo Cargo</Label>
+              <Label htmlFor="new-role" className="text-gray-300">Nova Hierarquia</Label>
               <Select value={newRole} onValueChange={(value: any) => setNewRole(value)}>
                 <SelectTrigger className="bg-gray-800/50 border-gray-600 text-white">
                   <SelectValue />
@@ -525,7 +535,7 @@ export function UserManagementView() {
             <Button 
               variant="outline" 
               onClick={() => setShowEditModal(false)}
-              className="border-gray-600 text-gray-300 hover:bg-gray-800"
+              className="border-gray-600 text-red-500 hover:bg-gray-800 hover:text-red-400"
             >
               Cancelar
             </Button>
@@ -534,7 +544,7 @@ export function UserManagementView() {
               className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
             >
               <UserCheck className="h-4 w-4 mr-2" />
-              Alterar Cargo
+              Alterar Hierarquia
             </Button>
           </div>
         </DialogContent>
@@ -579,19 +589,19 @@ export function UserManagementView() {
               />
             </div>
 
-            {/* Senha */}
+            {/* Senha temporária (padrão configurável) */}
             <div>
-              <Label htmlFor="password" className="text-gray-300">Senha Temporária *</Label>
+              <Label htmlFor="password" className="text-gray-300">Senha Temporária</Label>
               <Input
                 id="password"
-                type="password"
+                type="text"
                 value={createForm.password}
                 onChange={(e) => updateCreateForm('password', e.target.value)}
-                placeholder="Mínimo 6 caracteres"
+                placeholder="Senha padrão para novos usuários"
                 className="bg-gray-800/50 border-gray-600 text-white placeholder-gray-400"
                 minLength={6}
-                required
               />
+              <p className="text-xs text-gray-500 mt-1">Se deixado como padrão, usaremos VITE_DEFAULT_NEW_USER_PASSWORD (ou Imobi@1234).</p>
             </div>
 
             {/* Cargo */}
@@ -609,18 +619,7 @@ export function UserManagementView() {
               </Select>
             </div>
 
-            {/* Departamento */}
-            <div>
-              <Label htmlFor="department" className="text-gray-300">Departamento</Label>
-              <Input
-                id="department"
-                type="text"
-                value={createForm.department}
-                onChange={(e) => updateCreateForm('department', e.target.value)}
-                placeholder="Ex: Vendas, Marketing, Administrativo"
-                className="bg-gray-800/50 border-gray-600 text-white placeholder-gray-400"
-              />
-            </div>
+            {/* Departamento removido */}
 
             {/* Telefone */}
             <div>
@@ -651,7 +650,7 @@ export function UserManagementView() {
                 type="button"
                 variant="outline" 
                 onClick={handleCloseCreateModal}
-                className="border-gray-600 text-gray-300 hover:bg-gray-800"
+                className="border-gray-600 text-red-500 hover:bg-gray-800 hover:text-red-400"
                 disabled={createLoading}
               >
                 Cancelar
