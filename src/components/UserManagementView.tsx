@@ -24,7 +24,6 @@ import {
   XCircle,
   AlertTriangle,
   MoreVertical,
-  UserCheck,
   UserX
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
@@ -62,12 +61,12 @@ export function UserManagementView() {
   useEffect(() => { fetchUsers(searchTerm, roleFilter); }, [searchTerm, roleFilter]);
 
   // TODOS OS HOOKS DEVEM VIR PRIMEIRO - NUNCA APÓS RETURNS CONDICIONAIS
-  const { profile, isManager, isAdmin, changeUserRole, deactivateUser, createNewUser } = useUserProfile();
+  const { profile, isManager, isAdmin, deactivateUser, createNewUser } = useUserProfile();
   const [error, setError] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
-  const [newRole, setNewRole] = useState<'corretor' | 'gestor' | 'admin'>('corretor');
+  const [editForm, setEditForm] = useState<{ full_name: string; email: string; phone: string; role: 'corretor' | 'gestor' | 'admin' } | null>(null);
   const [createLoading, setCreateLoading] = useState(false);
   
   // Dados do formulário de criação
@@ -108,17 +107,29 @@ export function UserManagementView() {
     return matchesSearch && matchesRole;
   });
 
-  // Alterar role do usuário
-  const handleChangeRole = async () => {
-    if (!selectedUser) return;
-
+  // Salvar edição do usuário
+  const handleSaveUserEdit = async () => {
+    if (!selectedUser || !editForm) return;
     try {
-      await changeUserRole(selectedUser.id, newRole);
-      await fetchUsers(searchTerm, roleFilter); // Recarregar a lista
+      const updates: any = {
+        full_name: editForm.full_name,
+        email: editForm.email,
+        phone: editForm.phone,
+      };
+      if (isAdmin) {
+        updates.role = editForm.role;
+      }
+      const { error: upErr } = await supabase
+        .from('user_profiles')
+        .update(updates)
+        .eq('id', selectedUser.id);
+      if (upErr) throw upErr;
+      await fetchUsers(searchTerm, roleFilter);
       setShowEditModal(false);
       setSelectedUser(null);
-    } catch (error: any) {
-      setError(error.message);
+      setEditForm(null);
+    } catch (e: any) {
+      setError(e.message || 'Erro ao salvar alterações');
     }
   };
 
@@ -441,21 +452,26 @@ export function UserManagementView() {
                       
                       {(isAdmin || isManager) && (
                         <TableCell>
-                          <DropdownMenu>
+              <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm">
-                                <MoreVertical className="h-4 w-4" />
+                  <Button variant="ghost" size="sm">
+                    <MoreVertical className="h-4 w-4 text-white" />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => {
-                                setSelectedUser(user);
-                                setNewRole(user.role);
-                                setShowEditModal(true);
-                              }}>
-                                <Edit className="h-4 w-4 mr-2" />
-                                Alterar Hierarquia
-                              </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => {
+                    setSelectedUser(user);
+                    setEditForm({
+                      full_name: user.full_name || '',
+                      email: user.email || '',
+                      phone: user.phone || '',
+                      role: (user.role || 'corretor') as 'corretor' | 'gestor' | 'admin',
+                    });
+                    setShowEditModal(true);
+                  }}>
+                    <Edit className="h-4 w-4 mr-2" />
+                    Editar
+                  </DropdownMenuItem>
                               {(isAdmin || isManager) && user.is_active && (
                                 <DropdownMenuItem 
                                   onClick={() => handleDeactivateUser(user.id)}
@@ -495,26 +511,53 @@ export function UserManagementView() {
       <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
         <DialogContent className="bg-gray-900 border-gray-700">
           <DialogHeader>
-            <DialogTitle className="text-white">Alterar Hierarquia do Usuário</DialogTitle>
+            <DialogTitle className="text-white">Editar Usuário</DialogTitle>
             <DialogDescription className="text-gray-400">
-              Altere o cargo de {selectedUser?.full_name}
+              Atualize os dados de {selectedUser?.full_name}
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4">
             <div>
-              <Label htmlFor="new-role" className="text-gray-300">Nova Hierarquia</Label>
-              <Select value={newRole} onValueChange={(value: any) => setNewRole(value)}>
-                <SelectTrigger className="bg-gray-800/50 border-gray-600 text-white">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="corretor">Corretor</SelectItem>
-                  <SelectItem value="gestor">Gestor</SelectItem>
-                  <SelectItem value="admin">Administrador</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label className="text-gray-300">Nome Completo</Label>
+              <Input
+                value={editForm?.full_name || ''}
+                onChange={(e) => setEditForm(prev => prev ? { ...prev, full_name: e.target.value } : prev)}
+                className="bg-gray-800/50 border-gray-600 text-white"
+              />
             </div>
+            <div>
+              <Label className="text-gray-300">Email</Label>
+              <Input
+                type="email"
+                value={editForm?.email || ''}
+                onChange={(e) => setEditForm(prev => prev ? { ...prev, email: e.target.value } : prev)}
+                className="bg-gray-800/50 border-gray-600 text-white"
+              />
+            </div>
+            <div>
+              <Label className="text-gray-300">Telefone</Label>
+              <Input
+                value={editForm?.phone || ''}
+                onChange={(e) => setEditForm(prev => prev ? { ...prev, phone: e.target.value } : prev)}
+                className="bg-gray-800/50 border-gray-600 text-white"
+              />
+            </div>
+            {isAdmin && (
+              <div>
+                <Label className="text-gray-300">Hierarquia</Label>
+                <Select value={editForm?.role || 'corretor'} onValueChange={(value: any) => setEditForm(prev => prev ? { ...prev, role: value } : prev)}>
+                  <SelectTrigger className="bg-gray-800/50 border-gray-600 text-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="corretor">Corretor</SelectItem>
+                    <SelectItem value="gestor">Gestor</SelectItem>
+                    <SelectItem value="admin">Administrador</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
           
           <div className="flex justify-end gap-3 mt-6">
@@ -526,11 +569,11 @@ export function UserManagementView() {
               Cancelar
             </Button>
             <Button 
-              onClick={handleChangeRole}
+              onClick={handleSaveUserEdit}
               className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
             >
-              <UserCheck className="h-4 w-4 mr-2" />
-              Alterar Hierarquia
+              <Edit className="h-4 w-4 mr-2" />
+              Salvar
             </Button>
           </div>
         </DialogContent>
