@@ -1,0 +1,194 @@
+import { useState, useEffect } from 'react';
+import { useUserProfile } from '@/hooks/useUserProfile';
+import { supabase } from '@/integrations/supabase/client';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { KeyRound, Mail } from 'lucide-react';
+import { toast } from './ui/sonner';
+
+export function UserProfileView() {
+  const { profile, updateProfile } = useUserProfile();
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
+  const [email, setEmail] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (profile) {
+      setFullName(profile.full_name || '');
+      setPhone(profile.phone || '');
+      setAvatarUrl(profile.avatar_url || '');
+      setEmail(profile.email || '');
+    }
+  }, [profile]);
+
+  const handleUploadAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setUploading(true);
+      const fileExt = file.name.split('.').pop();
+      const filePath = `avatars/${profile?.id}/${Date.now()}.${fileExt}`;
+
+      const { error: upErr } = await supabase.storage.from('avatars').upload(filePath, file, {
+        upsert: true,
+        contentType: file.type,
+      });
+      if (upErr) throw upErr;
+
+      const { data: pub } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      const url = pub?.publicUrl || '';
+      setAvatarUrl(url);
+      await updateProfile({ avatar_url: url });
+      toast.success('Avatar atualizado com sucesso');
+    } catch (e: any) {
+      setError(e.message || 'Erro ao enviar avatar');
+      toast.error(e.message || 'Erro ao enviar avatar');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const saveProfile = async () => {
+    try {
+      setSavingProfile(true);
+      setError(null);
+      await updateProfile({ full_name: fullName, phone, avatar_url: avatarUrl });
+      toast.success('Perfil salvo com sucesso');
+    } catch (e: any) {
+      setError(e.message || 'Erro ao salvar perfil');
+      toast.error(e.message || 'Erro ao salvar perfil');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const changeEmail = async () => {
+    try {
+      setSavingEmail(true);
+      setError(null);
+      if (!newEmail) throw new Error('Informe o novo email');
+      const { error } = await supabase.auth.updateUser({ email: newEmail });
+      if (error) throw error;
+      setNewEmail('');
+      toast.success('Email atualizado. Verifique a confirmação, se necessário.');
+    } catch (e: any) {
+      setError(e.message || 'Erro ao alterar email');
+      toast.error(e.message || 'Erro ao alterar email');
+    } finally {
+      setSavingEmail(false);
+    }
+  };
+
+  const changePassword = async () => {
+    try {
+      setSavingPassword(true);
+      setError(null);
+      if (!newPassword || newPassword.length < 6) throw new Error('Senha mínima de 6 caracteres');
+      if (newPassword !== confirmPassword) throw new Error('Confirmação de senha não confere');
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      setNewPassword('');
+      setConfirmPassword('');
+      toast.success('Senha alterada com sucesso');
+    } catch (e: any) {
+      setError(e.message || 'Erro ao alterar senha');
+      toast.error(e.message || 'Erro ao alterar senha');
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
+  return (
+    <div className="max-w-5xl mx-auto space-y-6">
+      <h1 className="text-3xl font-bold">Meu Perfil</h1>
+
+      {error && (
+        <div className="text-sm text-red-400">{error}</div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Perfil Básico */}
+        <Card className="bg-gray-800/50 border-gray-700 lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-white">Informações Pessoais</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label className="text-gray-300">Nome Completo</Label>
+                <Input value={fullName} onChange={(e) => setFullName(e.target.value)} className="bg-gray-900/50 border-gray-700 text-white" />
+              </div>
+              <div>
+                <Label className="text-gray-300">Telefone</Label>
+                <Input value={phone} onChange={(e) => setPhone(e.target.value)} className="bg-gray-900/50 border-gray-700 text-white" />
+              </div>
+            </div>
+            <div>
+              <Label className="text-gray-300">Avatar (upload)</Label>
+              <div className="flex items-center gap-3">
+                <div className="h-14 w-14 rounded-full bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center">
+                  <span className="text-white font-semibold">{(fullName?.charAt(0) || 'U').toUpperCase()}</span>
+                </div>
+                <input type="file" accept="image/*" onChange={handleUploadAvatar} disabled={uploading} />
+                {avatarUrl && <a href={avatarUrl} target="_blank" className="text-blue-400 text-sm">ver imagem</a>}
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={saveProfile} disabled={savingProfile} className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
+                {savingProfile ? 'Salvando...' : 'Salvar alterações'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Email e Senha */}
+        <div className="space-y-6">
+          <Card className="bg-gray-800/50 border-gray-700">
+            <CardHeader>
+              <CardTitle className="text-white flex items-center gap-2"><Mail className="h-4 w-4" /> Email</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <Label className="text-gray-400">Email atual</Label>
+                <div className="text-white text-sm break-all">{email}</div>
+              </div>
+              <Input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="novo@email"
+                className="bg-gray-900/50 border-gray-700 text-white" />
+              <Button onClick={changeEmail} disabled={savingEmail} className="w-full bg-gray-700 hover:bg-gray-600">
+                {savingEmail ? 'Salvando...' : 'Alterar Email'}
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gray-800/50 border-gray-700">
+            <CardHeader>
+              <CardTitle className="text-white flex items-center gap-2"><KeyRound className="h-4 w-4" /> Senha</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Nova senha"
+                className="bg-gray-900/50 border-gray-700 text-white" />
+              <Input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirmar senha"
+                className="bg-gray-900/50 border-gray-700 text-white" />
+              <Button onClick={changePassword} disabled={savingPassword} className="w-full bg-gray-700 hover:bg-gray-600">
+                {savingPassword ? 'Salvando...' : 'Alterar Senha'}
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+

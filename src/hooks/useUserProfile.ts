@@ -223,33 +223,33 @@ export function useUserProfile() {
         throw new Error('Sem permissão para criar usuários');
       }
 
-      // Preferir criação via Edge Function com service_role para confirmar e-mail e evitar bloqueio de login
+      // Preferir criação via Edge Function com service_role (invocação direta via supabase.functions)
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
       if (!token) throw new Error('Sessão inválida para criar usuário');
 
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_FUNCTIONS_URL || ''}/admin-create-user`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
+      const { data: fnData, error: fnError } = await supabase.functions.invoke('admin-create-user', {
+        body: {
           email: userData.email,
           password: userData.password,
           full_name: userData.full_name,
           role: userData.role,
           phone: userData.phone || undefined,
-        })
+        },
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
       });
 
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        throw new Error(err?.error || 'Falha ao criar usuário');
+      if (fnError) {
+        throw new Error(fnError.message || 'Falha ao criar usuário');
+      }
+      if ((fnData as any)?.error) {
+        throw new Error((fnData as any).error);
       }
 
       // Recarregar lista chamadora cuidará do fetch
-      return { id: (await resp.json()).user_id } as any;
+      return { id: (fnData as any)?.user_id } as any;
 
     } catch (error: any) {
       console.error('Erro ao criar usuário:', error);

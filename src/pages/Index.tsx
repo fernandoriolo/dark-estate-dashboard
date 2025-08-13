@@ -19,6 +19,7 @@ import { PermissionsManagementView } from "@/components/PermissionsManagementVie
 import { IsolationDebug } from "@/components/IsolationDebug";
 import { InquilinatoView } from "@/components/InquilinatoView";
 import { ChatsView } from "@/components/ChatsView";
+import { UserProfileView } from "@/components/UserProfileView";
 
 import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -38,6 +39,7 @@ const Index = () => {
     | "permissions"
     | "inquilinato"
     | "chats"
+    | "profile"
   >("dashboard");
   const [isPropertyModalOpen, setIsPropertyModalOpen] = useState(false);
   const { imoveis, loading, refetch } = useImoveisVivaReal();
@@ -85,6 +87,16 @@ const Index = () => {
     }
   }, [currentView, hasPermission, fallbackViews]);
 
+  // Navegação disparada pelo Header (evento global simples)
+  useEffect(() => {
+    const handler = (e: any) => {
+      const target = e?.detail as typeof currentView;
+      if (target) setCurrentView(target);
+    };
+    window.addEventListener('app:navigate', handler as any);
+    return () => window.removeEventListener('app:navigate', handler as any);
+  }, []);
+
   const handlePropertySubmit = () => {
     refetch();
     setIsPropertyModalOpen(false);
@@ -129,6 +141,8 @@ const Index = () => {
         return <PermissionsManagementView />;
       case "inquilinato":
         return <InquilinatoView />;
+      case "profile":
+        return <UserProfileView />;
       default:
         return <DashboardContent properties={properties} loading={loading} />;
     }

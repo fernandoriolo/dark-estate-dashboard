@@ -144,37 +144,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const { profile, isAdmin } = useUserProfile();
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [changing, setChanging] = useState(false);
-  const [changeError, setChangeError] = useState<string | null>(null);
-
-  const handleChangePassword = async () => {
-    try {
-      setChanging(true);
-      setChangeError(null);
-      if (!newPassword || newPassword.length < 6) {
-        setChangeError('A nova senha deve ter pelo menos 6 caracteres');
-        setChanging(false);
-        return;
-      }
-      if (newPassword !== confirmPassword) {
-        setChangeError('A confirmação de senha não confere');
-        setChanging(false);
-        return;
-      }
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) throw error;
-      setNewPassword("");
-      setConfirmPassword("");
-      setShowPasswordModal(false);
-    } catch (err: any) {
-      setChangeError(err.message || 'Erro ao alterar senha');
-    } finally {
-      setChanging(false);
-    }
-  };
+  
   const { hasPermission } = usePermissions();
 
   useEffect(() => {
@@ -383,7 +353,6 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
           </Button>
         </div>
       </SidebarFooter>
-
       <Dialog open={showPasswordModal} onOpenChange={setShowPasswordModal}>
         <DialogContent className="bg-gray-900 border-gray-700 max-w-md">
           <DialogHeader>
