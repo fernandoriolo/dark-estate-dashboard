@@ -1,8 +1,4 @@
-<<<<<<< HEAD
 import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare, KeyRound } from "lucide-react";
-=======
-import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send } from "lucide-react";
->>>>>>> 2f9298d (style(disparador): placeholder e botão do modelo em azul claro com negrito leve)
 import { useState, useEffect } from "react";
 import {
   Sidebar,
