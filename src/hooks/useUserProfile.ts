@@ -14,6 +14,8 @@ export interface UserProfile {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  require_password_change?: boolean;
+  password_changed_at?: string | null;
 }
 
 export interface Company {
@@ -271,7 +273,10 @@ export function useUserProfile() {
             role: userData.role,
             department: userData.department || null,
             phone: userData.phone || null,
-            is_active: true
+            is_active: true,
+            // Garantir vínculo à mesma empresa do criador
+            company_id: profile?.company_id || null,
+            require_password_change: true
           })
           .eq('id', authData.user.id)
           .select()
@@ -297,10 +302,12 @@ export function useUserProfile() {
             email: userData.email,
             full_name: userData.full_name,
             role: userData.role,
-            company_id: null,
+            // Vincular à empresa do criador (admin)
+            company_id: profile?.company_id || null,
             department: userData.department || null,
             phone: userData.phone || null,
-            is_active: true
+            is_active: true,
+            require_password_change: true
           })
           .select()
           .single();

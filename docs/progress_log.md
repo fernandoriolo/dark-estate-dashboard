@@ -204,6 +204,13 @@ erDiagram
 ---
 Última atualização: gerada automaticamente.
 
+## 2025-08-12 — Usuários: criação, hierarquia e senha inicial
+- Correção: novos usuários criados via módulo agora recebem `company_id` do criador (Admin), aparecendo imediatamente na lista (RPC `list_company_users`).
+- UI: Campo "Departamento" removido do modal de criação e da tabela; "Cargo" renomeado para "Hierarquia"; botão "Cancelar" em vermelho.
+- Senha padrão: `VITE_DEFAULT_NEW_USER_PASSWORD` (fallback `Imobi@1234`) usada como senha temporária, exibida no alerta pós-criação.
+- Primeiro acesso: adicionadas colunas `require_password_change` e `password_changed_at` em `user_profiles`; modal obrigatório no app força troca de senha (com confirmação) e limpa o flag após sucesso.
+- RPCs seguros (gestor): `update_user_role_in_company` (gestor só define `corretor` na própria empresa) e `deactivate_user_in_company` (gestor desativa usuários da própria empresa). Admin mantém poderes globais.
+
 ## 2025-08-10 — Endurecimento de RLS e unificação
 - Criada migration `supabase/migrations/20250810090000_harden_rls_policies.sql` consolidando políticas RLS por `company_id` + `role` e removendo políticas permissivas/duplicadas.
 - Adicionadas funções `get_user_role()` e `get_user_company_id()` (SECURITY DEFINER) e triggers `set_row_tenant_defaults()` para popular `user_id`/`company_id` em inserts.
