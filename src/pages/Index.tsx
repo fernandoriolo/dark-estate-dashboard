@@ -10,6 +10,7 @@ import { ClientsView } from "@/components/ClientsView";
 import { ClientsCRMView } from "@/components/ClientsCRMView";
 
 import { AgendaView } from "@/components/AgendaView";
+import PlantaoView from "@/components/PlantaoView";
 import { ConnectionsViewSimplified } from "@/components/ConnectionsViewSimplified";
 import { ContractsView } from "@/components/ContractsView";
 import { UserManagementView } from "@/components/UserManagementView";
@@ -18,6 +19,7 @@ import { IsolationDebug } from "@/components/IsolationDebug";
 import { InquilinatoView } from "@/components/InquilinatoView";
 import { DisparadorView } from "@/components/DisparadorView";
 import { UserProfileView } from "@/components/UserProfileView";
+import { ChatsView } from "@/components/ChatsView";
 
 import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -28,6 +30,7 @@ const Index = () => {
     | "properties"
     | "contracts"
     | "agenda"
+    | "plantao"
     | "reports"
     | "clients"
     | "clients-crm"
@@ -36,6 +39,7 @@ const Index = () => {
     | "permissions"
     | "inquilinato"
     | "disparador"
+    | "chats"
     | "profile"
   >("dashboard");
   const [isPropertyModalOpen, setIsPropertyModalOpen] = useState(false);
@@ -122,6 +126,8 @@ const Index = () => {
         return <ContractsView />;
       case "agenda":
         return <AgendaView />;
+      case "plantao":
+        return <PlantaoView />;
       case "reports":
         return <ReportsView />;
       case "clients":
@@ -130,6 +136,8 @@ const Index = () => {
         return <ClientsCRMView />;
       case "connections":
         return <ConnectionsViewSimplified />;
+      case "chats":
+        return <ChatsView />;
       case "users":
         return <UserManagementView />;
       case "permissions":
