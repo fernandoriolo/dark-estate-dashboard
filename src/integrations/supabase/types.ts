@@ -511,6 +511,8 @@ export type Database = {
           stage: string | null
           updated_at: string | null
           user_id: string | null
+          assigned_user_id: string | null
+          id_corretor_responsavel: string | null
         }
         Insert: {
           company_id?: string | null

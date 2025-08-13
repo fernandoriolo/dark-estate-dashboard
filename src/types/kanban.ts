@@ -25,6 +25,8 @@ export interface DatabaseLead {
   notes: string | null;
   property_id: string | null;
   imovel_interesse: string | null; // ID numérico do imóvel
+  assigned_user_id?: string | null;
+  id_corretor_responsavel?: string | null;
   created_at: string | null;
   updated_at: string | null;
   message?: string | null; // Campo legado
@@ -47,9 +49,12 @@ export interface KanbanLead {
   observacoes: string;
   property_id?: string;
   imovel_interesse?: string; // ID numérico do imóvel
+  imovel_tipo?: string; // tipo_imovel resolvido a partir de imoveisvivareal
   message?: string;
+  id_corretor_responsavel?: string;
   // Informações do corretor responsável
   corretor?: {
+    id?: string;
     nome: string;
     role: string;
   };
@@ -92,8 +97,10 @@ export function databaseLeadToKanbanLead(dbLead: any): KanbanLead {
     property_id: dbLead.property_id || undefined,
     imovel_interesse: dbLead.imovel_interesse || undefined,
     message: dbLead.message || undefined,
+    id_corretor_responsavel: dbLead.id_corretor_responsavel || dbLead.assigned_user_id || undefined,
     // Incluir informações do corretor se disponível
     corretor: dbLead.corretor ? {
+      id: dbLead.corretor.id,
       nome: dbLead.corretor.full_name || 'Nome não informado',
       role: dbLead.corretor.role || 'corretor'
     } : undefined

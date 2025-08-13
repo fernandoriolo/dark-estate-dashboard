@@ -59,6 +59,7 @@ import {
 import { useKanbanLeads } from '@/hooks/useKanbanLeads';
 import { KanbanLead, LeadStage } from '@/types/kanban';
 import { AddLeadModal } from '@/components/AddLeadModal';
+import { LeadViewModal } from '@/components/LeadViewModal';
 
 // Componente simplificado para partículas (otimizado)
 const FloatingParticle = ({ delay = 0 }) => (
@@ -352,33 +353,56 @@ const LeadCard = ({ lead, isDragging = false }: LeadCardProps) => {
       whileHover={{ scale: 1.02, y: -2 }}
       className={`group ${isDragging ? 'z-50 rotate-3' : ''}`}
     >
-      <Card className="bg-gray-800/90 backdrop-blur-sm border-gray-700/60 hover:bg-gray-800 transition-all duration-200 cursor-pointer">
+      <Card className="bg-gray-800/90 backdrop-blur-sm border-gray-700/60 hover:bg-gray-800 transition-all duration-200 cursor-pointer relative">
+        {/* Ações no canto superior direito */}
+        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0 text-gray-400 hover:text-white"
+            onClick={(e) => {
+              e.stopPropagation();
+              const ev = new CustomEvent('openLeadView', { detail: { id: lead.id } });
+              window.dispatchEvent(ev);
+            }}
+          >
+            <Eye className="h-3 w-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0 text-gray-400 hover:text-white"
+            onClick={(e) => {
+              e.stopPropagation();
+              const ev = new CustomEvent('openLeadEdit', { detail: { id: lead.id } });
+              window.dispatchEvent(ev);
+            }}
+          >
+            <Edit className="h-3 w-3" />
+          </Button>
+        </div>
+
         <CardContent className="p-4">
           <div className="space-y-3">
-            {/* Header com nome e origem */}
+            {/* Header apenas com nome */}
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-2">
-                <div 
-                  className="opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1 hover:bg-gray-700/50 rounded"
-                >
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1 hover:bg-gray-700/50 rounded">
                   <GripVertical className="h-3 w-3 text-gray-400" />
                 </div>
                 <h4 className="font-semibold text-white text-sm truncate">{lead.nome}</h4>
               </div>
-              <Badge variant="outline" className={`${getOrigemColor(lead.origem)} text-xs`}>
-                {lead.origem}
-              </Badge>
             </div>
             
-            {/* Informações principais */}
+            {/* Informações principais (ícones) */}
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-gray-300 text-xs">
                 <Building2 className="h-3 w-3 flex-shrink-0" />
-                <span className="truncate">{lead.interesse}</span>
+                <span className="truncate">{lead.imovel_interesse ? `${lead.imovel_interesse}${lead.imovel_tipo ? ' - ' + lead.imovel_tipo : ''}` : '-'}</span>
               </div>
               <div className="flex items-center gap-2 text-green-400 text-xs font-medium">
                 <DollarSign className="h-3 w-3 flex-shrink-0" />
-                <span>R$ {lead.valor.toLocaleString('pt-BR')}</span>
+                <span>{lead.valorEstimado ? `R$ ${lead.valorEstimado.toLocaleString('pt-BR')}` : 'R$ 0'}</span>
               </div>
               {lead.dataContato && (
                 <div className="flex items-center gap-2 text-gray-400 text-xs">
@@ -386,9 +410,17 @@ const LeadCard = ({ lead, isDragging = false }: LeadCardProps) => {
                   <span>{new Date(lead.dataContato).toLocaleDateString('pt-BR')}</span>
                 </div>
               )}
+              <div className="flex items-center gap-2 text-gray-300 text-xs">
+                <Mail className="h-3 w-3 flex-shrink-0" />
+                <span className="truncate">{lead.email || '-'}</span>
+              </div>
+              <div className="flex items-center gap-2 text-gray-300 text-xs">
+                <Phone className="h-3 w-3 flex-shrink-0" />
+                <span className="truncate">{lead.telefone || '-'}</span>
+              </div>
             </div>
 
-            {/* Observações */}
+            {/* Observações curtas opcional */}
             {lead.observacoes && lead.observacoes.trim() && (
               <div className="text-xs text-gray-400 bg-gray-900/50 p-2 rounded border-l-2 border-blue-500/30">
                 <MessageSquare className="h-3 w-3 inline mr-1" />
@@ -396,19 +428,17 @@ const LeadCard = ({ lead, isDragging = false }: LeadCardProps) => {
               </div>
             )}
 
-            {/* Actions */}
+            {/* Rodapé: corretor (se houver) + origem */}
             <div className="flex items-center justify-between pt-2 border-t border-gray-700/50">
-              <div className="flex items-center gap-1 text-xs text-gray-400">
-                <Mail className="h-3 w-3" />
-                <Phone className="h-3 w-3" />
-              </div>
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-gray-400 hover:text-white">
-                  <Eye className="h-3 w-3" />
-                </Button>
-                <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-gray-400 hover:text-white">
-                  <Edit className="h-3 w-3" />
-                </Button>
+              <div className="flex items-center gap-2">
+                {lead.corretor?.nome && (
+                  <Badge variant="outline" className="text-xs text-amber-300 border-amber-300/40">
+                    {lead.corretor.nome}
+                  </Badge>
+                )}
+                <Badge variant="outline" className={`${getOrigemColor(lead.origem)} text-xs`}>
+                  {lead.origem}
+                </Badge>
               </div>
             </div>
           </div>
@@ -489,6 +519,7 @@ export function ClientsView() {
   const [particles, setParticles] = useState<number[]>([]);
   const [isAddLeadModalOpen, setIsAddLeadModalOpen] = useState(false);
   const [leadToEdit, setLeadToEdit] = useState<KanbanLead | null>(null);
+  const [viewLeadId, setViewLeadId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const hScrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -499,9 +530,11 @@ export function ClientsView() {
     error, 
     updateLeadStage, 
     totalLeads, 
-    totalValue, 
     stageStats 
   } = useKanbanLeads();
+  const totalFechamento = leads
+    .filter(l => l.stage === 'Fechamento')
+    .reduce((sum, l) => sum + (l.valorEstimado || l.valor || 0), 0);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -587,6 +620,28 @@ export function ClientsView() {
 
   const activeLead = activeId ? leads.find(lead => lead.id === activeId) : null;
 
+  // Eventos globais para abrir modais de visualizar/editar
+  useEffect(() => {
+    const handleOpenView = (e: any) => {
+      const id = e?.detail?.id;
+      if (id) setViewLeadId(id);
+    };
+    const handleOpenEdit = (e: any) => {
+      const id = e?.detail?.id;
+      const target = leads.find(l => l.id === id);
+      if (target) {
+        setLeadToEdit(target);
+        setIsAddLeadModalOpen(true);
+      }
+    };
+    window.addEventListener('openLeadView', handleOpenView as any);
+    window.addEventListener('openLeadEdit', handleOpenEdit as any);
+    return () => {
+      window.removeEventListener('openLeadView', handleOpenView as any);
+      window.removeEventListener('openLeadEdit', handleOpenEdit as any);
+    };
+  }, [leads]);
+
   // Mostrar loading enquanto carrega
   if (loading) {
     return (
@@ -605,7 +660,7 @@ export function ClientsView() {
       <div className="h-screen w-full bg-gradient-to-br from-slate-950 via-blue-950/90 via-purple-950/80 to-slate-950 relative flex items-center justify-center">
         <div className="text-center">
           <p className="text-red-400 mb-4">Erro ao carregar leads: {error}</p>
-          <Button onClick={() => window.location.reload()}>
+          <Button onClick={() => { /* evitar reload global */ }}>
             Tentar novamente
           </Button>
         </div>
@@ -679,7 +734,7 @@ export function ClientsView() {
                 { title: "Total Leads", value: totalLeads, icon: Users, iconColor: "text-blue-400" },
                 { title: "Em Negociação", value: stageStats['Em Negociação'] || 0, icon: Handshake, iconColor: "text-emerald-400" },
                 { title: "Fechamentos", value: stageStats['Fechamento'] || 0, icon: TrendingUp, iconColor: "text-purple-400" },
-                { title: "Valor Total", value: `R$ ${(totalValue / 1000).toFixed(0)}k`, icon: DollarSign, iconColor: "text-violet-400" }
+                { title: "Valor Total", value: `R$ ${totalFechamento.toLocaleString('pt-BR')}`, icon: DollarSign, iconColor: "text-violet-400" }
               ].map((stat, index) => (
                 <motion.div
                   key={stat.title}
@@ -820,6 +875,12 @@ export function ClientsView() {
           setLeadToEdit(null);
         }}
         leadToEdit={leadToEdit}
+      />
+
+      <LeadViewModal
+        isOpen={!!viewLeadId}
+        onClose={() => setViewLeadId(null)}
+        leadId={viewLeadId}
       />
     </div>
   );

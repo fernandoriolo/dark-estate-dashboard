@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import { LoginPage } from "./components/LoginPage";
@@ -14,6 +14,8 @@ import { useUserProfile } from './hooks/useUserProfile';
 
 function AppContent() {
   const { profile, loading: profileLoading } = useUserProfile();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [changing, setChanging] = useState(false);
@@ -29,7 +31,7 @@ function AppContent() {
 
   // Se não tem perfil, mostrar onboarding
   if (!profile) {
-    return <UserOnboarding onComplete={() => window.location.reload()} />;
+    return <UserOnboarding onComplete={() => { /* evita reload global em dev */ }} />;
   }
 
   const mustChangePassword = false; // revertido: sem fluxo obrigatório de troca de senha
@@ -63,12 +65,12 @@ function AppContent() {
 
   return (
     <ContractTemplatesProvider>
-      <Router>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </Router>
+      {/* Persistência de rota atual */}
+      {null}
+      <Routes>
+        <Route path="/" element={<Index />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
 
       {/* Modal obrigatório de troca de senha */}
       <Dialog open={mustChangePassword} onOpenChange={() => {}}>
@@ -137,10 +139,47 @@ function App() {
   }
 
   if (!session) {
-    return <LoginPage onLoginSuccess={() => window.location.reload()} />;
+    return <LoginPage onLoginSuccess={() => { /* evita reload global em dev */ }} />;
   }
 
-  return <AppContent />;
+  return (
+    <Router>
+      <PersistRoute>
+        <AppContent />
+      </PersistRoute>
+    </Router>
+  );
 }
 
 export default App;
+
+// Componente para persistir/restaurar a rota atual entre reloads/minimizações
+function PersistRoute({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  // Restaurar na primeira montagem
+  useEffect(() => {
+    const saved = localStorage.getItem('last-route');
+    if (saved && saved !== location.pathname + location.search) {
+      navigate(saved, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Salvar sempre que a rota mudar
+  useEffect(() => {
+    localStorage.setItem('last-route', location.pathname + location.search);
+  }, [location.pathname, location.search]);
+  // Salvar ao ocultar janela/aba
+  useEffect(() => {
+    const handler = () => {
+      localStorage.setItem('last-route', location.pathname + location.search);
+    };
+    document.addEventListener('visibilitychange', handler);
+    window.addEventListener('beforeunload', handler);
+    return () => {
+      document.removeEventListener('visibilitychange', handler);
+      window.removeEventListener('beforeunload', handler);
+    };
+  }, [location.pathname, location.search]);
+  return <>{children}</>;
+}
