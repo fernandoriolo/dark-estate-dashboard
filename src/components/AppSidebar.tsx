@@ -137,7 +137,11 @@ const secondaryItems = [
 
 interface AppSidebarProps {
   currentView: string;
+<<<<<<< HEAD
   onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "plantao" | "reports" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "disparador" | "chats" | "profile") => void;
+=======
+  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "reports" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "profile") => void;
+>>>>>>> 3826e04 (feat(AppSidebar, Index): remover referência a portais e ajustar tipagens)
 }
 
 export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {

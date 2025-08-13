@@ -6,7 +6,10 @@ import { DashboardContent } from "@/components/DashboardContent";
 import { PropertyForm } from "@/components/PropertyForm";
 import { PropertyList } from "@/components/PropertyList";
 import { ReportsView } from "@/components/ReportsView";
+<<<<<<< HEAD
 // Portals removido do menu principal
+=======
+>>>>>>> 3826e04 (feat(AppSidebar, Index): remover referência a portais e ajustar tipagens)
 import { ClientsView } from "@/components/ClientsView";
 import { ClientsCRMView } from "@/components/ClientsCRMView";
 
