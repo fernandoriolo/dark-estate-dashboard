@@ -1,4 +1,4 @@
-import { Building2, Home, BarChart3, Settings, Users, Globe, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, KeyRound } from "lucide-react";
+import { Building2, Home, BarChart3, Settings, Users, Globe, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot } from "lucide-react";
 import { useState, useEffect } from "react";
 import {
   Sidebar,
@@ -123,44 +123,14 @@ const secondaryItems = [
 
 interface AppSidebarProps {
   currentView: string;
-  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "reports" | "portals" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato") => void;
+  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "reports" | "portals" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "profile") => void;
 }
 
 export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const { profile, isAdmin } = useUserProfile();
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [changing, setChanging] = useState(false);
-  const [changeError, setChangeError] = useState<string | null>(null);
-
-  const handleChangePassword = async () => {
-    try {
-      setChanging(true);
-      setChangeError(null);
-      if (!newPassword || newPassword.length < 6) {
-        setChangeError('A nova senha deve ter pelo menos 6 caracteres');
-        setChanging(false);
-        return;
-      }
-      if (newPassword !== confirmPassword) {
-        setChangeError('A confirmação de senha não confere');
-        setChanging(false);
-        return;
-      }
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) throw error;
-      setNewPassword("");
-      setConfirmPassword("");
-      setShowPasswordModal(false);
-    } catch (err: any) {
-      setChangeError(err.message || 'Erro ao alterar senha');
-    } finally {
-      setChanging(false);
-    }
-  };
+  
   const { hasPermission } = usePermissions();
 
   useEffect(() => {
@@ -349,14 +319,6 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
             </div>
           </div>
           <Button 
-            onClick={() => setShowPasswordModal(true)}
-            variant="outline"
-            className="w-full border-gray-700 text-gray-300 hover:text-white hover:bg-gray-800"
-          >
-            <KeyRound className="mr-2 h-4 w-4" />
-            Alterar senha
-          </Button>
-          <Button 
             onClick={async () => {
               await supabase.auth.signOut();
               window.location.reload();
@@ -370,40 +332,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
         </div>
       </SidebarFooter>
 
-      <Dialog open={showPasswordModal} onOpenChange={setShowPasswordModal}>
-        <DialogContent className="bg-gray-900 border-gray-700 max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-white">Alterar senha</DialogTitle>
-            <DialogDescription className="text-gray-400">Defina uma nova senha para sua conta.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <Input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="Nova senha (mínimo 6 caracteres)"
-              className="bg-gray-800/50 border-gray-600 text-white placeholder-gray-400"
-            />
-            <Input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Confirmar nova senha"
-              className="bg-gray-800/50 border-gray-600 text-white placeholder-gray-400"
-            />
-            {changeError && <div className="text-sm text-red-400">{changeError}</div>}
-            <div className="flex justify-end gap-2">
-              <Button
-                onClick={handleChangePassword}
-                disabled={changing}
-                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-              >
-                {changing ? 'Salvando...' : 'Salvar nova senha'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      
     </Sidebar>
   );
 }
