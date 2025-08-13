@@ -18,6 +18,7 @@ import { UserManagementView } from "@/components/UserManagementView";
 import { PermissionsManagementView } from "@/components/PermissionsManagementView";
 import { IsolationDebug } from "@/components/IsolationDebug";
 import { InquilinatoView } from "@/components/InquilinatoView";
+import { ChatsView } from "@/components/ChatsView";
 
 import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
 
@@ -36,6 +37,7 @@ const Index = () => {
     | "users"
     | "permissions"
     | "inquilinato"
+    | "chats"
   >("dashboard");
   const [isPropertyModalOpen, setIsPropertyModalOpen] = useState(false);
   const { imoveis, loading, refetch } = useImoveisVivaReal();
@@ -78,6 +80,8 @@ const Index = () => {
         return <ClientsCRMView />;
       case "connections":
         return <ConnectionsViewSimplified />;
+      case "chats":
+        return <ChatsView />;
       case "users":
         return <UserManagementView />;
       case "permissions":
