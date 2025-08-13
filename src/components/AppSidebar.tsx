@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare, KeyRound } from "lucide-react";
+=======
+import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send } from "lucide-react";
+>>>>>>> 2f9298d (style(disparador): placeholder e botão do modelo em azul claro com negrito leve)
 import { useState, useEffect } from "react";
 import {
   Sidebar,
@@ -137,11 +141,7 @@ const secondaryItems = [
 
 interface AppSidebarProps {
   currentView: string;
-<<<<<<< HEAD
   onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "plantao" | "reports" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "disparador" | "chats" | "profile") => void;
-=======
-  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "reports" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "profile") => void;
->>>>>>> 3826e04 (feat(AppSidebar, Index): remover referência a portais e ajustar tipagens)
 }
 
 export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
