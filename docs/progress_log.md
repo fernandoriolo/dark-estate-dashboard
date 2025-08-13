@@ -250,3 +250,8 @@ Próximos passos sugeridos:
   - Garante `WITH CHECK` com validação por `company_id` e `EXISTS` em `user_profiles` para o `user_id` destino.
   - Mantém corretores limitados às próprias instâncias.
   - Adiciona índices `idx_whatsapp_instances_company_id` e `idx_whatsapp_instances_user_id` (idempotentes).
+
+## 2025-08-13 — Usuários single-tenant (remover escopo por empresa)
+- Atualizada a RPC `public.list_company_users` para modo single-tenant: remove qualquer filtro por `company_id` e retorna todos os registros de `user_profiles`, mantendo filtros opcionais de `search`, `roles` e paginação (`limit_count`, `offset_count`).
+- Assinatura da função preservada para compatibilidade do frontend; parâmetro `target_company_id` é ignorado.
+- Migration adicionada: `supabase/migrations/20250813130000_list_company_users_remove_company_scope.sql`.

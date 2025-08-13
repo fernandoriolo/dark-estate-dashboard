@@ -587,7 +587,6 @@ export function UserManagementView() {
                 className="bg-gray-800/50 border-gray-600 text-white placeholder-gray-400"
                 minLength={6}
               />
-              <p className="text-xs text-gray-500 mt-1">Se deixado como padrão, usaremos VITE_DEFAULT_NEW_USER_PASSWORD (ou Imobi@1234).</p>
             </div>
 
             {/* Cargo */}
