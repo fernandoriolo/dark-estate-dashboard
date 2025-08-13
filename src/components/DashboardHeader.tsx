@@ -85,7 +85,7 @@ export function DashboardHeader() {
               <DropdownMenuItem onClick={() => setOpenPassword(true)}>
                 <KeyRound className="h-4 w-4 mr-2" /> Alterar Senha
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={async () => { await supabase.auth.signOut(); window.location.reload(); }}>
+              <DropdownMenuItem onClick={async () => { await supabase.auth.signOut(); }}>
                 <LogOut className="h-4 w-4 mr-2" /> Sair
               </DropdownMenuItem>
             </DropdownMenuContent>

@@ -56,7 +56,7 @@ export function useKanbanLeads() {
       // Para corretores, as políticas RLS já filtram automaticamente
       let query = supabase
         .from('leads')
-        .select('*')
+        .select(`*, corretor:user_profiles!leads_id_corretor_responsavel_fkey(id, full_name, role)`) 
         .order('created_at', { ascending: false });
 
       const { data, error } = await query;
@@ -72,7 +72,7 @@ export function useKanbanLeads() {
       // Converter dados do banco para formato do kanban com tratamento seguro
       const kanbanLeads = (data || []).map(dbLead => {
         try {
-          return databaseLeadToKanbanLead({
+          const k = databaseLeadToKanbanLead({
             ...dbLead,
             stage: (dbLead.stage || 'Novo Lead') as LeadStage,
             interest: dbLead.interest || null,
@@ -80,6 +80,7 @@ export function useKanbanLeads() {
             notes: dbLead.notes || null,
             updated_at: dbLead.updated_at || null
           });
+          return k;
         } catch (conversionError) {
           console.error('Erro ao converter lead:', dbLead, conversionError);
           // Retorna um lead padrão em caso de erro
@@ -99,7 +100,26 @@ export function useKanbanLeads() {
         }
       });
       
-      setLeads(kanbanLeads);
+      // Enriquecer tipo do imóvel (tipo_imovel) a partir do catálogo, quando houver listing_id
+      const listingIds = Array.from(new Set((kanbanLeads
+        .map(l => l.imovel_interesse)
+        .filter(Boolean) as string[])));
+      let tipoMap: Record<string, string> = {};
+      if (listingIds.length > 0) {
+        const { data: imv } = await supabase
+          .from('imoveisvivareal')
+          .select('listing_id, tipo_imovel')
+          .in('listing_id', listingIds);
+        (imv || []).forEach((row: any) => {
+          if (row.listing_id) tipoMap[String(row.listing_id)] = row.tipo_imovel || '';
+        });
+      }
+      const enriched = kanbanLeads.map(l => ({
+        ...l,
+        imovel_tipo: l.imovel_interesse ? (tipoMap[l.imovel_interesse] || undefined) : undefined
+      }));
+
+      setLeads(enriched);
       
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Erro ao carregar leads';
@@ -171,8 +191,9 @@ export function useKanbanLeads() {
         estimated_value: leadData.valorEstimado || leadData.valor || null,
         notes: leadData.observacoes || null,
         imovel_interesse: leadData.imovel_interesse || null,
-        // Se options.assignedUserId for informado, atribui o lead a esse corretor; caso contrário, ao usuário atual
-        user_id: options?.assignedUserId || user.id
+        // user_id: criador; id_corretor_responsavel: corretor responsável
+        user_id: user.id,
+        id_corretor_responsavel: options?.assignedUserId || null
       };
 
       // Adicionar property_id se existir na estrutura da tabela
@@ -238,6 +259,9 @@ export function useKanbanLeads() {
       if (updates.property_id !== undefined) updateData.property_id = updates.property_id || null;
       if (updates.imovel_interesse !== undefined) updateData.imovel_interesse = updates.imovel_interesse || null;
       if (updates.message !== undefined) updateData.message = updates.message || null;
+      if ((updates as any).id_corretor_responsavel !== undefined) updateData.id_corretor_responsavel = (updates as any).id_corretor_responsavel;
+      if ((updates as any).assigned_user_id !== undefined) updateData.id_corretor_responsavel = (updates as any).assigned_user_id || null;
+      if ((updates as any).id_corretor_responsavel !== undefined) updateData.id_corretor_responsavel = (updates as any).id_corretor_responsavel || null;
 
       const { error } = await supabase
         .from('leads')

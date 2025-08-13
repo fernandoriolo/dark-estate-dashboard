@@ -49,12 +49,14 @@ interface AddLeadModalProps {
   isOpen: boolean;
   onClose: () => void;
   leadToEdit?: KanbanLead | null;
+  updateLeadOverride?: (leadId: string, updates: Partial<KanbanLead>) => Promise<boolean>;
 }
 
 export const AddLeadModal: React.FC<AddLeadModalProps> = ({ 
   isOpen, 
   onClose, 
-  leadToEdit = null 
+  leadToEdit = null,
+  updateLeadOverride
 }) => {
   const { createLead, updateLead } = useKanbanLeads();
   const { properties } = useProperties();
@@ -94,7 +96,7 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
 
   // Resetar/popular formulário quando modal abre/fecha ou lead muda
   useEffect(() => {
-    if (isOpen) {
+      if (isOpen) {
       // Carregar corretores (role = corretor) via RPC list_company_users
       (async () => {
         try {
@@ -163,6 +165,12 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
         } else {
           setListingId('');
         }
+        // Preselecionar corretor vinculado
+        if ((leadToEdit as any).id_corretor_responsavel || leadToEdit.corretor?.id) {
+          setSelectedCorretor(((leadToEdit as any).id_corretor_responsavel as string) || (leadToEdit.corretor?.id as string) || '');
+        } else {
+          setSelectedCorretor('');
+        }
       } else {
         // Modo criação - resetar formulário
         setFormData({
@@ -225,7 +233,18 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
 
       if (leadToEdit) {
         // Modo edição
-        await updateLead(leadToEdit.id, leadData);
+        // incluir id_corretor_responsavel no update quando houver
+        const payload: any = { ...leadData };
+        if (selectedCorretor) {
+          payload.id_corretor_responsavel = selectedCorretor;
+        } else {
+          payload.id_corretor_responsavel = null;
+        }
+        if (updateLeadOverride) {
+          await updateLeadOverride(leadToEdit.id, payload);
+        } else {
+          await updateLead(leadToEdit.id, payload);
+        }
         toast.success('Cliente atualizado com sucesso!');
       } else {
         // Modo criação — atribui opcionalmente ao corretor selecionado
@@ -670,7 +689,7 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                       type="button"
                       variant="outline"
                       onClick={onClose}
-                      className="flex-1 border-gray-600 text-gray-300 hover:bg-gray-700"
+                      className="flex-1 border-gray-600 text-red-500 hover:bg-gray-700"
                       disabled={loading}
                     >
                       Cancelar

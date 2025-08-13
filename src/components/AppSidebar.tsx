@@ -321,7 +321,6 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
           <Button 
             onClick={async () => {
               await supabase.auth.signOut();
-              window.location.reload();
             }}
             variant="outline"
             className="w-full border-gray-700 text-gray-300 hover:text-white hover:bg-gray-800"
