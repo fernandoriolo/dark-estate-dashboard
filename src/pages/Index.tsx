@@ -6,7 +6,6 @@ import { DashboardContent } from "@/components/DashboardContent";
 import { PropertyForm } from "@/components/PropertyForm";
 import { PropertyList } from "@/components/PropertyList";
 import { ReportsView } from "@/components/ReportsView";
-import { PortalsView } from "@/components/PortalsView";
 import { ClientsView } from "@/components/ClientsView";
 import { ClientsCRMView } from "@/components/ClientsCRMView";
 
@@ -29,7 +28,6 @@ const Index = () => {
     | "contracts"
     | "agenda"
     | "reports"
-    | "portals"
     | "clients"
     | "clients-crm"
     | "connections"
@@ -50,7 +48,6 @@ const Index = () => {
       "clients-crm",
       "agenda",
       "reports",
-      "portals",
       "connections",
       "users",
       "permissions",
@@ -71,7 +68,6 @@ const Index = () => {
           contracts: "menu_contracts",
           agenda: "menu_agenda",
           reports: "menu_reports",
-          portals: "menu_portals",
           clients: "menu_clients",
           "clients-crm": "menu_clients_crm",
           connections: "menu_connections",
@@ -124,8 +120,6 @@ const Index = () => {
         return <AgendaView />;
       case "reports":
         return <ReportsView />;
-      case "portals":
-        return <PortalsView />;
       case "clients":
         return <ClientsView />;
       case "clients-crm":

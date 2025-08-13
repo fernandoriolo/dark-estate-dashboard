@@ -1,4 +1,4 @@
-import { Building2, Home, BarChart3, Settings, Users, Globe, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot } from "lucide-react";
+import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot } from "lucide-react";
 import { useState, useEffect } from "react";
 import {
   Sidebar,
@@ -104,13 +104,6 @@ const analyticsItems = [
     view: "reports" as const,
     permissionKey: "menu_reports",
   },
-  {
-    title: "Portais",
-    url: "#",
-    icon: Globe,
-    view: "portals" as const,
-    permissionKey: "menu_portals",
-  },
 ];
 
 const secondaryItems = [
@@ -123,7 +116,7 @@ const secondaryItems = [
 
 interface AppSidebarProps {
   currentView: string;
-  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "reports" | "portals" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "profile") => void;
+  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "reports" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "profile") => void;
 }
 
 export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
