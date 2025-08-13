@@ -223,96 +223,33 @@ export function useUserProfile() {
         throw new Error('Sem permissão para criar usuários');
       }
 
-      // Como não podemos criar usuários diretamente no auth.users,
-      // vamos usar a funcionalidade de signup do Supabase
-      
-      // 1. Criar o usuário usando a API de signup
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: userData.email,
-        password: userData.password,
-        options: {
-          data: {
-            full_name: userData.full_name,
-            role: userData.role,
-            department: userData.department || '',
-            phone: userData.phone || ''
-          }
+      // Preferir criação via Edge Function com service_role (invocação direta via supabase.functions)
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error('Sessão inválida para criar usuário');
+
+      const { data: fnData, error: fnError } = await supabase.functions.invoke('admin-create-user', {
+        body: {
+          email: userData.email,
+          password: userData.password,
+          full_name: userData.full_name,
+          role: userData.role,
+          phone: userData.phone || undefined,
+        },
+        headers: {
+          Authorization: `Bearer ${token}`
         }
       });
 
-      if (authError) {
-        console.error('Erro ao criar usuário no auth:', authError);
-        throw new Error(`Erro ao criar usuário: ${authError.message}`);
+      if (fnError) {
+        throw new Error(fnError.message || 'Falha ao criar usuário');
+      }
+      if ((fnData as any)?.error) {
+        throw new Error((fnData as any).error);
       }
 
-      if (!authData.user) {
-        throw new Error('Usuário não foi criado corretamente');
-      }
-
-      // 2. O perfil será criado automaticamente pelo trigger, 
-      // mas vamos tentar criar/atualizar manualmente para garantir os dados corretos
-      
-      // Aguardar um pouco para o trigger funcionar
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Verificar se o perfil foi criado e atualizar se necessário
-      const { data: existingProfile } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('id', authData.user.id)
-        .single();
-
-      if (existingProfile) {
-        // Atualizar com os dados corretos
-        const { data: updatedProfile, error: updateError } = await supabase
-          .from('user_profiles')
-          .update({
-            full_name: userData.full_name,
-            role: userData.role,
-            department: userData.department || null,
-            phone: userData.phone || null,
-            is_active: true
-          })
-          .eq('id', authData.user.id)
-          .select()
-          .single();
-
-        if (updateError) {
-          console.error('Erro ao atualizar perfil:', updateError);
-        }
-
-        console.log('✅ Usuário criado com sucesso!');
-        console.log('📧 Email:', userData.email);
-        console.log('🔑 Senha:', userData.password);
-        console.log('👤 Nome:', userData.full_name);
-        console.log('🎭 Cargo:', userData.role);
-        
-        return updatedProfile || existingProfile;
-      } else {
-        // Se não foi criado automaticamente, criar manualmente
-        const { data: newProfile, error: profileError } = await supabase
-          .from('user_profiles')
-          .insert({
-            id: authData.user.id,
-            email: userData.email,
-            full_name: userData.full_name,
-            role: userData.role,
-            company_id: null,
-            department: userData.department || null,
-            phone: userData.phone || null,
-            is_active: true
-          })
-          .select()
-          .single();
-
-        if (profileError) {
-          console.error('Erro ao criar perfil manualmente:', profileError);
-          throw profileError;
-        }
-
-        console.log('✅ Usuário e perfil criados com sucesso!');
-        return newProfile;
-      }
+      // Recarregar lista chamadora cuidará do fetch
+      return { id: (fnData as any)?.user_id } as any;
 
     } catch (error: any) {
       console.error('Erro ao criar usuário:', error);

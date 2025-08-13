@@ -31,6 +31,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useKanbanLeads } from '@/hooks/useKanbanLeads';
 import { AddLeadModal } from '@/components/AddLeadModal';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
 
 // Função para determinar cor do status baseado no stage
 const getStageColor = (stage: string) => {
@@ -76,13 +78,34 @@ export function ClientsCRMView() {
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedLead, setSelectedLead] = useState(null);
+  const [brokerFilter, setBrokerFilter] = useState<string>('all');
+  const [brokers, setBrokers] = useState<Array<{ id: string; full_name: string }>>([]);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const pageSize = 10;
   
   // Usar o mesmo hook que o Pipeline de Clientes
   const { leads, loading, createLead } = useKanbanLeads();
   
   // Verificar se o usuário pode ver informações de todos os corretores
-  const { profile } = useUserProfile();
+  const { profile, getCompanyUsers } = useUserProfile();
   const canSeeAllBrokers = profile?.role === 'gestor' || profile?.role === 'admin';
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const loadBrokers = async () => {
+      if (!canSeeAllBrokers) return;
+      try {
+        const users = await getCompanyUsers();
+        if (cancelled) return;
+        const onlyBrokers = (users || []).filter((u: any) => (u.role ?? 'corretor') === 'corretor');
+        setBrokers(onlyBrokers.map((u: any) => ({ id: u.id, full_name: u.full_name || 'Sem nome' })));
+      } catch (e) {
+        // silencioso
+      }
+    };
+    loadBrokers();
+    return () => { cancelled = true; };
+  }, [canSeeAllBrokers, getCompanyUsers]);
 
   const filteredLeads = leads.filter(lead => {
     const matchesSearch = lead.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -96,8 +119,20 @@ export function ClientsCRMView() {
                       (selectedTab === 'fechados' && lead.stage === 'Fechado') ||
                       (selectedTab === 'perdidos' && ['Perdido', 'Desistiu'].includes(lead.stage));
 
-    return matchesSearch && matchesTab;
+    const matchesBroker = !canSeeAllBrokers || brokerFilter === 'all' || lead.id_corretor_responsavel === brokerFilter;
+
+    return matchesSearch && matchesTab && matchesBroker;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredLeads.length / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const startIndex = (safePage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const paginatedLeads = filteredLeads.slice(startIndex, endIndex);
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedTab, brokerFilter]);
 
   const stats = {
     total: leads.length,
@@ -170,13 +205,22 @@ export function ClientsCRMView() {
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.4, duration: 0.8 }}
         >
-          <Button 
-            variant="outline"
-            className="border-blue-600/50 text-blue-400 hover:bg-blue-600/20 backdrop-blur-sm bg-gray-900/50"
-          >
-            <Filter className="mr-2 h-4 w-4" />
-            Filtros
-          </Button>
+          {canSeeAllBrokers && (
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-blue-400" />
+              <Select value={brokerFilter} onValueChange={setBrokerFilter}>
+                <SelectTrigger className="w-56 bg-gray-900/50 border-blue-600/50 text-blue-400">
+                  <SelectValue placeholder="Filtrar por corretor" />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-900 text-gray-200 border-gray-700">
+                  <SelectItem value="all">Todos os corretores</SelectItem>
+                  {brokers.map(b => (
+                    <SelectItem key={b.id} value={b.id}>{b.full_name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <Button 
             className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
             onClick={() => setShowAddModal(true)}
@@ -271,7 +315,7 @@ export function ClientsCRMView() {
           {['todos', 'ativos', 'prospects', 'negociacao', 'fechados', 'perdidos'].map(tab => (
             <TabsContent key={tab} value={tab} className="space-y-4 mt-6">
               <div className="grid gap-4">
-                {filteredLeads.map((lead, index) => (
+                {paginatedLeads.map((lead, index) => (
                   <motion.div
                     key={lead.id}
                     initial={{ opacity: 0, y: 20 }}
@@ -437,6 +481,41 @@ export function ClientsCRMView() {
                     </CardContent>
                   </Card>
                 </motion.div>
+              )}
+
+              {filteredLeads.length > 0 && (
+                <div className="mt-6 flex items-center justify-center">
+                  <Pagination>
+                    <PaginationContent>
+                      <PaginationItem>
+                        <PaginationPrevious
+                          href="#"
+                          onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.max(1, p - 1)); }}
+                          className={safePage === 1 ? 'pointer-events-none opacity-50' : ''}
+                        />
+                      </PaginationItem>
+                      {Array.from({ length: totalPages }).map((_, i) => (
+                        <PaginationItem key={i}>
+                          <PaginationLink
+                            href="#"
+                            isActive={safePage === (i + 1)}
+                            className="text-black"
+                            onClick={(e) => { e.preventDefault(); setCurrentPage(i + 1); }}
+                          >
+                            {i + 1}
+                          </PaginationLink>
+                        </PaginationItem>
+                      ))}
+                      <PaginationItem>
+                        <PaginationNext
+                          href="#"
+                          onClick={(e) => { e.preventDefault(); setCurrentPage(p => Math.min(totalPages, p + 1)); }}
+                          className={safePage === totalPages ? 'pointer-events-none opacity-50' : ''}
+                        />
+                      </PaginationItem>
+                    </PaginationContent>
+                  </Pagination>
+                </div>
               )}
             </TabsContent>
           ))}

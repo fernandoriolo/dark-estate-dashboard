@@ -7,6 +7,7 @@ import {
   databaseLeadToKanbanLead,
   kanbanLeadToDatabaseLead 
 } from '@/types/kanban';
+import { logAudit } from '@/lib/audit/logger';
 
 type DatabaseLead = Tables<'leads'>;
 
@@ -56,7 +57,7 @@ export function useKanbanLeads() {
       // Para corretores, as políticas RLS já filtram automaticamente
       let query = supabase
         .from('leads')
-        .select('*')
+        .select(`*, corretor:user_profiles!leads_id_corretor_responsavel_fkey(id, full_name, role)`) 
         .order('created_at', { ascending: false });
 
       const { data, error } = await query;
@@ -72,7 +73,7 @@ export function useKanbanLeads() {
       // Converter dados do banco para formato do kanban com tratamento seguro
       const kanbanLeads = (data || []).map(dbLead => {
         try {
-          return databaseLeadToKanbanLead({
+          const k = databaseLeadToKanbanLead({
             ...dbLead,
             stage: (dbLead.stage || 'Novo Lead') as LeadStage,
             interest: dbLead.interest || null,
@@ -80,6 +81,7 @@ export function useKanbanLeads() {
             notes: dbLead.notes || null,
             updated_at: dbLead.updated_at || null
           });
+          return k;
         } catch (conversionError) {
           console.error('Erro ao converter lead:', dbLead, conversionError);
           // Retorna um lead padrão em caso de erro
@@ -99,7 +101,26 @@ export function useKanbanLeads() {
         }
       });
       
-      setLeads(kanbanLeads);
+      // Enriquecer tipo do imóvel (tipo_imovel) a partir do catálogo, quando houver listing_id
+      const listingIds = Array.from(new Set((kanbanLeads
+        .map(l => l.imovel_interesse)
+        .filter(Boolean) as string[])));
+      let tipoMap: Record<string, string> = {};
+      if (listingIds.length > 0) {
+        const { data: imv } = await supabase
+          .from('imoveisvivareal')
+          .select('listing_id, tipo_imovel')
+          .in('listing_id', listingIds);
+        (imv || []).forEach((row: any) => {
+          if (row.listing_id) tipoMap[String(row.listing_id)] = row.tipo_imovel || '';
+        });
+      }
+      const enriched = kanbanLeads.map(l => ({
+        ...l,
+        imovel_tipo: l.imovel_interesse ? (tipoMap[l.imovel_interesse] || undefined) : undefined
+      }));
+
+      setLeads(enriched);
       
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Erro ao carregar leads';
@@ -136,6 +157,7 @@ export function useKanbanLeads() {
             : lead
         )
       );
+      logAudit({ action: 'lead.stage_changed', resource: 'lead', resourceId: leadId, meta: { newStage } });
 
       return true;
     } catch (err) {
@@ -145,8 +167,11 @@ export function useKanbanLeads() {
     }
   }, []);
 
-  // Criar novo lead
-  const createLead = useCallback(async (leadData: Omit<KanbanLead, 'id' | 'dataContato'>) => {
+  // Criar novo lead (permite atribuição opcional a um corretor específico)
+  const createLead = useCallback(async (
+    leadData: Omit<KanbanLead, 'id' | 'dataContato'>,
+    options?: { assignedUserId?: string }
+  ) => {
     try {
       // Buscar usuário atual
       const { data: { user } } = await supabase.auth.getUser();
@@ -168,7 +193,9 @@ export function useKanbanLeads() {
         estimated_value: leadData.valorEstimado || leadData.valor || null,
         notes: leadData.observacoes || null,
         imovel_interesse: leadData.imovel_interesse || null,
-        user_id: user.id // Adicionar user_id automaticamente
+        // user_id: criador; id_corretor_responsavel: corretor responsável
+        user_id: user.id,
+        id_corretor_responsavel: options?.assignedUserId || null
       };
 
       // Adicionar property_id se existir na estrutura da tabela
@@ -201,6 +228,7 @@ export function useKanbanLeads() {
         updated_at: data.updated_at || null
       });
       setLeads(prevLeads => [newKanbanLead, ...prevLeads]);
+      logAudit({ action: 'lead.created', resource: 'lead', resourceId: newKanbanLead.id, meta: { nome: newKanbanLead.nome, origem: newKanbanLead.origem } });
 
       return newKanbanLead;
     } catch (err) {
@@ -234,6 +262,9 @@ export function useKanbanLeads() {
       if (updates.property_id !== undefined) updateData.property_id = updates.property_id || null;
       if (updates.imovel_interesse !== undefined) updateData.imovel_interesse = updates.imovel_interesse || null;
       if (updates.message !== undefined) updateData.message = updates.message || null;
+      if ((updates as any).id_corretor_responsavel !== undefined) updateData.id_corretor_responsavel = (updates as any).id_corretor_responsavel;
+      if ((updates as any).assigned_user_id !== undefined) updateData.id_corretor_responsavel = (updates as any).assigned_user_id || null;
+      if ((updates as any).id_corretor_responsavel !== undefined) updateData.id_corretor_responsavel = (updates as any).id_corretor_responsavel || null;
 
       const { error } = await supabase
         .from('leads')
@@ -252,6 +283,7 @@ export function useKanbanLeads() {
             : lead
         )
       );
+      logAudit({ action: 'lead.updated', resource: 'lead', resourceId: leadId, meta: updates });
 
       return true;
     } catch (err) {
@@ -275,6 +307,7 @@ export function useKanbanLeads() {
 
       // Remover do estado local
       setLeads(prevLeads => prevLeads.filter(lead => lead.id !== leadId));
+      logAudit({ action: 'lead.deleted', resource: 'lead', resourceId: leadId, meta: null });
 
       return true;
     } catch (err) {

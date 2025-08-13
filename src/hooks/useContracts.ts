@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Tables, TablesInsert, TablesUpdate } from '@/integrations/supabase/types';
+import { logAudit } from '@/lib/audit/logger';
 import { toast } from 'sonner';
 
 export type Contract = Tables<'contracts'>;
@@ -83,6 +84,7 @@ export function useContracts() {
         fetchContracts();
       }, 1000);
       
+      try { await logAudit({ action: 'contract.created', resource: 'contract', resourceId: (data as any)?.id, meta: { tipo: (data as any)?.tipo, valor: (data as any)?.valor } }); } catch {}
       return data;
     } catch (err) {
       console.error('💥 Erro inesperado ao criar contrato:', err);
@@ -117,6 +119,7 @@ export function useContracts() {
         contract.id === id ? data : contract
       ));
       
+      try { await logAudit({ action: 'contract.updated', resource: 'contract', resourceId: (data as any)?.id, meta: updates }); } catch {}
       return data;
     } catch (err) {
       console.error('💥 Erro inesperado ao atualizar contrato:', err);
@@ -166,6 +169,7 @@ export function useContracts() {
         
         // Remover da lista local
         setContracts(prev => prev.filter(contract => contract.id !== id));
+        try { await logAudit({ action: 'contract.deleted', resource: 'contract', resourceId: id, meta: { hard: true } }); } catch {}
         return true;
       }
 
@@ -205,6 +209,7 @@ export function useContracts() {
           
           // Remover da lista local (soft delete remove da visualização)
           setContracts(prev => prev.filter(contract => contract.id !== id));
+          try { await logAudit({ action: 'contract.deleted', resource: 'contract', resourceId: id, meta: { hard: false } }); } catch {}
           return true;
         } else {
           console.error('❌ [DEBUG] Soft Delete não retornou dados');

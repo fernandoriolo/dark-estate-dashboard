@@ -6,11 +6,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { User, X, Mail, Phone, MapPin, CreditCard, Heart, Building2 } from 'lucide-react';
+import { User, X, Mail, Phone, MapPin, CreditCard, Heart, Building2, UserCheck, ChevronsUpDown, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { useKanbanLeads } from '@/hooks/useKanbanLeads';
 import { useProperties } from '@/hooks/useProperties';
 import { KanbanLead, LeadStage } from '@/types/kanban';
+import { supabase } from '@/integrations/supabase/client';
+import { useImoveisVivaReal } from '@/hooks/useImoveisVivaReal';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 
 const leadStages: LeadStage[] = [
   'Novo Lead',
@@ -45,16 +49,34 @@ interface AddLeadModalProps {
   isOpen: boolean;
   onClose: () => void;
   leadToEdit?: KanbanLead | null;
+  updateLeadOverride?: (leadId: string, updates: Partial<KanbanLead>) => Promise<boolean>;
 }
 
 export const AddLeadModal: React.FC<AddLeadModalProps> = ({ 
   isOpen, 
   onClose, 
-  leadToEdit = null 
+  leadToEdit = null,
+  updateLeadOverride
 }) => {
   const { createLead, updateLead } = useKanbanLeads();
   const { properties } = useProperties();
   const [loading, setLoading] = useState(false);
+  const { imoveis, refetch: refetchImoveis } = useImoveisVivaReal({ pageSize: 50 });
+
+  // Corretores disponíveis para atribuição
+  const [corretores, setCorretores] = useState<{ id: string; full_name: string }[]>([]);
+  const [selectedCorretor, setSelectedCorretor] = useState<string>('');
+  const [corretorOpen, setCorretorOpen] = useState(false);
+  const [corretorQuery, setCorretorQuery] = useState('');
+  const [corretorLoading, setCorretorLoading] = useState(false);
+
+  // Estado para seleção de listing_id e detalhes do imóvel
+  const [listingId, setListingId] = useState<string>('');
+  const [listingPreview, setListingPreview] = useState<{ tipo_imovel?: string | null; descricao?: string | null } | null>(null);
+  const [listingOpen, setListingOpen] = useState(false);
+  const [listingQuery, setListingQuery] = useState('');
+  const [listingLoading, setListingLoading] = useState(false);
+  const [listingOptions, setListingOptions] = useState<{ id: number; listing_id: string; tipo_imovel: string | null; descricao: string | null; endereco: string | null; cidade: string | null }[]>([]);
 
   const [formData, setFormData] = useState({
     nome: '',
@@ -74,7 +96,52 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
 
   // Resetar/popular formulário quando modal abre/fecha ou lead muda
   useEffect(() => {
-    if (isOpen) {
+      if (isOpen) {
+      // Carregar corretores (role = corretor) via RPC list_company_users
+      (async () => {
+        try {
+          const { data, error } = await supabase.rpc('list_company_users', {
+            target_company_id: null,
+            search: null,
+            roles: ['corretor'],
+            limit_count: 100,
+            offset_count: 0,
+          });
+          if (error) throw error;
+          setCorretores((data || []).map((u: any) => ({ id: u.id, full_name: u.full_name || u.email })));
+        } catch (err) {
+          console.error('Erro ao carregar corretores:', err);
+        }
+      })();
+
+      // Garantir catálogo de imóveis carregado
+      refetchImoveis();
+      // Precarregar algumas opções iniciais de listing_id
+      (async () => {
+        try {
+          setListingLoading(true);
+          const { data, error } = await supabase
+            .from('imoveisvivareal')
+            .select('id, listing_id, tipo_imovel, descricao, endereco, cidade')
+            .order('listing_id', { ascending: true })
+            .limit(50);
+          if (!error) {
+            const mapped = (data as any[] || []).map(r => ({
+              id: r.id,
+              listing_id: String(r.listing_id || r.id),
+              tipo_imovel: r.tipo_imovel,
+              descricao: r.descricao,
+              endereco: r.endereco,
+              cidade: r.cidade
+            }));
+            mapped.sort((a,b) => (Number(a.listing_id) || 0) - (Number(b.listing_id) || 0));
+            setListingOptions(mapped);
+          }
+        } finally {
+          setListingLoading(false);
+        }
+      })();
+
       if (leadToEdit) {
         // Modo edição - popular com dados do lead
         setFormData({
@@ -92,6 +159,18 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
           message: leadToEdit.message || '',
           property_id: leadToEdit.property_id || ''
         });
+        // Se houver imovel_interesse, refletir no state de listingId
+        if (leadToEdit.imovel_interesse) {
+          setListingId(String(leadToEdit.imovel_interesse));
+        } else {
+          setListingId('');
+        }
+        // Preselecionar corretor vinculado
+        if ((leadToEdit as any).id_corretor_responsavel || leadToEdit.corretor?.id) {
+          setSelectedCorretor(((leadToEdit as any).id_corretor_responsavel as string) || (leadToEdit.corretor?.id as string) || '');
+        } else {
+          setSelectedCorretor('');
+        }
       } else {
         // Modo criação - resetar formulário
         setFormData({
@@ -109,6 +188,9 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
           message: '',
           property_id: ''
         });
+        setSelectedCorretor('');
+        setListingId('');
+        setListingPreview(null);
       }
     }
   }, [isOpen, leadToEdit]);
@@ -145,16 +227,31 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
         observacoes: formData.notes.trim() || '',
         message: formData.message.trim() || '',
         property_id: formData.property_id || '',
+        imovel_interesse: listingId || undefined,
         dataContato: new Date().toISOString().split('T')[0]
       };
 
       if (leadToEdit) {
         // Modo edição
-        await updateLead(leadToEdit.id, leadData);
+        // incluir id_corretor_responsavel no update quando houver
+        const payload: any = { ...leadData };
+        if (selectedCorretor) {
+          payload.id_corretor_responsavel = selectedCorretor;
+        } else {
+          payload.id_corretor_responsavel = null;
+        }
+        if (updateLeadOverride) {
+          await updateLeadOverride(leadToEdit.id, payload);
+        } else {
+          await updateLead(leadToEdit.id, payload);
+        }
         toast.success('Cliente atualizado com sucesso!');
       } else {
-        // Modo criação
-        await createLead(leadData);
+        // Modo criação — atribui opcionalmente ao corretor selecionado
+        const assignedUserId = selectedCorretor || (corretores.length > 0
+          ? corretores[Math.floor(Math.random() * corretores.length)].id
+          : undefined);
+        await createLead(leadData as KanbanLead, { assignedUserId });
         toast.success('Novo cliente adicionado com sucesso!');
       }
 
@@ -170,6 +267,74 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
   const handleChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
+
+  // Quando muda o listingId, atualizar preview
+  useEffect(() => {
+    if (!listingId) {
+      setListingPreview(null);
+      return;
+    }
+    const match = imoveis.find(i => String(i.listing_id) === String(listingId));
+    if (match) {
+      setListingPreview({ tipo_imovel: match.tipo_imovel, descricao: match.descricao });
+    } else {
+      setListingPreview(null);
+    }
+  }, [listingId, imoveis]);
+
+  // Buscar sugestões de listing conforme digitação (debounced)
+  useEffect(() => {
+    const t = setTimeout(async () => {
+      try {
+        if (!isOpen) return;
+        setListingLoading(true);
+        const term = listingQuery.trim();
+        let query = supabase
+          .from('imoveisvivareal')
+          .select('id, listing_id, tipo_imovel, descricao, endereco, cidade')
+          .order('listing_id', { ascending: true })
+          .limit(50);
+        if (term) query = query.ilike('listing_id', `%${term}%`);
+        const { data, error } = await query;
+        if (!error) {
+          const mapped = (data as any[] || []).map(r => ({
+            id: r.id,
+            listing_id: String(r.listing_id || r.id),
+            tipo_imovel: r.tipo_imovel,
+            descricao: r.descricao,
+            endereco: r.endereco,
+            cidade: r.cidade
+          }));
+          mapped.sort((a,b) => (Number(a.listing_id) || 0) - (Number(b.listing_id) || 0));
+          setListingOptions(mapped);
+        }
+      } finally {
+        setListingLoading(false);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [listingQuery, isOpen]);
+
+  // Buscar sugestões de corretores conforme digitação (debounced)
+  useEffect(() => {
+    const t = setTimeout(async () => {
+      try {
+        if (!isOpen) return;
+        setCorretorLoading(true);
+        const { data, error } = await supabase.rpc('list_company_users', {
+          target_company_id: null,
+          search: corretorQuery || null,
+          roles: ['corretor'],
+          limit_count: 100,
+          offset_count: 0,
+        });
+        if (!error) setCorretores((data || []).map((u: any) => ({ id: u.id, full_name: u.full_name || u.email })));
+      } finally {
+        setCorretorLoading(false);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [corretorQuery, isOpen]);
 
   return (
     <AnimatePresence>
@@ -383,29 +548,114 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                         />
                       </div>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="property_id" className="text-gray-300 flex items-center gap-2">
+                      <div className="space-y-2 relative">
+                        <Label htmlFor="imovel_interesse" className="text-gray-300 flex items-center gap-2 mt-[2px]">
                           <Building2 className="w-4 h-4" />
-                          Imóvel de Interesse
+                          ID do imóvel de Interesse
                         </Label>
-                        <Select value={formData.property_id} onValueChange={(value) => handleChange('property_id', value)}>
-                          <SelectTrigger className="bg-gray-800/50 border-gray-700 text-white">
-                            <SelectValue placeholder="Selecione um imóvel" />
-                          </SelectTrigger>
-                          <SelectContent className="bg-gray-800 border-gray-700">
-                            {properties.map((property) => (
-                              <SelectItem key={property.id} value={property.id} className="text-white hover:bg-gray-700">
-                                <div className="flex flex-col">
-                                  <span className="font-medium">{property.title}</span>
-                                  <span className="text-sm text-gray-400">
-                                    R$ {property.price?.toLocaleString('pt-BR')}
-                                  </span>
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <Popover open={listingOpen} onOpenChange={setListingOpen}>
+                          <PopoverTrigger asChild>
+                            <button
+                              type="button"
+                              className="mt-1 inline-flex w-full items-center justify-between rounded-md border border-gray-700 bg-gray-800/50 px-3 py-2 text-left text-white"
+                              aria-label="Selecione o ID do imóvel"
+                            >
+                              <span className="truncate">{listingId || 'Selecione o ID do imóvel ou digite'}</span>
+                              <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent className="p-0 w-[--radix-popover-trigger-width] bg-white border-gray-200">
+                            <Command>
+                              <CommandInput placeholder="Digite o ID do imóvel..." value={listingQuery} onValueChange={setListingQuery} />
+                              <CommandList>
+                                <CommandEmpty>{listingLoading ? 'Carregando...' : 'Nenhum resultado'}</CommandEmpty>
+                                <CommandGroup>
+                                  {listingOptions.map((opt) => (
+                                    <CommandItem
+                                      key={`${opt.id}-${opt.listing_id}`}
+                                      value={opt.listing_id}
+                                      onSelect={() => {
+                                        setListingId(opt.listing_id);
+                                        setListingPreview({ tipo_imovel: opt.tipo_imovel, descricao: opt.descricao });
+                                        setListingOpen(false);
+                                      }}
+                                    >
+                                      <div className="flex flex-col text-black">
+                                        <span className="font-medium">{opt.listing_id} - {(opt.endereco || opt.cidade || '-')}</span>
+                                      </div>
+                                      {listingId === opt.listing_id && (
+                                        <Check className="ml-auto h-4 w-4 text-black" />
+                                      )}
+                                    </CommandItem>
+                                  ))}
+                                </CommandGroup>
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
+                        {listingPreview && (
+                          <div className="pointer-events-auto absolute left-0 right-0 top-full mt-2 z-20 rounded-lg border border-gray-700 bg-gray-900/90 backdrop-blur-sm p-3 shadow-xl">
+                            <div className="text-sm text-gray-300"><span className="font-medium">Tipo do imóvel:</span> {listingPreview.tipo_imovel || '-'}</div>
+                            <div className="text-sm text-gray-300 mt-1">
+                              <span className="font-medium">Início da descrição:</span> {(listingPreview.descricao || '').slice(0, 160)}{(listingPreview.descricao || '').length > 160 ? '…' : ''}
+                            </div>
+                          </div>
+                        )}
                       </div>
+                  {/* Atribuição de Corretor */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold text-white border-b border-gray-600 pb-2">Atribuição</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2 md:col-span-2">
+                        <Label htmlFor="corretor" className="text-gray-300 flex items-center gap-2">
+                          <UserCheck className="w-4 h-4" />
+                          Corretor Responsável
+                        </Label>
+                        <Popover open={corretorOpen} onOpenChange={setCorretorOpen}>
+                          <PopoverTrigger asChild>
+                            <button
+                              type="button"
+                              className="inline-flex w-full items-center justify-between rounded-md border border-gray-700 bg-gray-800/50 px-3 py-2 text-left text-white min-w-[260px]"
+                              aria-label="Selecione um Corretor"
+                            >
+                              <span className="truncate">{
+                                selectedCorretor ? (corretores.find(c => c.id === selectedCorretor)?.full_name || 'Selecionado') : 'Selecione um Corretor ou digite'
+                              }</span>
+                              <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent className="p-0 w-[--radix-popover-trigger-width] bg-white border-gray-200">
+                            <Command>
+                              <CommandInput placeholder="Digite o nome do corretor..." value={corretorQuery} onValueChange={setCorretorQuery} />
+                              <CommandList>
+                                <CommandEmpty>{corretorLoading ? 'Carregando...' : 'Nenhum corretor encontrado'}</CommandEmpty>
+                                <CommandGroup>
+                                  {corretores.map((c) => (
+                                    <CommandItem
+                                      key={c.id}
+                                      value={c.full_name}
+                                      onSelect={() => {
+                                        setSelectedCorretor(c.id);
+                                        setCorretorOpen(false);
+                                      }}
+                                    >
+                                      <span className="text-black font-medium">{c.full_name}</span>
+                                      {selectedCorretor === c.id && (
+                                        <Check className="ml-auto h-4 w-4 text-black" />
+                                      )}
+                                    </CommandItem>
+                                  ))}
+                                </CommandGroup>
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
+                        {!selectedCorretor && (
+                          <p className="text-xs text-gray-400">Deixe vazio para que o corretor seja<br />escolhido aleatoriamente.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -439,7 +689,7 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                       type="button"
                       variant="outline"
                       onClick={onClose}
-                      className="flex-1 border-gray-600 text-gray-300 hover:bg-gray-700"
+                      className="flex-1 border-gray-600 text-red-500 hover:bg-gray-700"
                       disabled={loading}
                     >
                       Cancelar

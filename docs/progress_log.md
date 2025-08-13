@@ -204,6 +204,13 @@ erDiagram
 ---
 Última atualização: gerada automaticamente.
 
+## 2025-08-12 — Usuários: criação, hierarquia e senha inicial
+- Correção: novos usuários criados via módulo agora recebem `company_id` do criador (Admin), aparecendo imediatamente na lista (RPC `list_company_users`).
+- UI: Campo "Departamento" removido do modal de criação e da tabela; "Cargo" renomeado para "Hierarquia"; botão "Cancelar" em vermelho.
+- Senha padrão: `VITE_DEFAULT_NEW_USER_PASSWORD` (fallback `Imobi@1234`) usada como senha temporária, exibida no alerta pós-criação.
+- Primeiro acesso: adicionadas colunas `require_password_change` e `password_changed_at` em `user_profiles`; modal obrigatório no app força troca de senha (com confirmação) e limpa o flag após sucesso.
+- RPCs seguros (gestor): `update_user_role_in_company` (gestor só define `corretor` na própria empresa) e `deactivate_user_in_company` (gestor desativa usuários da própria empresa). Admin mantém poderes globais.
+
 ## 2025-08-10 — Endurecimento de RLS e unificação
 - Criada migration `supabase/migrations/20250810090000_harden_rls_policies.sql` consolidando políticas RLS por `company_id` + `role` e removendo políticas permissivas/duplicadas.
 - Adicionadas funções `get_user_role()` e `get_user_company_id()` (SECURITY DEFINER) e triggers `set_row_tenant_defaults()` para popular `user_id`/`company_id` em inserts.
@@ -236,3 +243,15 @@ Próximos passos sugeridos:
 - TODO produção: quando o domínio final estiver definido, configurar CORS/Site URL/Redirect URLs no Supabase com os domínios de produção e atualizar `.env.production` se necessário.
 
 - RLS: criada função `get_current_role()` (SECURITY DEFINER) e aplicadas novas policies por role (sem company_id) em `leads`, `contract_templates` e `whatsapp_*` com FORCE RLS. Índices de suporte criados (`user_id`, `created_at`).
+
+## 2025-08-12 — Conexões (WhatsApp) — permitir gestor vincular a outros usuários
+- Criada migration `supabase/migrations/20250812110000_whatsapp_instances_gestor_assign.sql` que:
+  - Recria as políticas de `whatsapp_instances` para permitir que **gestores/admins** façam INSERT/UPDATE (incluindo reatribuição de `user_id`) desde que o usuário alvo pertença à **mesma company**.
+  - Garante `WITH CHECK` com validação por `company_id` e `EXISTS` em `user_profiles` para o `user_id` destino.
+  - Mantém corretores limitados às próprias instâncias.
+  - Adiciona índices `idx_whatsapp_instances_company_id` e `idx_whatsapp_instances_user_id` (idempotentes).
+
+## 2025-08-13 — Usuários single-tenant (remover escopo por empresa)
+- Atualizada a RPC `public.list_company_users` para modo single-tenant: remove qualquer filtro por `company_id` e retorna todos os registros de `user_profiles`, mantendo filtros opcionais de `search`, `roles` e paginação (`limit_count`, `offset_count`).
+- Assinatura da função preservada para compatibilidade do frontend; parâmetro `target_company_id` é ignorado.
+- Migration adicionada: `supabase/migrations/20250813130000_list_company_users_remove_company_scope.sql`.
