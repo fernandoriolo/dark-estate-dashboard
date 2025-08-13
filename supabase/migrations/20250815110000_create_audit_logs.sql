@@ -3,7 +3,6 @@
 
 CREATE TABLE IF NOT EXISTS public.audit_logs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NULL,
   actor_id uuid NULL REFERENCES auth.users(id) ON DELETE SET NULL,
   action text NOT NULL,
   resource text NOT NULL,
@@ -11,6 +10,15 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
   meta jsonb NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Garantir colunas necessárias quando a tabela já existir sem elas
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS company_id uuid NULL;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS actor_id uuid NULL;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS action text;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS resource text;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS resource_id text;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS meta jsonb;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS created_at timestamptz;
 
 COMMENT ON TABLE public.audit_logs IS 'Trilhas de auditoria de ações do sistema';
 COMMENT ON COLUMN public.audit_logs.company_id IS 'Empresa do evento para escopo de RLS';
