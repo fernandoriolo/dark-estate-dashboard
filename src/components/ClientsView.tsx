@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   DndContext,
@@ -11,6 +11,7 @@ import {
   useSensors,
   closestCorners,
   useDndMonitor,
+  useDroppable,
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -344,6 +345,7 @@ const LeadCard = ({ lead, isDragging = false }: LeadCardProps) => {
       ref={setNodeRef}
       style={style}
       {...attributes}
+      {...listeners}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
@@ -357,7 +359,6 @@ const LeadCard = ({ lead, isDragging = false }: LeadCardProps) => {
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-2">
                 <div 
-                  {...listeners}
                   className="opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1 hover:bg-gray-700/50 rounded"
                 >
                   <GripVertical className="h-3 w-3 text-gray-400" />
@@ -427,20 +428,11 @@ interface KanbanColumnProps {
 const KanbanColumn = ({ stage, leads, leadCount }: KanbanColumnProps) => {
   const StageIcon = stage.icon;
   
-  const {
-    setNodeRef,
-    isOver,
-  } = useSortable({
-    id: stage.id,
-    data: {
-      type: 'column',
-      stage: stage.title,
-    },
-  });
+  const { setNodeRef: setDropRef, isOver } = useDroppable({ id: `drop-${stage.id}`, data: { type: 'column', stage: stage.title } });
   
   return (
     <div 
-      ref={setNodeRef}
+      ref={setDropRef}
       className="flex flex-col h-full w-[280px] flex-shrink-0 kanban-column"
       style={{ contain: 'layout style' }}
     >
@@ -497,6 +489,8 @@ export function ClientsView() {
   const [particles, setParticles] = useState<number[]>([]);
   const [isAddLeadModalOpen, setIsAddLeadModalOpen] = useState(false);
   const [leadToEdit, setLeadToEdit] = useState<KanbanLead | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const hScrollRef = useRef<HTMLDivElement | null>(null);
 
   // Usar o hook do kanban em vez de dados mock
   const { 
@@ -540,6 +534,7 @@ export function ClientsView() {
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(event.active.id as string);
+    setIsDragging(true);
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
@@ -587,6 +582,7 @@ export function ClientsView() {
     }
 
     setActiveId(null);
+    setIsDragging(false);
   };
 
   const activeLead = activeId ? leads.find(lead => lead.id === activeId) : null;
@@ -751,10 +747,28 @@ export function ClientsView() {
                   <div className="h-full w-full p-4">
                     {/* Área de scroll horizontal TOTALMENTE isolada */}
                     <div 
+                      ref={hScrollRef}
                       className="h-full w-full overflow-x-auto overflow-y-hidden scrollbar-thin scrollbar-track-gray-800/50 scrollbar-thumb-gray-600 hover:scrollbar-thumb-gray-500 kanban-scroll"
                       style={{
                         contain: 'layout style paint',
                         isolation: 'isolate'
+                      }}
+                      onMouseMove={(e) => {
+                        if (!isDragging || !hScrollRef.current) return;
+                        const container = hScrollRef.current;
+                        const rect = container.getBoundingClientRect();
+                        const x = e.clientX - rect.left;
+                        const edge = 80;
+                        const max = rect.width;
+                        let dx = 0;
+                        if (x < edge) {
+                          dx = -Math.ceil((edge - x) / 10) * 10;
+                        } else if (x > max - edge) {
+                          dx = Math.ceil((x - (max - edge)) / 10) * 10;
+                        }
+                        if (dx !== 0) {
+                          container.scrollLeft += dx;
+                        }
                       }}
                     >
                       <div 
