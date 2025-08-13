@@ -145,8 +145,11 @@ export function useKanbanLeads() {
     }
   }, []);
 
-  // Criar novo lead
-  const createLead = useCallback(async (leadData: Omit<KanbanLead, 'id' | 'dataContato'>) => {
+  // Criar novo lead (permite atribuição opcional a um corretor específico)
+  const createLead = useCallback(async (
+    leadData: Omit<KanbanLead, 'id' | 'dataContato'>,
+    options?: { assignedUserId?: string }
+  ) => {
     try {
       // Buscar usuário atual
       const { data: { user } } = await supabase.auth.getUser();
@@ -168,7 +171,8 @@ export function useKanbanLeads() {
         estimated_value: leadData.valorEstimado || leadData.valor || null,
         notes: leadData.observacoes || null,
         imovel_interesse: leadData.imovel_interesse || null,
-        user_id: user.id // Adicionar user_id automaticamente
+        // Se options.assignedUserId for informado, atribui o lead a esse corretor; caso contrário, ao usuário atual
+        user_id: options?.assignedUserId || user.id
       };
 
       // Adicionar property_id se existir na estrutura da tabela
