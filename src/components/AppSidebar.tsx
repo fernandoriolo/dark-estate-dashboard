@@ -1,4 +1,4 @@
-import { Building2, Home, BarChart3, Settings, Users, Globe, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot } from "lucide-react";
+import { Building2, Home, BarChart3, Settings, Users, Globe, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, MessageSquare } from "lucide-react";
 import { useState, useEffect } from "react";
 import {
   Sidebar,
@@ -51,6 +51,13 @@ const menuItems = [
     permissionKey: "menu_agenda",
   },
   {
+    title: "Plantão",
+    url: "#",
+    icon: Calendar,
+    view: "plantao" as const,
+    permissionKey: "menu_plantao",
+  },
+  {
     title: "Pipeline Clientes",
     url: "#",
     icon: UserCheck,
@@ -63,6 +70,13 @@ const menuItems = [
     icon: Database,
     view: "clients-crm" as const,
     permissionKey: "menu_clients_crm",
+  },
+  {
+    title: "Chats",
+    url: "#",
+    icon: MessageSquare,
+    view: "chats" as const,
+    // Sem permissionKey para aparecer por padrão (pode ser protegido depois)
   },
   {
     title: "Relatórios",
@@ -133,7 +147,7 @@ const secondaryItems = [
 
 interface AppSidebarProps {
   currentView: string;
-  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "reports" | "portals" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato") => void;
+  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "plantao" | "reports" | "portals" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "chats") => void;
 }
 
 export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
