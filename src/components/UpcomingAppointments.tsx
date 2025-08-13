@@ -2,18 +2,9 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Calendar, Clock, User, MapPin, ArrowRight, AlertCircle, CheckCircle2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { fetchUpcomingFromAgenda, AgendaEvent } from "@/services/agenda/events";
 
-interface AgendaEvent {
-  id: number;
-  date: Date;
-  client: string;
-  property: string;
-  address: string;
-  type: string;
-  status: string;
-  corretor?: string;
-}
+// Tipagem compartilhada vem de services/agenda/events
 
 interface UpcomingAppointmentsProps {
   onViewAll?: () => void;
@@ -24,38 +15,13 @@ export function UpcomingAppointments({ onViewAll }: UpcomingAppointmentsProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Buscar próximos compromissos a partir da tabela oncall_schedules (próximos 7 dias)
+  // Buscar próximos compromissos a partir do mesmo webhook da Agenda (próximos 7 dias)
   const fetchUpcomingEvents = async () => {
     try {
       setLoading(true);
       setError(null);
-      // Buscar eventos dos próximos 7 dias
-      const today = new Date();
-      const nextWeek = new Date();
-      nextWeek.setDate(today.getDate() + 7);
-
-      const { data, error } = await supabase
-        .from('oncall_events')
-        .select('*')
-        .gte('starts_at', today.toISOString())
-        .lt('starts_at', nextWeek.toISOString())
-        .order('starts_at', { ascending: true })
-        .limit(5);
-
-      if (error) throw error;
-
-      const processed: AgendaEvent[] = (data || []).map((row: any, idx: number) => ({
-        id: idx + 1,
-        date: new Date(row.starts_at),
-        client: row.client_name || 'Cliente não informado',
-        property: row.title || 'Compromisso',
-        address: row.address || 'Local não informado',
-        type: row.type || 'Evento',
-        status: row.status || 'Aguardando confirmação',
-        corretor: undefined,
-      }));
-
-      setEvents(processed);
+      const upcoming = await fetchUpcomingFromAgenda(7, 5, "Todos");
+      setEvents(upcoming);
       
     } catch (error) {
       console.error("❌ Erro ao buscar próximos compromissos:", error);
@@ -64,7 +30,7 @@ export function UpcomingAppointments({ onViewAll }: UpcomingAppointmentsProps) {
       // Usar dados mock em caso de erro
       setEvents([
         {
-          id: 1,
+          id: '1',
           date: new Date(Date.now() + 2 * 60 * 60 * 1000), // Em 2 horas
           client: "João Silva",
           property: "Apartamento Centro",
@@ -74,7 +40,7 @@ export function UpcomingAppointments({ onViewAll }: UpcomingAppointmentsProps) {
           corretor: "Isis"
         },
         {
-          id: 2,
+          id: '2',
           date: new Date(Date.now() + 24 * 60 * 60 * 1000), // Amanhã
           client: "Maria Santos",
           property: "Casa Jardim América", 
@@ -91,13 +57,9 @@ export function UpcomingAppointments({ onViewAll }: UpcomingAppointmentsProps) {
 
   useEffect(() => {
     fetchUpcomingEvents();
-    // Realtime para atualizações
-    const channel = supabase
-      .channel(`oncall_events_${Date.now()}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'oncall_events' }, () => fetchUpcomingEvents())
-      .subscribe();
+    // Atualização periódica (sem Realtime, segue a Agenda)
     const interval = setInterval(fetchUpcomingEvents, 5 * 60 * 1000);
-    return () => { clearInterval(interval); supabase.removeChannel(channel); };
+    return () => { clearInterval(interval); };
   }, []);
 
   // Função para determinar se o compromisso é urgente (próximas 2 horas)
@@ -245,6 +207,10 @@ export function UpcomingAppointments({ onViewAll }: UpcomingAppointmentsProps) {
                       {event.type}
                     </div>
                     <span className="text-gray-300 text-sm truncate">{event.property}</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <MapPin className="h-3 w-3 text-amber-400 mt-0.5 flex-shrink-0" />
+                    <span className="text-gray-400 text-xs truncate">{event.address}</span>
                   </div>
                   {event.corretor && (
                     <div className="flex items-center gap-2">
