@@ -132,6 +132,34 @@ const Index = () => {
     };
   }, [currentView]);
 
+  // Prefetch em idle dos módulos mais acessados (sem bloquear a thread principal)
+  useEffect(() => {
+    const run = () => {
+      // Respeita economia de dados
+      const conn: any = (navigator as any)?.connection;
+      if (conn?.saveData) return;
+      const prefetch = (fn: () => Promise<any>, delayMs: number) => {
+        const t = setTimeout(() => { fn().catch(() => {}); }, delayMs);
+        timeouts.push(t);
+      };
+      const timeouts: any[] = [];
+      // Escalonar prefetch para evitar burst de rede
+      prefetch(() => import("@/components/AgendaView"), 1200);
+      prefetch(() => import("@/components/ContractsView"), 1600);
+      prefetch(() => import("@/components/ClientsView"), 2000);
+      prefetch(() => import("@/components/ClientsCRMView"), 2400);
+      prefetch(() => import("@/components/ReportsView"), 2800);
+      return () => { timeouts.forEach(clearTimeout); };
+    };
+    if (typeof (window as any).requestIdleCallback === "function") {
+      const id = (window as any).requestIdleCallback(run, { timeout: 3000 });
+      return () => { if (typeof (window as any).cancelIdleCallback === "function") (window as any).cancelIdleCallback(id); };
+    } else {
+      const t = setTimeout(run, 1000);
+      return () => clearTimeout(t);
+    }
+  }, []);
+
   useEffect(() => {
     const handler = (e: any) => {
       const target = e?.detail as View;
