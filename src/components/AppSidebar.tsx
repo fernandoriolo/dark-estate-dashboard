@@ -277,6 +277,27 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                         onViewChange(item.view);
                         navigate(`/${item.view}`);
                       }}
+                      onMouseEnter={() => {
+                        // Prefetch sob hover
+                        const map: Record<string, () => Promise<any>> = {
+                          properties: () => import('@/components/PropertyList'),
+                          contracts: () => import('@/components/ContractsView'),
+                          agenda: () => import('@/components/AgendaView'),
+                          clients: () => import('@/components/ClientsView'),
+                          'clients-crm': () => import('@/components/ClientsCRMView'),
+                          connections: () => import('@/components/ConnectionsViewSimplified'),
+                          users: () => import('@/components/UserManagementView'),
+                          permissions: () => import('@/components/PermissionsManagementView'),
+                          inquilinato: () => import('@/components/InquilinatoView'),
+                          disparador: () => import('@/components/DisparadorView'),
+                          chats: () => import('@/components/ChatsView'),
+                          profile: () => import('@/components/UserProfileView'),
+                          dashboard: () => import('@/components/DashboardContent'),
+                          plantao: () => import('@/components/PlantaoView'),
+                          reports: () => import('@/components/ReportsView'),
+                        };
+                        map[item.view]?.();
+                      }}
                       className="flex items-center gap-3 w-full px-3 py-2"
                     >
                       <item.icon className="h-4 w-4" />
@@ -312,6 +333,13 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                       onClick={() => {
                         onViewChange(item.view);
                         navigate(`/${item.view}`);
+                      }}
+                      onMouseEnter={() => {
+                        const map: Record<string, () => Promise<any>> = {
+                          reports: () => import('@/components/ReportsView'),
+                          dashboard: () => import('@/components/DashboardContent'),
+                        };
+                        map[item.view]?.();
                       }}
                       className="flex items-center gap-3 w-full px-3 py-2"
                     >

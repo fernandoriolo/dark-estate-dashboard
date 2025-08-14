@@ -38,8 +38,25 @@ export default defineConfig(({ mode }) => ({
     rollupOptions: {
       external: [],
       output: {
-        manualChunks: {
-          'react-pdf': ['react-pdf', 'pdfjs-dist'],
+        manualChunks(id) {
+          // Vendors pesados
+          if (id.includes('jspdf') || id.includes('react-pdf') || id.includes('pdfjs-dist')) {
+            return 'vendor-pdf';
+          }
+          if (id.includes('html2canvas')) {
+            return 'vendor-canvas';
+          }
+          // Domínios pesados
+          if (id.includes('/components/ContractsView')) {
+            return 'domain-contracts';
+          }
+          if (id.includes('/utils/contractProcessor')) {
+            return 'domain-contracts';
+          }
+          if (id.includes('/components/AgendaView')) {
+            return 'domain-agenda';
+          }
+          return undefined;
         },
       },
     },
