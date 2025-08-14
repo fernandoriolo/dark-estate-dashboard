@@ -11,6 +11,12 @@ import { InquilinatoView } from "@/components/InquilinatoView";
 import { DisparadorView } from "@/components/DisparadorView";
 import { ChatsView } from "@/components/ChatsView";
 import { UserProfileView } from "@/components/UserProfileView";
+import PlantaoView from "@/components/PlantaoView";
+import { ConnectionsViewSimplified } from "@/components/ConnectionsViewSimplified";
+import { PropertyList } from "@/components/PropertyList";
+import { ContractsView } from "@/components/ContractsView";
+import { AgendaView } from "@/components/AgendaView";
+import { UserManagementView } from "@/components/UserManagementView";
 
 import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -99,6 +105,14 @@ const Index = () => {
         );
       case "reports":
         return <ReportsView />;
+      case "properties":
+        return <PropertyList properties={[]} loading={loading} onAddNew={() => {}} />;
+      case "contracts":
+        return <ContractsView />;
+      case "agenda":
+        return <AgendaView />;
+      case "users":
+        return <UserManagementView />;
       case "clients":
         return <ClientsView />;
       case "clients-crm":
@@ -109,6 +123,10 @@ const Index = () => {
         return <InquilinatoView />;
       case "disparador":
         return <DisparadorView />;
+      case "plantao":
+        return <PlantaoView />;
+      case "connections":
+        return <ConnectionsViewSimplified />;
       case "chats":
         return <ChatsView />;
       case "profile":

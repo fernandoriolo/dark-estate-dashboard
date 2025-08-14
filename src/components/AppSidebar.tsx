@@ -144,8 +144,37 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const { profile, isAdmin } = useUserProfile();
-  
   const { hasPermission } = usePermissions();
+
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [changeError, setChangeError] = useState<string | null>(null);
+  const [changing, setChanging] = useState(false);
+
+  const handleChangePassword = async () => {
+    setChangeError(null);
+    if (newPassword.length < 6) {
+      setChangeError("A senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setChangeError("As senhas não coincidem.");
+      return;
+    }
+    try {
+      setChanging(true);
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      setShowPasswordModal(false);
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err: any) {
+      setChangeError(err?.message ?? "Erro ao alterar a senha.");
+    } finally {
+      setChanging(false);
+    }
+  };
 
   useEffect(() => {
     // Buscar usuário atual
