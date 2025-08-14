@@ -45,13 +45,17 @@ const Index = () => {
   const navigate = useNavigate();
   const [currentView, setCurrentView] = useState<View>(() => {
     try {
+      const path = window.location.pathname.replace(/^\//, "");
+      const normalized = (path || "dashboard") as View;
+      const validViews: View[] = [
+        "dashboard","properties","contracts","agenda","plantao","reports","clients","clients-crm","connections","users","permissions","inquilinato","disparador","chats","profile"
+      ];
+      if (validViews.includes(normalized)) return normalized;
       const params = new URLSearchParams(window.location.search);
       const fromQuery = params.get("view") as View | null;
       const fromStorage = (localStorage.getItem("current-view") as View | null) || null;
       return (fromQuery as View) || (fromStorage as View) || "dashboard";
-    } catch {
-      return "dashboard";
-    }
+    } catch { return "dashboard"; }
   });
   const { loading } = useImoveisVivaReal();
   const { hasPermission } = usePermissions();
@@ -97,17 +101,23 @@ const Index = () => {
     }
   }, [currentView, hasPermission, fallbackViews]);
 
-  // Sincroniza currentView com URL (?view=...) e localStorage
+  // Sincroniza currentView com URL (path + ?view= compat) e localStorage
   useEffect(() => {
     try {
       localStorage.setItem("current-view", currentView);
     } catch {}
-    const params = new URLSearchParams(location.search);
-    if (params.get("view") !== currentView) {
-      params.set("view", currentView);
-      navigate({ search: params.toString() }, { replace: true });
+    const path = `/${currentView}`;
+    if (location.pathname !== path) {
+      navigate(path, { replace: true });
+      return;
     }
-  }, [currentView, location.search, navigate]);
+    // Remover legacy ?view=
+    const params = new URLSearchParams(location.search);
+    if (params.has("view")) {
+      params.delete("view");
+      navigate({ pathname: path, search: params.toString() }, { replace: true });
+    }
+  }, [currentView, location.pathname, location.search, navigate]);
 
   // Persiste ao ocultar janela/aba
   useEffect(() => {

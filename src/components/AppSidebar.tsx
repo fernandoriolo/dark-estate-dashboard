@@ -1,5 +1,6 @@
 import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare, KeyRound } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
@@ -141,6 +142,8 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const { profile, isAdmin } = useUserProfile();
@@ -270,7 +273,10 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                     `}
                   >
                     <button 
-                      onClick={() => onViewChange(item.view)}
+                      onClick={() => {
+                        onViewChange(item.view);
+                        navigate(`/${item.view}`);
+                      }}
                       className="flex items-center gap-3 w-full px-3 py-2"
                     >
                       <item.icon className="h-4 w-4" />
@@ -303,7 +309,10 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                     `}
                   >
                     <button 
-                      onClick={() => onViewChange(item.view)}
+                      onClick={() => {
+                        onViewChange(item.view);
+                        navigate(`/${item.view}`);
+                      }}
                       className="flex items-center gap-3 w-full px-3 py-2"
                     >
                       <item.icon className="h-4 w-4" />

@@ -9,8 +9,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input as TextInput } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useNavigate } from "react-router-dom";
 
 export function DashboardHeader() {
+  const navigate = useNavigate();
   const { profile, updateProfile } = useUserProfile();
   const avatarLetter = (profile?.full_name?.charAt(0) || profile?.email?.charAt(0) || 'U').toUpperCase();
 
@@ -75,7 +77,7 @@ export function DashboardHeader() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="bg-gray-900 border-gray-700 text-gray-200">
               <DropdownMenuItem onClick={() => {
-                window.dispatchEvent(new CustomEvent('app:navigate', { detail: 'profile' }));
+                navigate('/profile');
               }}>
                 <UserIcon className="h-4 w-4 mr-2" /> Meu Perfil
               </DropdownMenuItem>

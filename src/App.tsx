@@ -69,6 +69,22 @@ function AppContent() {
       {null}
       <Routes>
         <Route path="/" element={<Index />} />
+        {/* Rotas reais por módulo */}
+        <Route path="/dashboard" element={<Index />} />
+        <Route path="/properties" element={<Index />} />
+        <Route path="/contracts" element={<Index />} />
+        <Route path="/agenda" element={<Index />} />
+        <Route path="/plantao" element={<Index />} />
+        <Route path="/reports" element={<Index />} />
+        <Route path="/clients" element={<Index />} />
+        <Route path="/clients-crm" element={<Index />} />
+        <Route path="/connections" element={<Index />} />
+        <Route path="/users" element={<Index />} />
+        <Route path="/permissions" element={<Index />} />
+        <Route path="/inquilinato" element={<Index />} />
+        <Route path="/disparador" element={<Index />} />
+        <Route path="/chats" element={<Index />} />
+        <Route path="/profile" element={<Index />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
 
