@@ -1,22 +1,24 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { DashboardHeader } from "@/components/DashboardHeader";
-import { DashboardContent } from "@/components/DashboardContent";
-import { ReportsView } from "@/components/ReportsView";
-import { ClientsView } from "@/components/ClientsView";
-import { ClientsCRMView } from "@/components/ClientsCRMView";
-import { PermissionsManagementView } from "@/components/PermissionsManagementView";
-import { InquilinatoView } from "@/components/InquilinatoView";
-import { DisparadorView } from "@/components/DisparadorView";
-import { ChatsView } from "@/components/ChatsView";
-import { UserProfileView } from "@/components/UserProfileView";
-import PlantaoView from "@/components/PlantaoView";
-import { ConnectionsViewSimplified } from "@/components/ConnectionsViewSimplified";
-import { PropertyList } from "@/components/PropertyList";
-import { ContractsView } from "@/components/ContractsView";
-import { AgendaView } from "@/components/AgendaView";
-import { UserManagementView } from "@/components/UserManagementView";
+// Lazy modules (code splitting)
+const DashboardContent = lazy(() => import("@/components/DashboardContent").then(m => ({ default: m.DashboardContent })));
+const ReportsView = lazy(() => import("@/components/ReportsView").then(m => ({ default: m.ReportsView })));
+const ClientsView = lazy(() => import("@/components/ClientsView").then(m => ({ default: m.ClientsView })));
+const ClientsCRMView = lazy(() => import("@/components/ClientsCRMView").then(m => ({ default: m.ClientsCRMView })));
+const PermissionsManagementView = lazy(() => import("@/components/PermissionsManagementView").then(m => ({ default: m.PermissionsManagementView })));
+const InquilinatoView = lazy(() => import("@/components/InquilinatoView").then(m => ({ default: m.InquilinatoView })));
+const DisparadorView = lazy(() => import("@/components/DisparadorView").then(m => ({ default: m.DisparadorView })));
+const ChatsView = lazy(() => import("@/components/ChatsView").then(m => ({ default: m.ChatsView })));
+const UserProfileView = lazy(() => import("@/components/UserProfileView").then(m => ({ default: m.UserProfileView })));
+const PlantaoView = lazy(() => import("@/components/PlantaoView"));
+const ConnectionsViewSimplified = lazy(() => import("@/components/ConnectionsViewSimplified").then(m => ({ default: m.ConnectionsViewSimplified })));
+const PropertyList = lazy(() => import("@/components/PropertyList").then(m => ({ default: m.PropertyList })));
+const ContractsView = lazy(() => import("@/components/ContractsView").then(m => ({ default: m.ContractsView })));
+const AgendaView = lazy(() => import("@/components/AgendaView").then(m => ({ default: m.AgendaView })));
+const UserManagementView = lazy(() => import("@/components/UserManagementView").then(m => ({ default: m.UserManagementView })));
 
 import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -39,7 +41,18 @@ type View =
   | "profile";
 
 const Index = () => {
-  const [currentView, setCurrentView] = useState<View>("dashboard");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [currentView, setCurrentView] = useState<View>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const fromQuery = params.get("view") as View | null;
+      const fromStorage = (localStorage.getItem("current-view") as View | null) || null;
+      return (fromQuery as View) || (fromStorage as View) || "dashboard";
+    } catch {
+      return "dashboard";
+    }
+  });
   const { loading } = useImoveisVivaReal();
   const { hasPermission } = usePermissions();
 
@@ -83,6 +96,31 @@ const Index = () => {
       if (next) setCurrentView(next as View);
     }
   }, [currentView, hasPermission, fallbackViews]);
+
+  // Sincroniza currentView com URL (?view=...) e localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem("current-view", currentView);
+    } catch {}
+    const params = new URLSearchParams(location.search);
+    if (params.get("view") !== currentView) {
+      params.set("view", currentView);
+      navigate({ search: params.toString() }, { replace: true });
+    }
+  }, [currentView, location.search, navigate]);
+
+  // Persiste ao ocultar janela/aba
+  useEffect(() => {
+    const handler = () => {
+      try { localStorage.setItem("current-view", currentView); } catch {}
+    };
+    document.addEventListener("visibilitychange", handler);
+    window.addEventListener("beforeunload", handler);
+    return () => {
+      document.removeEventListener("visibilitychange", handler);
+      window.removeEventListener("beforeunload", handler);
+    };
+  }, [currentView]);
 
   useEffect(() => {
     const handler = (e: any) => {
@@ -142,7 +180,11 @@ const Index = () => {
         <AppSidebar currentView={currentView} onViewChange={setCurrentView} />
         <div className="flex-1 min-w-0">
           <DashboardHeader />
-          <main className="p-6 overflow-x-hidden">{renderContent()}</main>
+          <main className="p-6 overflow-x-hidden">
+            <Suspense fallback={<div className="text-gray-300">Carregando módulo...</div>}>
+              {renderContent()}
+            </Suspense>
+          </main>
         </div>
       </div>
     </SidebarProvider>
