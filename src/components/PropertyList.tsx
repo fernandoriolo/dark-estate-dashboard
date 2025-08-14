@@ -475,6 +475,23 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
 
   const filteredProperties = effectiveProperties; // server-side filters
 
+  // Janela visível incremental (infinite scroll) para reduzir nós no DOM
+  const [visibleCount, setVisibleCount] = useState<number>(30);
+  useEffect(() => {
+    setVisibleCount(30);
+  }, [filteredProperties]);
+  useEffect(() => {
+    const onScroll = () => {
+      const scrollPosition = window.scrollY + window.innerHeight;
+      const docHeight = document.documentElement.scrollHeight;
+      if (docHeight - scrollPosition < 800) {
+        setVisibleCount((prev) => Math.min(prev + 24, filteredProperties.length));
+      }
+    };
+    window.addEventListener('scroll', onScroll, { passive: true } as any);
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [filteredProperties.length]);
+
   const startVivaRealEdit = (property: PropertyWithImages) => {
     setEditId(property.id);
     setEditPreco(String(property.price || 0));
@@ -1242,7 +1259,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
             transition={{ delay: 0.8, duration: 0.8 }}
           >
             <AnimatePresence>
-              {filteredProperties.map((property, index) => (
+              {filteredProperties.slice(0, visibleCount).map((property, index) => (
                 <motion.div
                   key={property.id}
                   initial={{ opacity: 0, y: 50, scale: 0.9 }}
@@ -1273,6 +1290,8 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                               <img 
                                 src={property.property_images[getCurrentImageIndex(property.id)].image_url} 
                                 alt={property.title}
+                                loading="lazy"
+                                decoding="async"
                                 className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
                                 draggable={false}
                               />
@@ -1542,6 +1561,19 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
               ))}
             </AnimatePresence>
           </motion.div>
+        )}
+
+        {/* Botão de carregar mais (fallback) */}
+        {!loadingCombined && visibleCount < filteredProperties.length && (
+          <div className="mt-8 flex justify-center">
+            <Button
+              variant="outline"
+              className="bg-gray-900/50 border-gray-600 text-white"
+              onClick={() => setVisibleCount((v) => Math.min(v + 24, filteredProperties.length))}
+            >
+              Carregar mais
+            </Button>
+          </div>
         )}
 
         {/* Paginação */}
