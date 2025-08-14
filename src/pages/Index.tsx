@@ -137,12 +137,12 @@ const Index = () => {
   };
 
   return (
-    <SidebarProvider>
-      <div className="flex min-h-screen bg-gray-950">
+    <SidebarProvider className="bg-gray-950">
+      <div className="flex min-h-screen bg-gray-950 flex-1 min-w-0">
         <AppSidebar currentView={currentView} onViewChange={setCurrentView} />
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <DashboardHeader />
-          <main className="p-6">{renderContent()}</main>
+          <main className="p-6 overflow-x-hidden">{renderContent()}</main>
         </div>
       </div>
     </SidebarProvider>
