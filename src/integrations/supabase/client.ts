@@ -28,22 +28,21 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
   }
 });
 
-// Função para autenticação anônima para desenvolvimento
+// Autenticação anônima somente em DEV e quando explicitamente habilitado
 export const ensureAuthenticated = async () => {
   const { data: { user } } = await supabase.auth.getUser();
-  
-  if (!user) {
-    // Fazer login anônimo para desenvolvimento
-    const { data, error } = await supabase.auth.signInAnonymously();
-    if (error) {
-      console.error('❌ Erro na autenticação anônima:', error);
-    } else {
-      console.log('✅ Autenticação anônima realizada com sucesso');
-    }
-    return data;
+  if (user) return { user };
+
+  const enableAnon = (import.meta as any).env?.DEV && import.meta.env.VITE_ENABLE_ANON_LOGIN === 'true';
+  if (!enableAnon) return { user: null } as any;
+
+  const { data, error } = await supabase.auth.signInAnonymously();
+  if (error) {
+    console.error('❌ Erro na autenticação anônima (DEV):', error);
+  } else {
+    console.log('✅ Autenticação anônima realizada (DEV)');
   }
-  
-  return { user };
+  return data as any;
 };
 
 // Teste básico de conectividade (silencioso caso falhe em dev)

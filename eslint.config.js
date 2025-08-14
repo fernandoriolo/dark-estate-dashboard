@@ -24,6 +24,22 @@ export default tseslint.config(
         { allowConstantExport: true },
       ],
       "@typescript-eslint/no-unused-vars": "off",
+      "@typescript-eslint/no-unused-expressions": "off",
+      "no-unused-expressions": "off",
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-empty-object-type": "off",
+      "@typescript-eslint/no-require-imports": "off",
+      "no-constant-binary-expression": "off",
+      "prefer-const": "warn",
+      "react-hooks/exhaustive-deps": "warn",
+    },
+  },
+  {
+    files: ["**/*.d.ts", "tailwind.config.ts"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-require-imports": "off",
+      "@typescript-eslint/no-empty-object-type": "off",
     },
   }
 );

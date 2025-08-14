@@ -1,0 +1,12 @@
+### Teste: Criar usuário via Edge Function admin-create-user
+POST {{functions_url}}/admin-create-user
+Authorization: Bearer {{access_token}}
+Content-Type: application/json
+
+{
+  "email": "teste.automacao+{{ts}}@example.com",
+  "password": "Imobi@1234",
+  "full_name": "Teste Automacao {{ts}}",
+  "role": "corretor",
+  "phone": "+5511999999999"
+}

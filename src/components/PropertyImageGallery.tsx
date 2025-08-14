@@ -62,7 +62,7 @@ export function PropertyImageGallery({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl max-h-[90vh] bg-gray-900 border-gray-700 text-white">
+      <DialogContent className="max-w-5xl w-full max-h-[90vh] bg-gray-900 border-gray-700 text-white overflow-hidden">
         <DialogHeader>
           <div className="flex items-center justify-between">
             <DialogTitle className="text-white">{property.title}</DialogTitle>
@@ -75,14 +75,14 @@ export function PropertyImageGallery({
           </p>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-4 px-2 md:px-0">
           {/* Imagem principal */}
           <div className="relative bg-black rounded-lg overflow-hidden" style={{ height: '60vh' }}>
             {currentImage && (
               <img
                 src={currentImage.image_url}
                 alt={`${property.title} - Imagem ${safeImageIndex + 1}`}
-                className="w-full h-full object-contain"
+                className="w-full h-full object-contain object-center mx-auto"
                 onError={() => {
                   // Error loading image
                 }}
@@ -115,24 +115,26 @@ export function PropertyImageGallery({
 
           {/* Thumbnails */}
           {images.length > 1 && (
-            <div className="flex gap-2 justify-center overflow-x-auto">
-              {images.map((image, index) => (
-                <button
-                  key={image.id}
-                  onClick={() => handleThumbnailClick(index)}
-                  className={`flex-shrink-0 w-16 h-16 rounded border-2 overflow-hidden transition-all ${
-                    index === safeImageIndex
-                      ? 'border-blue-500'
-                      : 'border-transparent hover:border-gray-400'
-                  }`}
-                >
-                  <img
-                    src={image.image_url}
-                    alt={`Thumbnail ${index + 1}`}
-                    className="w-full h-full object-cover"
-                  />
-                </button>
-              ))}
+            <div className="w-full overflow-x-auto">
+              <div className="flex gap-2 w-max px-2">
+                {images.map((image, index) => (
+                  <button
+                    key={image.id}
+                    onClick={() => handleThumbnailClick(index)}
+                    className={`flex-shrink-0 w-16 h-16 rounded border-2 overflow-hidden transition-all ${
+                      index === safeImageIndex
+                        ? 'border-blue-500'
+                        : 'border-transparent hover:border-gray-400'
+                    }`}
+                  >
+                    <img
+                      src={image.image_url}
+                      alt={`Thumbnail ${index + 1}`}
+                      className="w-full h-full object-cover"
+                    />
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>

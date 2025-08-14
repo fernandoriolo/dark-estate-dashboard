@@ -1,12 +1,14 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Building2, TrendingUp, DollarSign, Eye, Globe, Users, MapPin } from "lucide-react";
+import { Building2, TrendingUp, Eye, Globe, Users, MapPin, ListChecks } from "lucide-react";
 import { PropertyWithImages } from "@/hooks/useProperties";
 import { useClients } from "@/hooks/useClients";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { UpcomingAppointments } from "@/components/UpcomingAppointments";
 import { LayoutPreview } from "@/components/LayoutPreview";
+import { RecentActivitiesCard } from "@/components/RecentActivitiesCard";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend, LabelList } from 'recharts';
 
 interface DashboardContentProps {
   properties: PropertyWithImages[];
@@ -16,25 +18,33 @@ interface DashboardContentProps {
 
 export function DashboardContent({ properties, loading, onNavigateToAgenda }: DashboardContentProps) {
   const { clients, loading: clientsLoading } = useClients();
-  // Fonte oficial agora: tabela imoveisvivareal
-  const [imoveis, setImoveis] = useState<any[]>([]);
-  const [loadingImoveis, setLoadingImoveis] = useState(true);
-  const [previousMonthData, setPreviousMonthData] = useState({
+  // KPIs
+  const [totalProperties, setTotalProperties] = useState(0);
+  const [availableProperties, setAvailableProperties] = useState(0);
+  const [totalLeads, setTotalLeads] = useState(0);
+  const [vgvCurrent, setVgvCurrent] = useState(0);
+  const [previousData, setPreviousData] = useState({
     properties: 0,
     available: 0,
-    averagePrice: 0,
     clients: 0,
+    vgv: 0,
   });
-  const [loadingPreviousData, setLoadingPreviousData] = useState(true);
+  const [loadingKpis, setLoadingKpis] = useState(true);
+  // Lista de propriedades recentes (para o card lateral)
+  const [imoveis, setImoveis] = useState<any[]>([]);
+  const [loadingImoveis, setLoadingImoveis] = useState(true);
+  const [typeEntries, setTypeEntries] = useState<[string, number][]>([]);
+  const [stageEntries, setStageEntries] = useState<[string, number][]>([]);
 
-  // Buscar imóveis da tabela imoveisvivareal
+  // Buscar últimas propriedades recentes
   const fetchImoveis = async () => {
     try {
       setLoadingImoveis(true);
       const { data, error } = await supabase
         .from('imoveisvivareal')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(5);
       if (error) throw error;
       setImoveis(data || []);
     } catch (err) {
@@ -45,79 +55,152 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
     }
   };
 
-  // Função para calcular dados do mês anterior
-  const fetchPreviousMonthData = async () => {
+  // Buscar distribuição por tipo (sem limitar a 5 itens)
+  const fetchTypeDistribution = async () => {
     try {
+      const { data, error } = await supabase
+        .from('imoveisvivareal')
+        .select('tipo_imovel');
+      if (error) throw error;
+      const counts = (data || []).reduce((acc: Record<string, number>, row: any) => {
+        const key = normalizeTypeLabel(row?.tipo_imovel || '');
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      setTypeEntries(entries);
+    } catch (err) {
+      console.error('Erro ao carregar distribuição por tipo:', err);
+      setTypeEntries([]);
+    }
+  };
+
+  // Buscar distribuição por status (stage) dos leads
+  const fetchLeadStages = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('leads')
+        .select('stage');
+      if (error) throw error;
+      const counts = (data || []).reduce((acc: Record<string, number>, row: any) => {
+        const key = (row?.stage || 'Não informado') as string;
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      setStageEntries(entries);
+    } catch (err) {
+      console.error('Erro ao carregar distribuição por stage:', err);
+      setStageEntries([]);
+    }
+  };
+
+  // Carregar KPIs do cabeçalho (totais e variação vs mês anterior)
+  const fetchKpis = async () => {
+    try {
+      setLoadingKpis(true);
       const now = new Date();
       const firstDayThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const firstDayLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const lastDayLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+      const firstDayNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
-      console.log('📊 Buscando dados do mês anterior...');
-      console.log('📅 Período:', firstDayLastMonth.toISOString(), 'até', lastDayLastMonth.toISOString());
+      const firstDayThisMonthISO = firstDayThisMonth.toISOString();
+      const firstDayNextMonthISO = firstDayNextMonth.toISOString();
 
-      // Buscar imóveis do mês anterior (imoveisvivareal)
-      const { data: prevImoveis, error: imoveisError } = await supabase
+      // Totais atuais
+      const totalResPromise = supabase
         .from('imoveisvivareal')
-        .select('*')
-        .gte('created_at', firstDayLastMonth.toISOString())
-        .lt('created_at', firstDayThisMonth.toISOString());
-
-      if (imoveisError) {
-        console.error('❌ Erro ao buscar imóveis do mês anterior:', imoveisError);
-      }
-
-      // Buscar clientes do mês anterior
-      const { data: prevClients, error: clientsError } = await supabase
+        .select('id', { count: 'exact', head: true }) as unknown as Promise<{ count: number | null }>;
+      const dispResPromise = supabase
+        .from('imoveisvivareal')
+        .select('id', { count: 'exact', head: true })
+        .eq('disponibilidade', 'disponivel') as unknown as Promise<{ count: number | null }>;
+      const leadsResPromise = supabase
         .from('leads')
-        .select('*')
-        .gte('created_at', firstDayLastMonth.toISOString())
-        .lt('created_at', firstDayThisMonth.toISOString());
+        .select('id', { count: 'exact', head: true }) as unknown as Promise<{ count: number | null }>;
 
-      if (clientsError) {
-        console.error('❌ Erro ao buscar clientes do mês anterior:', clientsError);
-      }
+      // VGV do mês atual (soma de contratos de Venda assinados no mês)
+      const vgvCurrentPromise = supabase
+        .from('contracts')
+        .select('valor, data_assinatura, tipo')
+        .eq('tipo', 'Venda')
+        .gte('data_assinatura', firstDayThisMonthISO)
+        .lt('data_assinatura', firstDayNextMonthISO);
 
-      const prevPropertiesData = prevImoveis || [];
-      const prevClientsData = prevClients || [];
+      // Totais até o final do mês anterior (baseline para % de variação)
+      const prevTotalsPropsPromise = supabase
+        .from('imoveisvivareal')
+        .select('id', { count: 'exact', head: true })
+        .lt('created_at', firstDayThisMonthISO) as unknown as Promise<{ count: number | null }>;
+      const prevTotalsAvailPromise = supabase
+        .from('imoveisvivareal')
+        .select('id', { count: 'exact', head: true })
+        .lt('created_at', firstDayThisMonthISO)
+        .eq('disponibilidade', 'disponivel') as unknown as Promise<{ count: number | null }>;
+      const prevTotalsLeadsPromise = supabase
+        .from('leads')
+        .select('id', { count: 'exact', head: true })
+        .lt('created_at', firstDayThisMonthISO) as unknown as Promise<{ count: number | null }>;
 
-      // imoveisvivareal não tem status; considerar todos como disponíveis para métricas básicas
-      const prevAvailable = prevPropertiesData.length;
-      const prevTotalValue = prevPropertiesData.reduce((sum, prop: any) => sum + (Number(prop.preco) || 0), 0);
-      const prevAveragePrice = prevPropertiesData.length > 0 ? prevTotalValue / prevPropertiesData.length : 0;
+      // VGV do mês anterior
+      const firstDayLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
+      const firstDayThisMonthISO_2 = firstDayThisMonthISO;
+      const vgvPrevPromise = supabase
+        .from('contracts')
+        .select('valor, data_assinatura, tipo')
+        .eq('tipo', 'Venda')
+        .gte('data_assinatura', firstDayLastMonth)
+        .lt('data_assinatura', firstDayThisMonthISO_2);
 
-      setPreviousMonthData({
-        properties: prevPropertiesData.length,
-        available: prevAvailable,
-        averagePrice: prevAveragePrice,
-        clients: prevClientsData.length,
+      const [totalRes, dispRes, leadsRes, vgvNowRes, prevPropsRes, prevAvailRes, prevLeadsRes, vgvPrevRes] = await Promise.all([
+        totalResPromise,
+        dispResPromise,
+        leadsResPromise,
+        vgvCurrentPromise,
+        prevTotalsPropsPromise,
+        prevTotalsAvailPromise,
+        prevTotalsLeadsPromise,
+        vgvPrevPromise,
+      ]);
+
+      const totalProps = (totalRes.count || 0);
+      const availProps = (dispRes.count || 0);
+      const leadsTotal = (leadsRes.count || 0);
+      const vgvNow = Array.isArray(vgvNowRes.data) ? vgvNowRes.data.reduce((s: number, r: any) => s + Number(r.valor || 0), 0) : 0;
+      const vgvPrev = Array.isArray(vgvPrevRes.data) ? vgvPrevRes.data.reduce((s: number, r: any) => s + Number(r.valor || 0), 0) : 0;
+
+      setTotalProperties(totalProps);
+      setAvailableProperties(availProps);
+      setTotalLeads(leadsTotal);
+      setVgvCurrent(vgvNow);
+      setPreviousData({
+        properties: (prevPropsRes.count || 0),
+        available: (prevAvailRes.count || 0),
+        clients: (prevLeadsRes.count || 0),
+        vgv: vgvPrev,
       });
-
-      console.log('✅ Dados do mês anterior carregados:', {
-        properties: prevPropertiesData.length,
-        available: prevAvailable,
-        averagePrice: prevAveragePrice,
-        clients: prevClientsData.length,
-      });
-
     } catch (error) {
-      console.error('💥 Erro ao buscar dados do mês anterior:', error);
+      console.error('💥 Erro ao carregar KPIs:', error);
     } finally {
-      setLoadingPreviousData(false);
+      setLoadingKpis(false);
     }
   };
 
   useEffect(() => {
     fetchImoveis();
+    fetchTypeDistribution();
+    fetchKpis();
+    fetchLeadStages();
+    // Realtime
+    const channel = supabase
+      .channel(`dashboard_kpis_${Date.now()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'imoveisvivareal' }, () => { fetchImoveis(); fetchKpis(); fetchTypeDistribution(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => { fetchKpis(); fetchLeadStages(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'contracts' }, () => { fetchKpis(); })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
-  useEffect(() => {
-    if (!loadingImoveis && !clientsLoading) {
-      fetchPreviousMonthData();
-    }
-  }, [loadingImoveis, clientsLoading]);
-
-  if (loadingImoveis || clientsLoading || loadingPreviousData) {
+  if (loadingImoveis || loadingKpis) {
     return (
       <div className="space-y-6">
         <div className="text-center py-12">
@@ -127,22 +210,17 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
     );
   }
 
-  const totalProperties = imoveis.length;
-  // Sem status no esquema imoveisvivareal
-  const availableProperties = totalProperties;
-  const soldProperties = 0;
-  const rentedProperties = 0;
-  
-  const totalValue = imoveis.reduce((sum, imovel: any) => sum + (Number(imovel.preco) || 0), 0);
-  const averagePrice = totalProperties > 0 ? totalValue / totalProperties : 0;
-
-  // Dados reais dos clientes por origem
+  // Dados reais dos clientes por origem (mantido)
   const clientsBySource = clients.reduce((acc, client) => {
     acc[client.source] = (acc[client.source] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
-
-  const totalClients = clients.length;
+  const clientsPieData = Object.entries(clientsBySource).map(([name, value]) => ({ name, value }));
+  const stagesPieData = stageEntries.map(([name, value]) => ({ name, value }));
+  const PIE_COLORS = [
+    '#60a5fa', '#34d399', '#f59e0b', '#a78bfa', '#f472b6',
+    '#22d3ee', '#f43f5e', '#10b981', '#eab308', '#3b82f6'
+  ];
 
   // Função para calcular percentual de mudança
   const calculatePercentageChange = (current: number, previous: number): { change: string, type: "positive" | "negative" | "neutral" } => {
@@ -163,12 +241,26 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
   };
 
   // Calcular mudanças percentuais
-  const propertiesChange = calculatePercentageChange(totalProperties, previousMonthData.properties);
-  const availableChange = calculatePercentageChange(availableProperties, previousMonthData.available);
-  const averagePriceChange = calculatePercentageChange(averagePrice, previousMonthData.averagePrice);
-  const clientsChange = calculatePercentageChange(totalClients, previousMonthData.clients);
+  const propertiesChange = calculatePercentageChange(totalProperties, previousData.properties);
+  const availableChange = calculatePercentageChange(availableProperties, previousData.available);
+  const clientsChange = calculatePercentageChange(totalLeads, previousData.clients);
+  const vgvChange = calculatePercentageChange(vgvCurrent, previousData.vgv);
+
+  const formatCurrencyCompact = (value: number): string => {
+    if (value >= 1_000_000_000) return `R$ ${(value / 1_000_000_000).toFixed(1)}B`;
+    if (value >= 1_000_000) return `R$ ${(value / 1_000_000).toFixed(1)}M`;
+    if (value >= 1_000) return `R$ ${(value / 1_000).toFixed(0)}k`;
+    return `R$ ${value.toFixed(0)}`;
+  };
 
   const stats = [
+    {
+      title: "VGV (Venda)",
+      value: formatCurrencyCompact(vgvCurrent),
+      icon: TrendingUp,
+      change: vgvChange.change,
+      changeType: vgvChange.type,
+    },
     {
       title: "Total de Imóveis",
       value: totalProperties.toString(),
@@ -184,15 +276,8 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
       changeType: availableChange.type,
     },
     {
-      title: "Valor Médio",
-      value: `R$ ${(averagePrice / 1000).toFixed(0)}k`,
-      icon: DollarSign,
-      change: averagePriceChange.change,
-      changeType: averagePriceChange.type,
-    },
-    {
       title: "Total de Leads",
-      value: totalClients.toString(),
+      value: totalLeads.toString(),
       icon: Users,
       change: clientsChange.change,
       changeType: clientsChange.type,
@@ -200,7 +285,7 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
   ];
 
   // Normalização de tipos e ícones
-  const normalizeTypeLabel = (labelRaw: string): string => {
+  function normalizeTypeLabel(labelRaw: string): string {
     const l = (labelRaw || '').toLowerCase();
     if (l.includes('apart') || l.includes('condo') || l.includes('condom')) return 'Apartamento/Condomínio';
     if (l.includes('cobertura')) return 'Cobertura';
@@ -215,7 +300,7 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
     if (l.includes('prédio') || l.includes('predio') || l.includes('edifício') || l.includes('edificio') || l.includes('building') || l.includes('tbuilding')) return 'Prédio/Edifício';
     if (!l.trim().length) return 'Não informado';
     return 'Outros';
-  };
+  }
 
   const getTypeIconForNormalized = (normalized: string): string => {
     switch (normalized) {
@@ -235,13 +320,7 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
     }
   };
 
-  // Distribuição por tipo normalizada
-  const typeCounts = imoveis.reduce((acc: Record<string, number>, imovel: any) => {
-    const key = normalizeTypeLabel(imovel.tipo_imovel || '');
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-  const typeEntries = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
+  // typeEntries agora vem de fetchTypeDistribution (sem limite de 5)
 
   return (
     <div className="space-y-6">
@@ -272,8 +351,8 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="bg-gray-800/50 border-gray-700/50 backdrop-blur-sm lg:col-span-2">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="bg-gray-800/50 border-gray-700/50 backdrop-blur-sm">
           <CardHeader>
             <CardTitle className="text-white flex items-center gap-2">
               <Building2 className="h-5 w-5" />
@@ -315,34 +394,88 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
 
         <Card className="bg-gray-800/50 border-gray-700/50 backdrop-blur-sm">
           <CardHeader>
-            <CardTitle className="text-white flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              Origem dos Clientes
-            </CardTitle>
+            <div className="grid grid-cols-1 md:grid-cols-2 items-center gap-2">
+              <div className="flex items-center justify-center gap-2">
+                <Users className="h-5 w-5 text-gray-300" />
+                <span className="text-white font-semibold tracking-wide uppercase">ORIGEM DOS CLIENTES</span>
+              </div>
+              <div className="flex items-center justify-center gap-2">
+                <ListChecks className="h-5 w-5 text-gray-300" />
+                <span className="text-white font-semibold tracking-wide uppercase">STATUS DOS CLIENTES</span>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                {Object.entries(clientsBySource).map(([source, count]) => (
-                  <div key={source} className="flex items-center justify-between">
-                    <span className="text-sm text-gray-300">{source}</span>
-                    <span className="text-sm font-medium text-white">{count}</span>
-                  </div>
-                ))}
-                {Object.keys(clientsBySource).length === 0 && (
-                  <div className="text-center py-4 text-gray-400">
-                    Nenhum cliente cadastrado
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+              {/* Origem */}
+              <div className="space-y-4">
+                <div className="space-y-2 h-40 overflow-auto">
+                  {Object.entries(clientsBySource).map(([source, count]) => (
+                    <div key={source} className="flex items-center justify-between">
+                      <span className="text-sm text-gray-300">{source}</span>
+                      <span className="text-sm font-medium text-white">{count}</span>
+                    </div>
+                  ))}
+                  {Object.keys(clientsBySource).length === 0 && (
+                    <div className="text-center py-4 text-gray-400">Nenhum cliente cadastrado</div>
+                  )}
+                </div>
+                {clientsPieData.length > 0 && (
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <RechartsTooltip wrapperStyle={{ backgroundColor: '#111827', border: '1px solid #374151', color: '#e5e7eb' }} />
+                        <Legend />
+                        <Pie data={clientsPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={3}>
+                          {clientsPieData.map((entry, index) => (
+                            <Cell key={`cell-origin-${entry.name}-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                          ))}
+                          <LabelList dataKey="value" position="outside" className="fill-gray-300" />
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
                   </div>
                 )}
               </div>
-              <div className="mt-4 pt-4 border-t border-gray-700">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-300 flex items-center gap-1">
-                    <Globe className="h-4 w-4" />
-                    Total de Leads
-                  </span>
-                  <span className="text-white font-medium">{totalClients}</span>
+
+              {/* Status (stage) */}
+              <div className="space-y-4 md:border-l md:border-gray-700 md:pl-6">
+                <div className="space-y-2 h-40 overflow-auto">
+                  {stageEntries.map(([stage, count]) => (
+                    <div key={stage} className="flex items-center justify-between">
+                      <span className="text-sm text-gray-300">{stage}</span>
+                      <span className="text-sm font-medium text-white">{count}</span>
+                    </div>
+                  ))}
+                  {stageEntries.length === 0 && (
+                    <div className="text-center py-4 text-gray-400">Sem dados de status</div>
+                  )}
                 </div>
+                {stagesPieData.length > 0 && (
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <RechartsTooltip wrapperStyle={{ backgroundColor: '#111827', border: '1px solid #374151', color: '#e5e7eb' }} />
+                        <Legend />
+                        <Pie data={stagesPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={3}>
+                          {stagesPieData.map((entry, index) => (
+                            <Cell key={`cell-stage-${entry.name}-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                          ))}
+                          <LabelList dataKey="value" position="outside" className="fill-gray-300" />
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="mt-4 pt-4 border-t border-gray-700">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-300 flex items-center gap-1">
+                  <Globe className="h-4 w-4" />
+                  Total de Leads
+                </span>
+                <span className="text-white font-medium">{totalLeads}</span>
               </div>
             </div>
           </CardContent>
@@ -352,7 +485,7 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
       {/* Widget de Próximos Compromissos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <UpcomingAppointments onViewAll={onNavigateToAgenda} />
-        
+
         <Card className="bg-gray-800/50 border-gray-700/50 backdrop-blur-sm">
           <CardHeader>
             <CardTitle className="text-white">Distribuição por Tipo</CardTitle>
@@ -372,6 +505,11 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
             </div>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Novo card: Atividades Recentes */}
+      <div className="grid grid-cols-1 gap-6">
+        <RecentActivitiesCard />
       </div>
     </div>
   );

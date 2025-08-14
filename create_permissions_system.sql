@@ -70,6 +70,20 @@ INSERT INTO public.role_permissions (role, permission_key, permission_name, cate
 
 ON CONFLICT (role, permission_key) DO NOTHING;
 
+-- Módulo Lei do Inquilinato (visível para todos por padrão)
+INSERT INTO public.role_permissions (role, permission_key, permission_name, category, description, is_enabled) VALUES
+('corretor', 'menu_inquilinato', 'Lei do Inquilinato', 'menu', 'Módulo informativo da Lei do Inquilinato', true),
+('gestor', 'menu_inquilinato', 'Lei do Inquilinato', 'menu', 'Módulo informativo da Lei do Inquilinato', true),
+('admin', 'menu_inquilinato', 'Lei do Inquilinato', 'menu', 'Módulo informativo da Lei do Inquilinato', true)
+ON CONFLICT (role, permission_key) DO NOTHING;
+
+-- Módulo Plantão (novo menu)
+INSERT INTO public.role_permissions (role, permission_key, permission_name, category, description, is_enabled) VALUES
+('corretor', 'menu_plantao', 'Plantão', 'menu', 'Acessar módulo Plantão', true),
+('gestor',   'menu_plantao', 'Plantão', 'menu', 'Acessar módulo Plantão', true),
+('admin',    'menu_plantao', 'Plantão', 'menu', 'Acessar módulo Plantão', true)
+ON CONFLICT (role, permission_key) DO NOTHING;
+
 -- 6. Habilitar RLS
 ALTER TABLE public.role_permissions ENABLE ROW LEVEL SECURITY;
 
