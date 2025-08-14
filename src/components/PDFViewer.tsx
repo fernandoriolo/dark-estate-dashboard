@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Document, Page, pdfjs } from 'react-pdf';
 import { Button } from '@/components/ui/button';
 import { 
   X, 
@@ -20,8 +19,7 @@ import {
 } from 'lucide-react';
 import { ContractTemplate } from '@/types/contract-templates';
 
-// Configurar o worker do PDF.js
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+// React-PDF será carregado dinamicamente sob demanda
 
 interface PDFViewerProps {
   isOpen: boolean;

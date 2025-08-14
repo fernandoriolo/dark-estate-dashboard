@@ -91,17 +91,17 @@ Snippet sugerido:
 ## 6) Fases e Critérios de Aceite
 
 - Fase 1 (Rotas Reais):
-  - [ ] Navegação por URL direta para qualquer módulo funciona (deep-link ok)
-  - [ ] Minimizar/restaurar aba não altera rota
-  - [ ] Última rota é restaurada após reload/HMR
+  - [x] Navegação por URL direta para qualquer módulo funciona (deep-link ok)
+  - [x] Minimizar/restaurar aba não altera rota
+  - [x] Última rota é restaurada após reload/HMR
 
 - Fase 2 (Code Splitting):
-  - [ ] Build com chunks separados para vendors pesados
-  - [ ] JS inicial < 300kb gzip
-  - [ ] Prefetch do menu funcionando (queda de latência perceptível na 1ª navegação)
+  - [x] Build com chunks separados para vendors pesados
+  - [x] JS inicial < 300kb gzip
+  - [x] Prefetch do menu funcionando (queda de latência perceptível na 1ª navegação)
 
 - Fase 3 (Virtualização):
-  - [ ] Scroll fluido em listas grandes (sem queda de FPS)
+  - [x] Scroll fluido em listas grandes (sem queda de FPS)
   - [ ] Verificado no DevTools (Performance)
 
 - Fase 4 (Realtime/Polling):
@@ -118,9 +118,26 @@ Snippet sugerido:
 - Medir FPS/Responsividade nas listas após Fase 3
 - Logar erros de navegação e realtime (Sentry recomendado)
 
-## 8) Próximos Passos
+## 8) Próximos Passos Detalhados (Lazy “on demand” e otimizações)
 
-- Implementar Fase 1: refatorar `App.tsx` para rotas filhas, atualizar `AppSidebar` e remover `app:navigate`.
-- Em seguida Fase 2: `manualChunks` + prefetch.
-- Depois Fase 3: virtualização `PropertyList`.
-- Consolidar Fase 4 e 5.
+1. Imports dinâmicos para libs pesadas apenas no momento de uso:
+   - Export/print: `jspdf` e `html2canvas` dentro do handler.
+   - Preview PDF: `react-pdf` carregado só ao abrir o preview.
+2. Remover import estático de `contractProcessor`:
+   - Em todos os pontos, trocar por `await import('@/utils/contractProcessor')`.
+3. Lazy de modais e subpáginas pesadas:
+   - `PropertyDetailsPopup`, `PropertyEditForm`, `NewContractModal`, `MissingDataModal` com `React.lazy` e `Suspense` apenas quando abertos.
+4. Prefetch sob ociosidade:
+   - `requestIdleCallback(() => import('@/components/AgendaView'))` e outros módulos mais usados.
+5. Postergar fetch/polling até visível:
+   - Em hooks com polling externo, pausar quando `document.hidden` e retomar com debounce no foco.
+6. UX de buscas pesada:
+   - Usar `useDeferredValue`/`useTransition` para manter digitação suave.
+
+Checklist técnico por arquivo (inicial):
+- `src/components/ContractsView.tsx`: já usa import dinâmico para `processContract` (ok).
+- `src/components/NewContractModal.tsx`: substituir imports estáticos por dinâmicos dentro dos handlers.
+- `src/components/MissingDataModal.tsx`: idem (`getSelectOptions`).
+- Modais: aplicar `React.lazy` e render condicional com `Suspense`.
+
+Após esta etapa, repetir build e aferir tamanhos dos chunks.

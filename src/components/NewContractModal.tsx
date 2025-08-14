@@ -11,8 +11,7 @@ import { Tables } from '@/integrations/supabase/types';
 import { User, Home, FileText, X, ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
-import { processContract } from '@/utils/contractProcessor';
-import { detectPlaceholders, identifyMissingData } from '@/utils/contractProcessor';
+// Imports dinâmicos serão usados nos handlers para reduzir bundle inicial
 
 // Tipos corretos baseados no banco de dados
 type Client = Tables<'leads'>;
@@ -98,6 +97,7 @@ export const NewContractModal: React.FC<NewContractModalProps> = ({ isOpen, onCl
 
       // Detectar placeholders no template
       console.log('🔍 Detectando placeholders no template...');
+      const { detectPlaceholders } = await import('@/utils/contractProcessor');
       const placeholders = await detectPlaceholders(templateBlob, template.file_name);
       console.log('📋 Placeholders encontrados:', placeholders);
       
@@ -166,6 +166,7 @@ export const NewContractModal: React.FC<NewContractModalProps> = ({ isOpen, onCl
 
       // Identificar dados faltantes
       console.log('🔍 Identificando dados faltantes...');
+      const { identifyMissingData } = await import('@/utils/contractProcessor');
       const { missingFields, missingData: missing } = identifyMissingData(placeholders, contractData);
       console.log('❌ Campos faltantes:', missingFields);
       console.log('📝 Dados necessários:', missing);
@@ -201,6 +202,7 @@ export const NewContractModal: React.FC<NewContractModalProps> = ({ isOpen, onCl
   const processContractWithData = async (contractData: any, templateBlob: Blob, templateName: string) => {
     try {
       // Processar o contrato
+      const { processContract } = await import('@/utils/contractProcessor');
       const { blob: pdfBlob, fileName } = await processContract(contractData);
 
       // Criar URL para download
