@@ -38,8 +38,9 @@ import {
 import { PropertyWithImages } from "@/hooks/useProperties";
 import { useImoveisVivaReal, suggestCities, suggestNeighborhoods, suggestAddresses, suggestSearch } from "@/hooks/useImoveisVivaReal";
 import { useUserProfile } from "@/hooks/useUserProfile";
-import { PropertyDetailsPopup } from "@/components/PropertyDetailsPopup";
-import { PropertyEditForm } from "@/components/PropertyEditForm";
+import { lazy, Suspense } from "react";
+const PropertyDetailsPopup = lazy(() => import("@/components/PropertyDetailsPopup").then(m => ({ default: m.PropertyDetailsPopup })));
+const PropertyEditForm = lazy(() => import("@/components/PropertyEditForm").then(m => ({ default: m.PropertyEditForm })));
 import { PropertyImageGallery } from "@/components/PropertyImageGallery";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -762,11 +763,13 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
   // Se estiver editando, mostrar o formulário de edição
   if (isEditOpen && editingProperty) {
     return (
-      <PropertyEditForm
-        property={editingProperty}
-        onSubmit={handleEditSubmit}
-        onCancel={handleEditCancel}
-      />
+      <Suspense fallback={<div className="text-gray-300 p-4">Carregando editor...</div>}>
+        <PropertyEditForm
+          property={editingProperty}
+          onSubmit={handleEditSubmit}
+          onCancel={handleEditCancel}
+        />
+      </Suspense>
     );
   }
 
@@ -1659,11 +1662,13 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
       </div>
 
       {/* Modals */}
-      <PropertyDetailsPopup
-        property={selectedProperty}
-        open={isDetailsOpen}
-        onClose={handleCloseDetails}
-      />
+      <Suspense fallback={null}>
+        <PropertyDetailsPopup
+          property={selectedProperty}
+          open={isDetailsOpen}
+          onClose={handleCloseDetails}
+        />
+      </Suspense>
 
       {/* Modal de Alteração de Disponibilidade */}
       <Dialog open={availabilityDialogOpen} onOpenChange={setAvailabilityDialogOpen}>

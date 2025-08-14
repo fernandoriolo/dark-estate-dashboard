@@ -21,6 +21,39 @@ import { ContractTemplate } from '@/types/contract-templates';
 
 // React-PDF será carregado dinamicamente sob demanda
 
+const LazyPdf: React.FC<{
+  fileUrl: string;
+  pageNumber: number;
+  scale: number;
+  onLoadSuccess: (e: { numPages: number }) => void;
+  onLoadError: (e: Error) => void;
+}> = ({ fileUrl, pageNumber, scale, onLoadSuccess, onLoadError }) => {
+  const [Comp, setComp] = React.useState<{ Document: any; Page: any } | null>(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    import('react-pdf')
+      .then((mod: any) => {
+        if (!cancelled) setComp({ Document: (mod as any).Document, Page: (mod as any).Page });
+      })
+      .catch(() => setComp(null));
+    return () => { cancelled = true; };
+  }, []);
+  if (!Comp) {
+    return (
+      <div className="flex items-center justify-center p-8">
+        <Loader2 className="h-6 w-6 animate-spin text-blue-500 mr-2" />
+        <span className="text-gray-400">Carregando PDF...</span>
+      </div>
+    );
+  }
+  const { Document, Page } = Comp as any;
+  return (
+    <Document file={fileUrl} onLoadSuccess={onLoadSuccess} onLoadError={onLoadError}>
+      <Page pageNumber={pageNumber} scale={scale} />
+    </Document>
+  );
+};
+
 interface PDFViewerProps {
   isOpen: boolean;
   onClose: () => void;
@@ -589,45 +622,13 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({
                           transition: 'transform 0.3s ease'
                         }}
                       >
-                        <Document
-                          file={fileUrl}
+                        <LazyPdf
+                          fileUrl={fileUrl}
+                          pageNumber={pageNumber}
+                          scale={scale}
                           onLoadSuccess={onDocumentLoadSuccess}
                           onLoadError={onDocumentLoadError}
-                          loading={
-                            <div className="flex items-center justify-center p-8">
-                              <Loader2 className="h-6 w-6 animate-spin text-blue-500 mr-2" />
-                              <span className="text-gray-400">Carregando PDF...</span>
-                            </div>
-                          }
-                          error={
-                            <div className="flex items-center justify-center p-8">
-                              <AlertCircle className="h-6 w-6 text-red-500 mr-2" />
-                              <span className="text-red-400">Erro ao carregar PDF</span>
-                            </div>
-                          }
-                          options={{
-                            cMapUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/cmaps/',
-                            cMapPacked: true,
-                            standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/standard_fonts/',
-                          }}
-                        >
-                          <Page
-                            pageNumber={pageNumber}
-                            scale={scale}
-                            loading={
-                              <div className="flex items-center justify-center p-8 bg-white rounded">
-                                <Loader2 className="h-6 w-6 animate-spin text-blue-500 mr-2" />
-                                <span className="text-gray-600">Carregando página...</span>
-                              </div>
-                            }
-                            error={
-                              <div className="flex items-center justify-center p-8 bg-white rounded">
-                                <AlertCircle className="h-6 w-6 text-red-500 mr-2" />
-                                <span className="text-red-600">Erro ao carregar página</span>
-                              </div>
-                            }
-                          />
-                        </Document>
+                        />
                       </div>
                     )
                   ) : (
