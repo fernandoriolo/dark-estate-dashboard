@@ -65,9 +65,13 @@ export function PropertyDetailsPopup({ property, open, onClose }: PropertyDetail
         <DialogHeader>
           <div className="flex items-start justify-between">
             <div>
-              <DialogTitle className="text-2xl text-white mb-2">{property.title}</DialogTitle>
-              <div className="flex items-center gap-2">
-                {getStatusBadge(property.status)}
+              {/* Título agora mostra o ID Listing */}
+              <DialogTitle className="text-2xl text-white mb-2">
+                <span className="text-white font-semibold">ID:</span>{' '}
+                <span className="text-emerald-400 font-semibold">{(property as any).listing_id || '-'}</span>
+              </DialogTitle>
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Etiquetas topo (somente disponibilidade) */}
                 <Badge variant="outline" className={(function(){
                   const v = ((property as any).disponibilidade || 'disponivel') as string;
                   const map: Record<string, string> = {
@@ -79,7 +83,24 @@ export function PropertyDetailsPopup({ property, open, onClose }: PropertyDetail
                 })()}>
                   {(((property as any).disponibilidade) || 'disponivel')}
                 </Badge>
-                <span className="text-gray-400">{getTypeLabel(property.type)}</span>
+              </div>
+              {/* Etiquetas organizadas abaixo do título: modalidade, tipo_imovel, tipo_categoria */}
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                {(property as any).city && (
+                  <Badge variant="outline" className="bg-slate-500/20 text-slate-300 border-slate-400/50">
+                    {(property as any).city}
+                  </Badge>
+                )}
+                {(property as any).tipo_imovel && (
+                  <Badge variant="outline" className="bg-violet-500/20 text-violet-300 border-violet-400/50">
+                    {(property as any).tipo_imovel}
+                  </Badge>
+                )}
+                {(property as any).tipo_categoria && (
+                  <Badge variant="outline" className="bg-orange-500/20 text-orange-300 border-orange-400/50">
+                    {(property as any).tipo_categoria === 'Residential' ? 'Residencial' : (property as any).tipo_categoria === 'Commercial' ? 'Comercial' : (property as any).tipo_categoria}
+                  </Badge>
+                )}
               </div>
             </div>
             <DialogClose asChild>
@@ -243,9 +264,18 @@ export function PropertyDetailsPopup({ property, open, onClose }: PropertyDetail
                       const isViva = !(property as any).property_images; // heurística simples
                       const table = isViva ? 'imoveisvivareal' : 'properties';
                       const idCol = 'id';
+                      if ((availValue === 'indisponivel' || availValue === 'reforma') && (!availNote || availNote.trim().length === 0)) {
+                        // Exigir observação
+                        return;
+                      }
                       const updates: any = { disponibilidade: availValue, disponibilidade_observacao: availNote || null };
                       const idValue: any = isViva ? Number(property.id) : property.id;
-                      const { error } = await supabase.from(table).update(updates).eq(idCol, idValue);
+                      const { error } = await supabase
+                        .from(table)
+                        .update(updates)
+                        .eq(idCol, idValue)
+                        .select('id')
+                        .maybeSingle();
                       if (error) throw error;
                       setAvailOpen(false);
                     } catch (err: any) {

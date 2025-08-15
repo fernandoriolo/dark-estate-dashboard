@@ -18,6 +18,11 @@ export function PropertyImageGallery({
   initialImageIndex = 0 
 }: PropertyImageGalleryProps) {
   const [currentImageIndex, setCurrentImageIndex] = useState(initialImageIndex);
+  const [fitMode, setFitMode] = useState<'cover' | 'contain'>('cover');
+  const [zoom, setZoom] = useState<number>(1);
+  const increaseZoom = () => setZoom((z) => Math.min(3, +(z + 0.25).toFixed(2)));
+  const decreaseZoom = () => setZoom((z) => Math.max(0.5, +(z - 0.25).toFixed(2)));
+  const resetZoom = () => setZoom(1);
 
   console.log('🖼️ PropertyImageGallery - Props:', { 
     property: property?.title, 
@@ -30,6 +35,9 @@ export function PropertyImageGallery({
   useEffect(() => {
     if (open && property) {
       setCurrentImageIndex(initialImageIndex);
+      // Garantir estado visual consistente sempre que abrir
+      setFitMode('cover');
+      setZoom(1);
     }
   }, [property?.id, open, initialImageIndex]);
 
@@ -62,31 +70,68 @@ export function PropertyImageGallery({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl w-full max-h-[90vh] bg-gray-900 border-gray-700 text-white overflow-hidden">
+      <DialogContent className="w-[min(92vw,64rem)] max-h-[90vh] bg-gray-900 border-gray-700 text-white overflow-hidden">
+        <div className="mx-auto w-[96%] md:w-[94%]">
         <DialogHeader>
-          <div className="flex items-center justify-between">
-            <DialogTitle className="text-white">{property.title}</DialogTitle>
-            <Button variant="ghost" size="sm" onClick={onClose} className="text-white">
-              <X className="h-4 w-4" />
-            </Button>
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
+            <DialogTitle className="text-white truncate max-w-[70vw]">{property.title}</DialogTitle>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setFitMode(m => (m === 'cover' ? 'contain' : 'cover'))}
+                className="border-gray-600 text-black hover:bg-gray-200"
+                title={fitMode === 'cover' ? 'Ajustar: Contain' : 'Ajustar: Cover'}
+              >
+                {fitMode === 'cover' ? 'Preencher' : 'Conter'}
+              </Button>
+              <div className="flex items-center gap-1 shrink-0">
+                <Button variant="outline" size="sm" className="border-gray-600 text-black hover:bg-gray-200" onClick={decreaseZoom} title="Diminuir zoom">-</Button>
+                <span className="text-sm text-gray-300 w-14 text-center">{Math.round(zoom * 100)}%</span>
+                <Button variant="outline" size="sm" className="border-gray-600 text-black hover:bg-gray-200" onClick={increaseZoom} title="Aumentar zoom">+</Button>
+                <Button variant="ghost" size="sm" className="text-gray-300" onClick={resetZoom} title="Redefinir zoom">Reset</Button>
+              </div>
+              <Button variant="ghost" size="sm" onClick={onClose} className="text-white">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
           <p className="text-sm text-gray-300">
             Imagem {safeImageIndex + 1} de {images.length}
           </p>
         </DialogHeader>
 
-        <div className="space-y-4 px-2 md:px-0">
+        <div className="space-y-4 px-3 md:px-4 w-full max-w-full">
           {/* Imagem principal */}
-          <div className="relative bg-black rounded-lg overflow-hidden" style={{ height: '60vh' }}>
+          <div className="relative w-full max-w-full rounded-lg border border-gray-800 bg-gray-950/60 mx-auto" style={{ height: '60vh', overflow: 'hidden' }}>
             {currentImage && (
-              <img
-                src={currentImage.image_url}
-                alt={`${property.title} - Imagem ${safeImageIndex + 1}`}
-                className="w-full h-full object-contain object-center mx-auto"
-                onError={() => {
-                  // Error loading image
-                }}
-              />
+              <div className="w-full h-full flex items-center justify-center max-w-full"
+                   style={{ overflow: zoom > 1 ? 'auto' as const : 'hidden' as const }}
+                   onWheel={(e) => {
+                     if (e.deltaY < 0) increaseZoom();
+                     else decreaseZoom();
+                   }}
+                   onDoubleClick={() => setFitMode(m => (m === 'cover' ? 'contain' : 'cover'))}
+              >
+                <div
+                  className="w-[94%] h-[94%] bg-black rounded-lg overflow-hidden mx-auto"
+                  style={{
+                    transform: `scale(${zoom})`,
+                    transformOrigin: 'center center'
+                  }}
+                >
+                  <div
+                    aria-label={`${property.title} - Imagem ${safeImageIndex + 1}`}
+                    className="w-full h-full"
+                    style={{
+                      backgroundImage: `url(${currentImage.image_url})`,
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'center',
+                      backgroundSize: fitMode === 'cover' ? 'cover' : 'contain'
+                    }}
+                  />
+                </div>
+              </div>
             )}
 
             {/* Botões de navegação */}
@@ -96,7 +141,7 @@ export function PropertyImageGallery({
                   variant="ghost"
                   size="sm"
                   onClick={handlePrevious}
-                  className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white"
+                  className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white backdrop-blur-sm shadow-md z-10"
                 >
                   <ChevronLeft className="h-5 w-5" />
                 </Button>
@@ -105,7 +150,7 @@ export function PropertyImageGallery({
                   variant="ghost"
                   size="sm"
                   onClick={handleNext}
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white backdrop-blur-sm shadow-md z-10"
                 >
                   <ChevronRight className="h-5 w-5" />
                 </Button>
@@ -115,8 +160,8 @@ export function PropertyImageGallery({
 
           {/* Thumbnails */}
           {images.length > 1 && (
-            <div className="w-full overflow-x-auto">
-              <div className="flex gap-2 w-max px-2">
+            <div className="w-full overflow-x-auto max-w-full">
+              <div className="flex gap-2 w-max px-2 mx-auto max-w-[94%]">
                 {images.map((image, index) => (
                   <button
                     key={image.id}
@@ -137,6 +182,7 @@ export function PropertyImageGallery({
               </div>
             </div>
           )}
+        </div>
         </div>
       </DialogContent>
     </Dialog>

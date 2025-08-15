@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { SidebarProvider } from "@/components/ui/sidebar";
+import React from "react";
+import AddImovelModal from "@/components/AddImovelModal";
 import { AppSidebar } from "@/components/AppSidebar";
 import { DashboardHeader } from "@/components/DashboardHeader";
 // Lazy modules (code splitting)
@@ -182,7 +184,10 @@ const Index = () => {
       case "reports":
         return <ReportsView />;
       case "properties":
-        return <PropertyList properties={[]} loading={loading} onAddNew={() => {}} />;
+        return <PropertyList properties={[]} loading={loading} onAddNew={() => {
+          const ev = new CustomEvent('app:open-add-imovel');
+          window.dispatchEvent(ev);
+        }} />;
       case "contracts":
         return <ContractsView />;
       case "agenda":
@@ -221,6 +226,8 @@ const Index = () => {
           <main className="p-6 overflow-x-hidden">
             <Suspense fallback={<div className="text-gray-300">Carregando módulo...</div>}>
               {renderContent()}
+              {/* Monta o modal globalmente para responder ao onAddNew */}
+              <AddImovelModalMount />
             </Suspense>
           </main>
         </div>
@@ -230,3 +237,18 @@ const Index = () => {
 };
 
 export default Index;
+
+// Montagem do modal de Adicionar Imóvel escutando evento global disparado pelo PropertyList
+const AddImovelModalMount: React.FC = () => {
+  const [open, setOpen] = useState(false);
+
+  React.useEffect(() => {
+    const handler = () => setOpen(true);
+    window.addEventListener('app:open-add-imovel', handler);
+    return () => window.removeEventListener('app:open-add-imovel', handler);
+  }, []);
+
+  return (
+    <AddImovelModal isOpen={open} onClose={() => setOpen(false)} />
+  );
+};

@@ -27,6 +27,8 @@ export interface ImovelVivaReal {
   user_id: string | null;
   company_id: string | null;
   modalidade: string | null;
+  disponibilidade: 'disponivel' | 'indisponivel' | 'reforma';
+  disponibilidade_observacao: string | null;
   created_at: string | null;
   updated_at: string | null;
 }

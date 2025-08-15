@@ -460,6 +460,10 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
       // Campos extras (fora do tipo PropertyWithImages) para integração de disponibilidade
       ...(i.disponibilidade ? { disponibilidade: i.disponibilidade } : {}),
       ...(i.disponibilidade_observacao ? { disponibilidade_observacao: i.disponibilidade_observacao } : {}),
+      ...(i.listing_id ? { listing_id: String(i.listing_id) } : {}),
+      ...(i.modalidade ? { modalidade: i.modalidade } : {}),
+      ...(i.tipo_imovel ? { tipo_imovel: i.tipo_imovel } : {}),
+      ...(i.tipo_categoria ? { tipo_categoria: i.tipo_categoria } : {}),
     } as unknown as PropertyWithImages;
   });
 
@@ -583,6 +587,25 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
       land: "Terreno"
     };
     return labels[type];
+  };
+
+  const translateTipoImovel = (v: string) => {
+    const map: Record<string, string> = {
+      'Home': 'Casa',
+      'Apartment': 'Apartamento',
+      'Building': 'Prédio',
+      'Condo': 'Condomínio',
+      'Land Lot': 'Terreno',
+      'Sobrado': 'Sobrado',
+      'Loja': 'Loja',
+      'Agricultural': 'Agrícola',
+      'Studio': 'Studio',
+      // tolerância
+      'House': 'Casa',
+      'Land': 'Terreno',
+      'Store': 'Loja',
+    };
+    return map[v] || v;
   };
 
   const getTypeColor = (type: PropertyWithImages["type"]) => {
@@ -1371,7 +1394,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                         )}
 
                         {/* Disponibilidade - Top Left (única etiqueta) */}
-                        <div className="absolute top-3 left-3 z-20 flex gap-2">
+                        <div className="absolute top-3 left-3 z-20">
                           {getAvailabilityBadge((property as any).disponibilidade)}
                         </div>
 
@@ -1390,23 +1413,27 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
 
                     <CardContent className="p-6">
                       {/* Title and Price */}
-                      <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-start justify-between mb-3">
                         <motion.div 
                           className="flex-1"
                           initial={{ opacity: 0, x: -20 }}
                           animate={{ opacity: 1, x: 0 }}
                           transition={{ delay: 0.2 }}
                         >
-                          <CardTitle className="text-xl text-white mb-1 line-clamp-1 group-hover:text-blue-300 transition-colors">
-                            {property.title}
-                          </CardTitle>
-                          <div className="flex gap-2 flex-wrap">
-                            <Badge variant="outline" className={getTypeColor(property.type)}>
-                              {getTypeLabel(property.type)}
-                            </Badge>
-                            <Badge variant="outline" className={getPurposeColor((property.property_purpose as 'Venda'|'Aluguel') || 'Venda')}>
-                              {getPurposeIcon((property.property_purpose as 'Venda'|'Aluguel') || 'Venda')} {property.property_purpose}
-                            </Badge>
+                          {/* ID Listing */}
+                          <div className="text-base mb-2"><span className="text-white font-semibold">ID:</span> <span className="text-emerald-400 font-semibold">{(property as any).listing_id || '-'}</span></div>
+                          {/* Etiquetas: modalidade, tipo_imovel, tipo_categoria */}
+                          <div className="flex gap-2 flex-wrap mb-2">
+                            {(property as any).tipo_imovel && (
+                              <Badge variant="outline" className="bg-violet-500/20 text-violet-300 border-violet-400/50">
+                                {translateTipoImovel((property as any).tipo_imovel)}
+                              </Badge>
+                            )}
+                            {(property as any).tipo_categoria && (
+                              <Badge variant="outline" className="bg-orange-500/20 text-orange-300 border-orange-400/50">
+                                {(property as any).tipo_categoria === 'Residential' ? 'Residencial' : (property as any).tipo_categoria === 'Commercial' ? 'Comercial' : (property as any).tipo_categoria}
+                              </Badge>
+                            )}
                           </div>
                         </motion.div>
                         
@@ -1421,6 +1448,14 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                               {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(property.price || 0)}
                             </span>
                           </div>
+                          {/* Etiqueta da Modalidade logo abaixo do preço (mantém conforme requisito anterior) */}
+                          {(property as any).modalidade && (
+                            <div>
+                              <Badge variant="outline" className="bg-emerald-500/15 text-emerald-300 border-emerald-400/30">
+                                {(property as any).modalidade === 'For Sale' ? 'Venda' : (property as any).modalidade === 'Rent' ? 'Aluguel' : 'Venda/Aluguel'}
+                              </Badge>
+                            </div>
+                          )}
                         </motion.div>
                       </div>
                       
@@ -1477,7 +1512,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.7 }}
                       >
-                        <motion.div className="flex-1 min-w-[120px]" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                        <motion.div className="flex-1 min-w-[110px]" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                           <Button 
                             variant="outline" 
                             size="sm" 
@@ -1504,7 +1539,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                         )}
 
                         {/* Alterar disponibilidade */}
-                        <motion.div className="flex-1 min-w-[120px]" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                        <motion.div className="flex-1 min-w-[140px]" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                           <Button 
                             variant="outline"
                             size="sm"
@@ -1675,23 +1710,38 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
         <DialogContent className="bg-gray-900 border border-gray-700 text-white sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-xl">Alterar disponibilidade</DialogTitle>
-            <DialogDescription className="text-gray-300">
-              Se marcar como Indisponível ou Reforma, descreva o motivo na observação.
-            </DialogDescription>
+
           </DialogHeader>
 
           <div className="space-y-4">
-            <div className="flex gap-3">
-              <Select value={availabilityValue} onValueChange={(v: any) => setAvailabilityValue(v)}>
-                <SelectTrigger className="w-48 bg-gray-900/50 border-gray-600 text-white">
+            <div className="flex gap-3 flex-col">
+              <Select value={availabilityValue} onValueChange={(v: any) => setAvailabilityValue(v as any)}>
+                <SelectTrigger className="w-48 bg-gray-700/50 border-gray-600 text-white hover:bg-gray-700/70">
                   <SelectValue placeholder="Disponibilidade" />
                 </SelectTrigger>
-                <SelectContent className="bg-gray-900 border-gray-600">
-                  <SelectItem value="disponivel">Disponível</SelectItem>
-                  <SelectItem value="indisponivel">Indisponível</SelectItem>
-                  <SelectItem value="reforma">Reforma</SelectItem>
+                <SelectContent 
+                  className="bg-gray-900 border-gray-600 text-white" 
+                  style={{ zIndex: 9999 }}
+                  position="popper" 
+                  sideOffset={5}>
+                  <SelectItem 
+                    value="disponivel"
+                    className="text-white hover:bg-blue-500/30 focus:bg-blue-500/30 cursor-pointer">
+                    Disponível
+                  </SelectItem>
+                  <SelectItem 
+                    value="indisponivel"
+                    className="text-white hover:bg-blue-500/30 focus:bg-blue-500/30 cursor-pointer">
+                    Indisponível
+                  </SelectItem>
+                  <SelectItem 
+                    value="reforma"
+                    className="text-white hover:bg-blue-500/30 focus:bg-blue-500/30 cursor-pointer">
+                    Reforma
+                  </SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-xs italic text-gray-400">Se marcar como Indisponível ou Reforma, descreva o motivo na observação.</p>
             </div>
 
             <div>
@@ -1707,7 +1757,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
             <div className="flex gap-3 justify-end">
               <Button
                 variant="outline"
-                className="border-gray-600 text-gray-300 hover:bg-gray-800"
+                className="border-gray-600 text-red-500 hover:bg-gray-800"
                 onClick={() => setAvailabilityDialogOpen(false)}
               >
                 Cancelar
@@ -1720,8 +1770,18 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                     const isViva = isVivaRealMode;
                     const table = isViva ? 'imoveisvivareal' : 'properties';
                     const idCol = isViva ? 'id' : 'id';
+                    // Regra de negócio: observação obrigatória quando indisponível ou reforma
+                    if ((availabilityValue === 'indisponivel' || availabilityValue === 'reforma') && (!availabilityNote || availabilityNote.trim().length === 0)) {
+                      toast({ title: 'Observação obrigatória', description: 'Descreva o motivo ao marcar como Indisponível ou Reforma.', variant: 'destructive' });
+                      return;
+                    }
                     const updates: any = { disponibilidade: availabilityValue, disponibilidade_observacao: availabilityNote || null };
-                    const { error } = await supabase.from(table).update(updates).eq(idCol, isViva ? Number(availabilityTarget.id) : availabilityTarget.id);
+                    const { error, data } = await supabase
+                      .from(table)
+                      .update(updates)
+                      .eq(idCol, isViva ? Number(availabilityTarget.id) : availabilityTarget.id)
+                      .select('id, disponibilidade, disponibilidade_observacao')
+                      .maybeSingle();
                     if (error) throw error;
                     toast({ title: 'Disponibilidade atualizada com sucesso' });
                     setAvailabilityDialogOpen(false);
