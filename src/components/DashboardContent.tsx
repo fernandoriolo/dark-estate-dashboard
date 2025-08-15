@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { UpcomingAppointments } from "@/components/UpcomingAppointments";
 import { LayoutPreview } from "@/components/LayoutPreview";
 import { RecentActivitiesCard } from "@/components/RecentActivitiesCard";
+import { DashboardCharts } from "@/components/DashboardCharts";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, Legend, LabelList } from 'recharts';
 
 interface DashboardContentProps {
@@ -351,6 +352,12 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
         ))}
       </div>
 
+      {/* NOVA SESSÃO: Conjunto de gráficos */}
+      <div className="mb-6">
+        <DashboardCharts />
+      </div>
+
+      {/* 2ª sessão: Propriedades Recentes + Próximos Compromissos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="bg-gray-800/50 border-gray-700/50 backdrop-blur-sm">
           <CardHeader>
@@ -392,119 +399,12 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
           </CardContent>
         </Card>
 
-        <Card className="bg-gray-800/50 border-gray-700/50 backdrop-blur-sm">
-          <CardHeader>
-            <div className="grid grid-cols-1 md:grid-cols-2 items-center gap-2">
-              <div className="flex items-center justify-center gap-2">
-                <Users className="h-5 w-5 text-gray-300" />
-                <span className="text-white font-semibold tracking-wide uppercase">ORIGEM DOS CLIENTES</span>
-              </div>
-              <div className="flex items-center justify-center gap-2">
-                <ListChecks className="h-5 w-5 text-gray-300" />
-                <span className="text-white font-semibold tracking-wide uppercase">STATUS DOS CLIENTES</span>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-              {/* Origem */}
-              <div className="space-y-4">
-                <div className="space-y-2 h-40 overflow-auto">
-                  {Object.entries(clientsBySource).map(([source, count]) => (
-                    <div key={source} className="flex items-center justify-between">
-                      <span className="text-sm text-gray-300">{source}</span>
-                      <span className="text-sm font-medium text-white">{count}</span>
-                    </div>
-                  ))}
-                  {Object.keys(clientsBySource).length === 0 && (
-                    <div className="text-center py-4 text-gray-400">Nenhum cliente cadastrado</div>
-                  )}
-                </div>
-                {clientsPieData.length > 0 && (
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <RechartsTooltip wrapperStyle={{ backgroundColor: '#111827', border: '1px solid #374151', color: '#e5e7eb' }} />
-                        <Legend />
-                        <Pie data={clientsPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={3}>
-                          {clientsPieData.map((entry, index) => (
-                            <Cell key={`cell-origin-${entry.name}-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                          ))}
-                          <LabelList dataKey="value" position="outside" className="fill-gray-300" />
-                        </Pie>
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </div>
-
-              {/* Status (stage) */}
-              <div className="space-y-4 md:border-l md:border-gray-700 md:pl-6">
-                <div className="space-y-2 h-40 overflow-auto">
-                  {stageEntries.map(([stage, count]) => (
-                    <div key={stage} className="flex items-center justify-between">
-                      <span className="text-sm text-gray-300">{stage}</span>
-                      <span className="text-sm font-medium text-white">{count}</span>
-                    </div>
-                  ))}
-                  {stageEntries.length === 0 && (
-                    <div className="text-center py-4 text-gray-400">Sem dados de status</div>
-                  )}
-                </div>
-                {stagesPieData.length > 0 && (
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <RechartsTooltip wrapperStyle={{ backgroundColor: '#111827', border: '1px solid #374151', color: '#e5e7eb' }} />
-                        <Legend />
-                        <Pie data={stagesPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={3}>
-                          {stagesPieData.map((entry, index) => (
-                            <Cell key={`cell-stage-${entry.name}-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                          ))}
-                          <LabelList dataKey="value" position="outside" className="fill-gray-300" />
-                        </Pie>
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="mt-4 pt-4 border-t border-gray-700">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-300 flex items-center gap-1">
-                  <Globe className="h-4 w-4" />
-                  Total de Leads
-                </span>
-                <span className="text-white font-medium">{totalLeads}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <UpcomingAppointments onViewAll={onNavigateToAgenda} />
       </div>
 
-      {/* Widget de Próximos Compromissos */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <UpcomingAppointments onViewAll={onNavigateToAgenda} />
-
-        <Card className="bg-gray-800/50 border-gray-700/50 backdrop-blur-sm">
-          <CardHeader>
-            <CardTitle className="text-white">Distribuição por Tipo</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {typeEntries.map(([label, count]) => (
-                <div key={label} className="p-4 rounded-lg bg-gray-700/30 text-center">
-                  <div className="text-2xl mb-2">{getTypeIconForNormalized(label)}</div>
-                  <div className="text-lg font-semibold text-white">{count}</div>
-                  <div className="text-sm text-gray-300 break-words">{label}</div>
-                </div>
-              ))}
-              {typeEntries.length === 0 && (
-                <div className="col-span-2 md:col-span-4 text-center text-gray-400">Sem dados de tipo</div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+      {/* 3ª sessão: Atividades Recentes */}
+      <div className="grid grid-cols-1 gap-6">
+        <RecentActivitiesCard />
       </div>
 
       {/* Novo card: Atividades Recentes */}
