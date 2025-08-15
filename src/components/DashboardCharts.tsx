@@ -9,6 +9,7 @@ import { Heatmap } from '@mui/x-charts-pro/Heatmap';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCurrencyCompact, monthLabel } from '@/lib/charts/formatters';
+import { supabase } from '@/integrations/supabase/client';
 import { fetchDistribuicaoPorTipo, fetchFunilLeads, fetchHeatmapAtividades, fetchLeadsPorCanalTop8, fetchTaxaOcupacao, fetchVgvMensalUltimos12Meses } from '@/services/metrics';
 
 export const DashboardCharts: React.FC = () => {
@@ -20,14 +21,24 @@ export const DashboardCharts: React.FC = () => {
 	const [gauge, setGauge] = React.useState<{ ocupacao: number; total: number; disponiveis: number } | null>(null);
 
 	React.useEffect(() => {
-		Promise.all([
-			fetchVgvMensalUltimos12Meses().then(setVgv).catch(() => setVgv([])),
-			fetchLeadsPorCanalTop8().then(setCanal).catch(() => setCanal([])),
-			fetchDistribuicaoPorTipo().then(setTipos).catch(() => setTipos([])),
-			fetchFunilLeads().then(setFunil).catch(() => setFunil([])),
-			fetchHeatmapAtividades().then(setHeat).catch(() => setHeat([])),
-			fetchTaxaOcupacao().then(setGauge).catch(() => setGauge({ ocupacao: 0, total: 0, disponiveis: 0 } as any)),
-		]);
+		const refetchAll = () => {
+			Promise.all([
+				fetchVgvMensalUltimos12Meses().then(setVgv).catch(() => setVgv([])),
+				fetchLeadsPorCanalTop8().then(setCanal).catch(() => setCanal([])),
+				fetchDistribuicaoPorTipo().then(setTipos).catch(() => setTipos([])),
+				fetchFunilLeads().then(setFunil).catch(() => setFunil([])),
+				fetchHeatmapAtividades().then(setHeat).catch(() => setHeat([])),
+				fetchTaxaOcupacao().then(setGauge).catch(() => setGauge({ ocupacao: 0, total: 0, disponiveis: 0 } as any)),
+			]);
+		};
+		refetchAll();
+		const channel = supabase
+			.channel(`dashboard_charts_${Date.now()}`)
+			.on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, refetchAll)
+			.on('postgres_changes', { event: '*', schema: 'public', table: 'contracts' }, refetchAll)
+			.on('postgres_changes', { event: '*', schema: 'public', table: 'imoveisvivareal' }, refetchAll)
+			.subscribe();
+		return () => { supabase.removeChannel(channel); };
 	}, []);
 
 	const months = React.useMemo(() => vgv.map(v => monthLabel(v.month)), [vgv]);
