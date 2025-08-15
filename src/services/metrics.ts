@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { monthKey } from "@/lib/charts/formatters";
+import { monthKey, monthLabel } from "@/lib/charts/formatters";
 import { normalizePropertyType } from "@/lib/charts/normalizers";
 
 export type VgvPeriod = 'todo' | 'anual' | 'mensal' | 'semanal' | 'diario';
@@ -135,6 +135,44 @@ export async function fetchHeatmapAtividades() {
 		}
 	});
 	return grid; // [day][hour]
+}
+
+export async function fetchLeadsPorTempo() {
+	// Usar a view criada para análise temporal - mais eficiente
+	const { data, error } = await supabase
+		.from('vw_chart_leads_temporal')
+		.select('mes_key, total_leads')
+		.order('mes_key', { ascending: true });
+	
+	if (error) throw error;
+	
+	// Sempre garantir 6 meses de dados (últimos 6 meses)
+	const monthlyData = new Map<string, number>();
+	
+	// Inicializar últimos 6 meses com zero
+	for (let i = 5; i >= 0; i--) {
+		const date = new Date();
+		date.setMonth(date.getMonth() - i);
+		const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+		monthlyData.set(key, 0);
+	}
+	
+	// Sobrescrever com dados reais onde existirem
+	if (data && data.length > 0) {
+		data.forEach((row: any) => {
+			const key = row.mes_key;
+			const current = monthlyData.get(key) || 0;
+			monthlyData.set(key, current + Number(row.total_leads || 0));
+		});
+	}
+	
+	// Retornar sempre na ordem cronológica (últimos 6 meses)
+	return Array.from(monthlyData.entries())
+		.sort(([a], [b]) => a.localeCompare(b))
+		.map(([month, count]) => ({
+			month: monthLabel(month),
+			count
+		}));
 }
 
 export async function fetchTaxaOcupacao() {

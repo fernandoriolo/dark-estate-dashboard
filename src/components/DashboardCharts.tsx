@@ -4,14 +4,13 @@ import { ChartsLegend, ChartsAxis, ChartsTooltip, ChartsGrid, ChartsAxisHighligh
 import { BarPlot } from '@mui/x-charts/BarChart';
 import { LinePlot, AreaPlot } from '@mui/x-charts/LineChart';
 import { PieChart } from '@mui/x-charts/PieChart';
-import { Gauge } from '@mui/x-charts/Gauge';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCurrencyCompact, monthLabel } from '@/lib/charts/formatters';
-import { chartPalette, availabilityColors, pieChartColors } from '@/lib/charts/palette';
+import { chartPalette, pieChartColors } from '@/lib/charts/palette';
 import { gridStyle, tooltipSlotProps, vgvTooltipSlotProps, currencyValueFormatter, numberValueFormatter } from '@/lib/charts/config';
 import { supabase } from '@/integrations/supabase/client';
-import { fetchDistribuicaoPorTipo, fetchFunilLeads, fetchHeatmapAtividades, fetchLeadsPorCanalTop8, fetchTaxaOcupacao, fetchVgvByPeriod, VgvPeriod } from '@/services/metrics';
+import { fetchDistribuicaoPorTipo, fetchFunilLeads, fetchHeatmapAtividades, fetchLeadsPorCanalTop8, fetchLeadsPorTempo, fetchTaxaOcupacao, fetchVgvByPeriod, VgvPeriod } from '@/services/metrics';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
@@ -21,6 +20,7 @@ export const DashboardCharts: React.FC = () => {
 	const [tipos, setTipos] = React.useState<{ name: string; value: number }[]>([]);
 	const [funil, setFunil] = React.useState<{ name: string; value: number }[]>([]);
 	const [heat, setHeat] = React.useState<number[][]>([]);
+	const [leadsTempo, setLeadsTempo] = React.useState<{ month: string; count: number }[]>([]);
 	const [gauge, setGauge] = React.useState<{
 		ocupacao: number;
 		total: number;
@@ -47,6 +47,7 @@ export const DashboardCharts: React.FC = () => {
 				fetchDistribuicaoPorTipo().then(setTipos).catch(() => setTipos([])),
 				fetchFunilLeads().then(setFunil).catch(() => setFunil([])),
 				fetchHeatmapAtividades().then(setHeat).catch(() => setHeat([])),
+				fetchLeadsPorTempo().then(setLeadsTempo).catch(() => setLeadsTempo([])),
 				fetchTaxaOcupacao().then(setGauge).catch(() => setGauge({ ocupacao: 0, total: 0, disponiveis: 0 } as any)),
 			]);
 		};
@@ -64,6 +65,23 @@ export const DashboardCharts: React.FC = () => {
 		if (vgvPeriod === 'diario' || vgvPeriod === 'semanal') return v.month;
 		return monthLabel(v.month);
 	}), [vgv, vgvPeriod]);
+	
+	// Dados de fallback para o gráfico temporal se não houver dados
+	const tempoData = React.useMemo(() => {
+		if (leadsTempo.length > 0) return leadsTempo;
+		// Fallback com últimos 6 meses e dados zerados
+		const fallback = [];
+		for (let i = 5; i >= 0; i--) {
+			const date = new Date();
+			date.setMonth(date.getMonth() - i);
+			const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+			fallback.push({
+				month: monthLabel(key),
+				count: 0
+			});
+		}
+		return fallback;
+	}, [leadsTempo]);
 
 	const vgvSeriesConfig = React.useMemo(() => {
 		const vgvData = vgv.map(v => v.vgv);
@@ -167,17 +185,7 @@ export const DashboardCharts: React.FC = () => {
 		nice: true
 	}], []);
 
-	function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
-		const rad = (angleDeg - 90) * Math.PI / 180;
-		return { x: cx + (r * Math.cos(rad)), y: cy + (r * Math.sin(rad)) };
-	}
 
-	function describeArc(cx: number, cy: number, r: number, startAngle: number, endAngle: number) {
-		const start = polarToCartesian(cx, cy, r, endAngle);
-		const end = polarToCartesian(cx, cy, r, startAngle);
-		const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
-		return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`;
-	}
 
 	// Matriz heatmap (7 x 24): 0=Seg ... 6=Dom (já normalizado em fetch)
 	const heatMax = React.useMemo(() => {
@@ -272,188 +280,140 @@ export const DashboardCharts: React.FC = () => {
 					<CardTitle className="text-white">Taxa de ocupação</CardTitle>
 				</CardHeader>
 				<CardContent>
-					<div className="h-72 flex flex-col">
-						{/* Gráfico centralizado verticalmente com o gráfico VGV */}
-						<div className="flex-1 flex items-center justify-center" style={{ paddingTop: '20px', paddingBottom: '20px' }}>
-							{(() => {
-								const breakdown = gauge?.breakdown || [];
-								const disponivel = breakdown.find(b => b.status?.toLowerCase() === 'disponivel') || { percent: 0 };
-								const indisponivel = breakdown.find(b => b.status?.toLowerCase() === 'indisponivel') || { percent: 0 };
-								const reforma = breakdown.find(b => b.status?.toLowerCase() === 'reforma') || { percent: 0 };
-								
-								const cx = 150, cy = 110, rOuter = 85, rInner = 60;
-								const start = -140, end = 140;
-								const totalAngle = end - start;
-								
-								// Calcular ângulos para cada seção
-								const currentAngle = start;
-								const dispAngle = currentAngle + (totalAngle * (disponivel.percent / 100));
-								const indispAngle = dispAngle + (totalAngle * (indisponivel.percent / 100));
-								const refAngle = indispAngle + (totalAngle * (reforma.percent / 100));
-								
-								return (
-									<svg width={300} height={220} viewBox="0 0 300 220" aria-labelledby="taxa_ocupacao_label" className="overflow-visible">
-										<defs>
-											{/* Gradientes profissionais */}
-											<linearGradient id="disponivel-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-												<stop offset="0%" stopColor={chartPalette.accent} stopOpacity={1} />
-												<stop offset="100%" stopColor={chartPalette.accentAlt} stopOpacity={0.9} />
-											</linearGradient>
-											<linearGradient id="indisponivel-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-												<stop offset="0%" stopColor={chartPalette.danger} stopOpacity={1} />
-												<stop offset="100%" stopColor="#dc2626" stopOpacity={0.9} />
-											</linearGradient>
-											<linearGradient id="reforma-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-												<stop offset="0%" stopColor={chartPalette.warn} stopOpacity={1} />
-												<stop offset="100%" stopColor="#d97706" stopOpacity={0.9} />
-											</linearGradient>
-											
-											<mask id="gauge-cut">
-												<rect x="0" y="0" width="300" height="220" fill="#fff" />
-												<circle cx={cx} cy={cy} r={rInner} fill="#000" />
-											</mask>
-											
-											{/* Sombra do gauge */}
-											<filter id="gauge-shadow">
-												<feDropShadow dx="0" dy="4" stdDeviation="8" floodColor="rgba(0,0,0,0.25)" />
-											</filter>
-										</defs>
-										
-										<g mask="url(#gauge-cut)" filter="url(#gauge-shadow)">
-											{/* Trilha de fundo com gradiente sutil */}
-											<path d={describeArc(cx, cy, rOuter, start, end)} stroke={chartPalette.grid} strokeWidth={20} fill="none" strokeLinecap="round" opacity={0.3} />
-											
-											{/* Seção disponível */}
-											{disponivel.percent > 0 && (
-												<path 
-													d={describeArc(cx, cy, rOuter, currentAngle, dispAngle)} 
-													stroke="url(#disponivel-gradient)" 
-													strokeWidth={20} 
-													fill="none" 
-													strokeLinecap="round"
-													className="transition-all duration-300 hover:stroke-width-[24]"
-												/>
-											)}
-											
-											{/* Seção indisponível */}
-											{indisponivel.percent > 0 && (
-												<path 
-													d={describeArc(cx, cy, rOuter, dispAngle, indispAngle)} 
-													stroke="url(#indisponivel-gradient)" 
-													strokeWidth={20} 
-													fill="none" 
-													strokeLinecap="round"
-													className="transition-all duration-300 hover:stroke-width-[24]"
-												/>
-											)}
-											
-											{/* Seção reforma */}
-											{reforma.percent > 0 && (
-												<path 
-													d={describeArc(cx, cy, rOuter, indispAngle, refAngle)} 
-													stroke="url(#reforma-gradient)" 
-													strokeWidth={20} 
-													fill="none" 
-													strokeLinecap="round"
-													className="transition-all duration-300 hover:stroke-width-[24]"
-												/>
-											)}
-										</g>
-										
-										{/* Texto central aprimorado */}
-										<text x={cx} y={cy - 10} textAnchor="middle" fill={chartPalette.textPrimary} style={{ fontWeight: 700, fontSize: 18 }}>
-											{`${disponivel.percent.toFixed(0)}%`}
-										</text>
-										<text x={cx} y={cy + 8} textAnchor="middle" fill={chartPalette.textSecondary} style={{ fontWeight: 500, fontSize: 12 }}>
-											Disponíveis
-										</text>
-										
-										{/* Indicadores dos valores totais */}
-										<text x={cx} y={cy + 28} textAnchor="middle" fill={chartPalette.textSecondary} style={{ fontWeight: 400, fontSize: 11 }}>
-											{gauge?.total || 0} imóveis total
-										</text>
-									</svg>
-								);
-							})()}
-						</div>
+					<div className="h-72">
+						<PieChart
+							series={[{ 
+								data: (gauge?.breakdown || []).map((item, i) => ({ 
+									id: item.status, 
+									label: `${item.status} (${item.total})`,  // Incluir número na legenda
+									value: item.total,
+									color: pieChartColors[i % pieChartColors.length]  // Usar paleta diferenciada
+								})),
+								innerRadius: 60,
+								outerRadius: 100,
+								paddingAngle: 3,  // Aumentar espaçamento entre fatias
+								cornerRadius: 8   // Bordas mais arredondadas
+							}]}
+							margin={{ top: 40, bottom: 40, left: 80, right: 80 }}  // Margem para acomodar legenda
+						/>
 					</div>
-					{/* Badges de status alinhados com o eixo x do VGV */}
-					{gauge?.breakdown && (
-						<div className="px-4 pb-2">
-							<div className="flex items-center justify-center gap-6 text-xs text-gray-300">
-								{gauge.breakdown.map((b) => (
-									<div key={b.status} className="flex items-center gap-1.5">
-										<span className="inline-block h-3 w-3 rounded-full" style={{ background: (availabilityColors as any)[(b.status || '').toLowerCase()] || chartPalette.muted }} />
-										<span className="capitalize">{b.status}</span>
-										<span className="text-gray-400">{b.total} ({b.percent.toFixed(0)}%)</span>
-									</div>
-								))}
-							</div>
-						</div>
-					)}
-
-					{/* removido mini-gráfico de barras por solicitação */}
 				</CardContent>
 			</Card>
 
-			<Card className="bg-gray-800/50 border-gray-700/50 xl:col-span-6">
+			<Card className="bg-gray-800/50 border-gray-700/50 xl:col-span-8">
 				<CardHeader>
-					<CardTitle className="text-white font-semibold">Leads por canal</CardTitle>
+					<CardTitle className="text-white font-semibold">Conversão de Leads</CardTitle>
 				</CardHeader>
 				<CardContent>
-					<div className="h-72 flex justify-center items-center" style={{ overflow: 'visible' }}>
-						<ChartContainer
-							xAxis={[{ 
-								scaleType: 'linear', 
-								position: 'bottom', 
-								valueFormatter: (v: number) => `${Number(v||0).toLocaleString('pt-BR')}`,
-								tickLabelStyle: { fill: chartPalette.textSecondary, fontSize: '0.75rem' }
-							}]}
-							yAxis={[{ 
-								scaleType: 'band', 
-								position: 'left', 
-								data: canal.map(c => c.name),
-								tickLabelStyle: { 
-									fill: chartPalette.textPrimary, 
-									fontSize: '0.875rem', 
-									fontWeight: 500,
-									fontFamily: 'Inter, system-ui, sans-serif'
-								},
-								width: 100  // Aumentar largura para acomodar labels completos
+										<div className="grid grid-cols-2 gap-4 h-72">
+						{/* Gráfico de barras por canal */}
+						<div className="flex flex-col">
+							<h4 className="text-sm font-medium text-gray-300 mb-2">Por Canal</h4>
+							<div className="flex-1" style={{ overflow: 'visible' }}>
+								<ChartContainer
+									xAxis={[{ 
+										scaleType: 'linear', 
+										position: 'bottom', 
+										valueFormatter: (v: number) => `${Number(v||0).toLocaleString('pt-BR')}`,
+										tickLabelStyle: { fill: chartPalette.textSecondary, fontSize: '0.7rem' }
+									}]}
+									yAxis={[{ 
+										scaleType: 'band', 
+										position: 'left', 
+										data: canal.map(c => c.name),
+										tickLabelStyle: { 
+											fill: chartPalette.textPrimary, 
+											fontSize: '0.75rem', 
+											fontWeight: 500,
+											fontFamily: 'Inter, system-ui, sans-serif'
+										},
+										width: 70
+									}]}
+									series={canal.map((c, i) => ({ 
+										type: 'bar' as const, 
+										id: `canal-${i}`, 
+										data: Array(canal.length).fill(0).map((_, idx) => idx === i ? c.value : 0),
+										label: c.name,
+										color: pieChartColors[i % pieChartColors.length],
+										layout: 'horizontal' as const,
+										stack: 'canal'
+									}))}
+									height={240}
+									margin={{
+										left: 60,   // Reduzido para alinhar à esquerda
+										right: 10,  
+										top: 10,
+										bottom: 30
+									}}
+								>
+									<ChartsGrid vertical style={gridStyle} />
+									<BarPlot />
+									<ChartsAxis />
+									<ChartsTooltip />
+								</ChartContainer>
+							</div>
+						</div>
+
+						{/* Gráfico temporal de leads */}
+						<div className="flex flex-col">
+							<h4 className="text-sm font-medium text-gray-300 mb-2">Por Tempo (6 meses)</h4>
+							<div className="flex-1" style={{ overflow: 'visible' }}>
+								<ChartContainer
+									xAxis={[{ 
+										scaleType: 'band', 
+										position: 'bottom', 
+										data: tempoData.map(l => l.month),
+										tickLabelStyle: { 
+											fill: chartPalette.textSecondary, 
+											fontSize: '0.7rem',
+											fontFamily: 'Inter, system-ui, sans-serif'
+										}
+									}]}
+									yAxis={[{ 
+										scaleType: 'linear', 
+										position: 'left',
+										valueFormatter: (v: number) => `${Number(v||0)}`,
+										tickLabelStyle: { fill: chartPalette.textSecondary, fontSize: '0.7rem' },
+										min: 0
 							}]}
 							series={[{ 
-								type: 'bar', 
-								id: 'canal', 
-								data: canal.map(c => c.value), 
-								layout: 'horizontal',
-								color: `url(#canal-gradient)`
-							}]}
-							height={280}
-							margin={{
-								left: 120,  // Aumentar margem esquerda para os labels
-								right: 30,
-								top: 20,
-								bottom: 40
-							}}
-						>
-							{/* Gradiente para canal */}
+										type: 'line', 
+										id: 'tempo', 
+										data: tempoData.map(l => l.count),
+										color: chartPalette.accent,
+										showMark: true,
+										curve: 'monotoneX' as any,
+										area: true as any
+									}]}
+									height={240}
+									margin={{
+										left: 35,   // Reduzido para alinhar à esquerda
+										right: 10,  
+										top: 10,
+										bottom: 30
+									}}
+								>
+									{/* Gradiente para área */}
 							<defs>
-								<linearGradient id="canal-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-									<stop offset="0%" stopColor={chartPalette.secondary} stopOpacity={0.8} />
-									<stop offset="100%" stopColor={chartPalette.secondary} stopOpacity={1} />
+										<linearGradient id="tempo-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+											<stop offset="0%" stopColor={chartPalette.accent} stopOpacity={0.6} />
+											<stop offset="100%" stopColor={chartPalette.accent} stopOpacity={0.1} />
 								</linearGradient>
 							</defs>
 							
 							<ChartsGrid vertical style={gridStyle} />
-							<BarPlot />
+									<LinePlot />
+									<AreaPlot />
 							<ChartsAxis />
-							<ChartsTooltip />
+									<ChartsTooltip />
 						</ChartContainer>
+							</div>
+						</div>
 					</div>
 				</CardContent>
 			</Card>
 
-			<Card className="bg-gray-800/50 border-gray-700/50 xl:col-span-6">
+			<Card className="bg-gray-800/50 border-gray-700/50 xl:col-span-4">
 				<CardHeader>
 					<CardTitle className="text-white font-semibold">Distribuição por tipo</CardTitle>
 				</CardHeader>

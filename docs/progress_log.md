@@ -286,4 +286,30 @@ Próximos passos sugeridos:
 - **UX dos gráficos melhorada**:
   - **Leads por Canal**: Labels do eixo Y agora aparecem completos (sem abreviação), com margem esquerda aumentada para 120px e width do yAxis de 100px
   - **Distribuição por Tipo**: Cores muito mais diferenciadas usando nova paleta `pieChartColors` com 10 cores contrastantes, números incluídos na legenda (ex.: "Apartamento (48)"), espaçamento entre fatias aumentado
-- **Resultado**: Gráficos agora têm dados corretos, alinhamento perfeito, visual profissional, melhor legibilidade e sem erros de compilação
+- **Reestruturação do layout dos cards**:
+  - **Card "Leads por Canal"**: Agora ocupa 2/3 do espaço (col-span-8) e contém dois gráficos lado a lado:
+    - **Gráfico por Canal**: Barras horizontais com cores diferenciadas para cada canal (usando `pieChartColors`)
+    - **Gráfico Temporal**: Linha com área mostrando evolução de leads nos últimos 6 meses
+  - **Card "Distribuição por Tipo"**: Reduzido para 1/3 do espaço (col-span-4) mantendo funcionalidade completa
+- **Nova funcionalidade temporal**: 
+  - Função `fetchLeadsPorTempo()` busca leads dos últimos 6 meses agrupados por mês
+  - Gráfico de área com linha mostra tendência temporal dos leads
+  - **Correção de bugs**: Formatação correta de datas usando `monthLabel()`, fallback para dados vazios, margens ajustadas
+  - **Eixo Y**: Configurado com `min: 0` para evitar escalas negativas ou vazias
+  - **Views criadas**: `vw_chart_leads_temporal` e `vw_segura_leads_temporal` para otimizar consultas temporais
+  - **Título atualizado**: Card renomeado de "Leads por canal" para "Conversão de Leads"
+  - **Correção de dados**: Função agora detecta automaticamente o range de datas dos leads existentes
+  - **Correção crítica**: Import missing de `monthLabel` em `metrics.ts` corrigido - função agora funciona corretamente
+  - **Períodos temporais ampliados**: Gráfico "Por Tempo" agora sempre mostra 6 meses completos com dados zerados para meses sem leads
+  - **Layout "Por Canal" otimizado**: Margem esquerda reduzida (90→60px) e container sem flexbox centralizador para alinhamento à esquerda
+  - **Layout "Por Tempo" otimizado**: Margem esquerda reduzida (50→35px) e container sem flexbox centralizador para alinhamento à esquerda
+  - **Alinhamento consistente**: Ambos gráficos agora alinhados à esquerda com seus respectivos títulos
+
+### 📈 **Fase 9 - Padronização Visual Taxa de Ocupação (Janeiro 2025)**
+- **Design unificado**: Gráfico "Taxa de ocupação" convertido de gauge SVG customizado para PieChart padrão
+- **Consistência visual**: Agora usa o mesmo design do gráfico "Distribuição por tipo"
+- **Cores diferenciadas**: Usa `pieChartColors` para melhor distinção visual dos status
+- **Legenda com números**: Formato "Status (quantidade)" igual aos outros gráficos de pizza
+- **Configuração padrão**: `innerRadius: 60`, `outerRadius: 100`, `paddingAngle: 3`, `cornerRadius: 8`
+- **Limpeza de código**: Removidas funções SVG customizadas, imports desnecessários (`Gauge`, `availabilityColors`)
+- **Resultado**: Layout otimizado, dados corretos, alinhamento perfeito, visual profissional, dupla visualização de leads e sem erros de compilação
