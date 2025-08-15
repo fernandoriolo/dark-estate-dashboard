@@ -64,7 +64,7 @@ function TimePicker({ value, onChange, disabled }: TimePickerProps) {
   );
 }
 
-export const PlantaoView = () => {
+const PlantaoView = () => {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [lastCount, setLastCount] = useState<number | null>(null);

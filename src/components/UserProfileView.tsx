@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { KeyRound, Mail } from 'lucide-react';
+import { KeyRound, Mail, Upload, Camera } from 'lucide-react';
 import { toast } from './ui/sonner';
 
 export function UserProfileView() {
@@ -35,23 +35,41 @@ export function UserProfileView() {
   const handleUploadAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       const file = e.target.files?.[0];
-      if (!file) return;
+      if (!file) {
+        console.log('Nenhum arquivo selecionado');
+        return;
+      }
+      
+      console.log('Iniciando upload do arquivo:', file.name);
       setUploading(true);
+      setError(null);
+      
       const fileExt = file.name.split('.').pop();
       const filePath = `avatars/${profile?.id}/${Date.now()}.${fileExt}`;
+      console.log('Caminho do arquivo:', filePath);
 
       const { error: upErr } = await supabase.storage.from('avatars').upload(filePath, file, {
         upsert: true,
         contentType: file.type,
       });
-      if (upErr) throw upErr;
+      
+      if (upErr) {
+        console.error('Erro no upload:', upErr);
+        throw upErr;
+      }
 
       const { data: pub } = supabase.storage.from('avatars').getPublicUrl(filePath);
       const url = pub?.publicUrl || '';
+      console.log('URL pública gerada:', url);
+      
       setAvatarUrl(url);
-      await updateProfile({ avatar_url: url });
-      toast.success('Avatar atualizado com sucesso');
+      
+      const updatedProfile = await updateProfile({ avatar_url: url });
+      console.log('Perfil atualizado:', updatedProfile);
+      
+      toast.success('Avatar atualizado com sucesso!');
     } catch (e: any) {
+      console.error('Erro completo:', e);
       setError(e.message || 'Erro ao enviar avatar');
       toast.error(e.message || 'Erro ao enviar avatar');
     } finally {
@@ -64,10 +82,11 @@ export function UserProfileView() {
       setSavingProfile(true);
       setError(null);
       await updateProfile({ full_name: fullName, phone, avatar_url: avatarUrl });
-      toast.success('Perfil salvo com sucesso');
+      toast.success('✅ Perfil salvo com sucesso!');
     } catch (e: any) {
-      setError(e.message || 'Erro ao salvar perfil');
-      toast.error(e.message || 'Erro ao salvar perfil');
+      const errorMsg = e.message || 'Erro ao salvar perfil';
+      setError(errorMsg);
+      toast.error(`❌ ${errorMsg}`);
     } finally {
       setSavingProfile(false);
     }
@@ -81,10 +100,11 @@ export function UserProfileView() {
       const { error } = await supabase.auth.updateUser({ email: newEmail });
       if (error) throw error;
       setNewEmail('');
-      toast.success('Email atualizado. Verifique a confirmação, se necessário.');
+      toast.success('📧 Email atualizado! Verifique sua caixa de entrada para confirmar.');
     } catch (e: any) {
-      setError(e.message || 'Erro ao alterar email');
-      toast.error(e.message || 'Erro ao alterar email');
+      const errorMsg = e.message || 'Erro ao alterar email';
+      setError(errorMsg);
+      toast.error(`❌ ${errorMsg}`);
     } finally {
       setSavingEmail(false);
     }
@@ -100,10 +120,11 @@ export function UserProfileView() {
       if (error) throw error;
       setNewPassword('');
       setConfirmPassword('');
-      toast.success('Senha alterada com sucesso');
+      toast.success('🔒 Senha alterada com sucesso!');
     } catch (e: any) {
-      setError(e.message || 'Erro ao alterar senha');
-      toast.error(e.message || 'Erro ao alterar senha');
+      const errorMsg = e.message || 'Erro ao alterar senha';
+      setError(errorMsg);
+      toast.error(`❌ ${errorMsg}`);
     } finally {
       setSavingPassword(false);
     }
@@ -135,13 +156,45 @@ export function UserProfileView() {
               </div>
             </div>
             <div>
-              <Label className="text-gray-300">Avatar (upload)</Label>
+              <Label className="text-white">Avatar (upload)</Label>
               <div className="flex items-center gap-3">
-                <div className="h-14 w-14 rounded-full bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center">
-                  <span className="text-white font-semibold">{(fullName?.charAt(0) || 'U').toUpperCase()}</span>
+                <div className="h-14 w-14 rounded-full bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center overflow-hidden">
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-white font-semibold">{(fullName?.charAt(0) || 'U').toUpperCase()}</span>
+                  )}
                 </div>
-                <input type="file" accept="image/*" onChange={handleUploadAvatar} disabled={uploading} />
-                {avatarUrl && <a href={avatarUrl} target="_blank" className="text-blue-400 text-sm">ver imagem</a>}
+                <div className="flex flex-col gap-2">
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    onChange={handleUploadAvatar} 
+                    disabled={uploading}
+                    className="hidden"
+                    id="avatar-upload"
+                  />
+                  <label htmlFor="avatar-upload">
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm" 
+                      disabled={uploading}
+                      className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600 cursor-pointer"
+                      asChild
+                    >
+                      <span className="flex items-center gap-2">
+                        <Camera className="h-4 w-4" />
+                        {uploading ? 'Enviando...' : 'Escolher foto'}
+                      </span>
+                    </Button>
+                  </label>
+                  {avatarUrl && !uploading && (
+                    <a href={avatarUrl} target="_blank" className="text-blue-400 text-sm hover:text-blue-300">
+                      Ver imagem atual
+                    </a>
+                  )}
+                </div>
               </div>
             </div>
             <div className="flex justify-end">

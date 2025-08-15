@@ -24,6 +24,7 @@ const UserManagementView = lazy(() => import("@/components/UserManagementView").
 
 import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useUserProfile } from "@/hooks/useUserProfile";
 
 type View =
   | "dashboard"
@@ -45,25 +46,45 @@ type View =
 const Index = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { profile, loading: profileLoading } = useUserProfile();
+  
+  // Função para obter a página inicial baseada na role
+  const getDefaultViewForRole = (role?: string): View => {
+    switch (role) {
+      case 'admin':
+      case 'gestor':
+        return 'dashboard';
+      case 'corretor':
+        return 'properties';
+      default:
+        return 'dashboard';
+    }
+  };
   
   // Usar refs para evitar re-renderizações desnecessárias
   const isInitialMount = useRef(true);
   const lastNavigatedPath = useRef<string>("");
+  const isNavigatingProgrammatically = useRef(false);
   
   const [currentView, setCurrentView] = useState<View>(() => {
     try {
       const path = window.location.pathname.replace(/^\//, "");
-      const normalized = (path || "dashboard") as View;
+      const normalized = (path || "") as View;
       const validViews: View[] = [
         "dashboard","properties","contracts","agenda","plantao","reports","clients","clients-crm","connections","users","permissions","inquilinato","disparador","chats","profile"
       ];
-      if (validViews.includes(normalized)) return normalized;
+      
+      // Se há um caminho válido na URL, usar ele
+      if (normalized && validViews.includes(normalized)) return normalized;
+      
+      // Caso contrário, usar valor padrão temporário até o profile carregar
       const params = new URLSearchParams(window.location.search);
       const fromQuery = params.get("view") as View | null;
       const fromStorage = (localStorage.getItem("current-view") as View | null) || null;
       return (fromQuery as View) || (fromStorage as View) || "dashboard";
     } catch { return "dashboard"; }
   });
+  
   const { loading } = useImoveisVivaReal();
   const { hasPermission } = usePermissions();
 
@@ -108,6 +129,22 @@ const Index = () => {
     }
   }, [currentView, hasPermission, fallbackViews]);
 
+  // Redirecionamento inicial baseado na role do usuário
+  useEffect(() => {
+    if (!profileLoading && profile && isInitialMount.current) {
+      const currentPath = window.location.pathname.replace(/^\//, "");
+      
+      // Só redirecionar se estiver na raiz ou explicitamente sem path
+      // NÃO redirecionar se o usuário navegou manualmente para uma página específica
+      if (!currentPath || currentPath === '') {
+        const defaultView = getDefaultViewForRole(profile.role);
+        setCurrentView(defaultView);
+      }
+      
+      isInitialMount.current = false;
+    }
+  }, [profile, profileLoading, getDefaultViewForRole]);
+
   // Sincroniza currentView com URL - CORRIGIDO para evitar loops
   useEffect(() => {
     // Salvar no localStorage (sem causar navegação)
@@ -118,6 +155,8 @@ const Index = () => {
     // Apenas navegar se realmente necessário
     const targetPath = `/${currentView}`;
     
+    console.log(`useEffect: currentView=${currentView}, location.pathname=${location.pathname}, targetPath=${targetPath}`);
+    
     // Verificar se já estamos no caminho correto
     if (location.pathname === targetPath && lastNavigatedPath.current === targetPath) {
       // Já estamos no lugar certo, não fazer nada
@@ -126,6 +165,8 @@ const Index = () => {
     
     // Verificar se realmente precisamos navegar
     if (location.pathname !== targetPath) {
+      console.log(`Navegando de ${location.pathname} para ${targetPath} (currentView: ${currentView})`);
+      
       // Evitar navegação durante a montagem inicial se já estivermos no lugar certo
       if (isInitialMount.current) {
         isInitialMount.current = false;
@@ -138,9 +179,15 @@ const Index = () => {
       
       // Atualizar o ref antes de navegar para evitar loops
       lastNavigatedPath.current = targetPath;
+      isNavigatingProgrammatically.current = true;
       
       // Usar replace para não adicionar ao histórico desnecessariamente
       navigate(targetPath, { replace: true });
+      
+      // Reset flag após navegação
+      setTimeout(() => {
+        isNavigatingProgrammatically.current = false;
+      }, 50);
       return;
     }
     
@@ -155,6 +202,8 @@ const Index = () => {
       }
     }
   }, [currentView, navigate, location.pathname, location.search]);
+
+
 
   // Prefetch em idle dos módulos mais acessados (sem bloquear a thread principal)
   useEffect(() => {
@@ -187,11 +236,17 @@ const Index = () => {
   useEffect(() => {
     const handler = (e: any) => {
       const target = e?.detail as View;
-      if (target) setCurrentView(target);
+      console.log(`Evento app:navigate recebido: ${target}`);
+      if (target) {
+        console.log(`Mudando currentView para: ${target}`);
+        setCurrentView(target);
+      }
     };
     window.addEventListener("app:navigate", handler as any);
     return () => window.removeEventListener("app:navigate", handler as any);
   }, []);
+
+
 
   const renderContent = () => {
     switch (currentView) {

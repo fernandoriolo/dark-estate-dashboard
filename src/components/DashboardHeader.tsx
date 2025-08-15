@@ -45,6 +45,17 @@ export function DashboardHeader() {
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     if (!error) setOpenPassword(false);
   };
+
+  const handleNavigateToProfile = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('Navegando para perfil do usuário...');
+    
+    // Disparar evento para mudar a view
+    window.dispatchEvent(new CustomEvent('app:navigate', {
+      detail: 'profile'
+    }));
+  };
   return (
     <header className="border-b border-gray-800/50 bg-gray-900/95 backdrop-blur-sm px-6 py-4 sticky top-0 z-40">
       <div className="flex items-center justify-between">
@@ -71,15 +82,19 @@ export function DashboardHeader() {
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center ring-2 ring-blue-500/20">
-                <span className="text-sm font-medium text-white">{avatarLetter}</span>
+              <button className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center ring-2 ring-blue-500/20 overflow-hidden">
+                {profile?.avatar_url ? (
+                  <img src={profile.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-sm font-medium text-white">{avatarLetter}</span>
+                )}
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="bg-gray-900 border-gray-700 text-gray-200">
-              <DropdownMenuItem onClick={() => {
-                navigate('/profile');
-              }}>
-                <UserIcon className="h-4 w-4 mr-2" /> Meu Perfil
+              <DropdownMenuItem asChild>
+                <button onClick={handleNavigateToProfile} className="w-full text-left flex items-center">
+                  <UserIcon className="h-4 w-4 mr-2" /> Editar Perfil
+                </button>
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setOpenEmail(true)}>
                 <Mail className="h-4 w-4 mr-2" /> Alterar Email

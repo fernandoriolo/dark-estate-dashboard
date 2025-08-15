@@ -12,6 +12,7 @@ import { supabase } from './integrations/supabase/client';
 import { Session } from '@supabase/supabase-js';
 import { useUserProfile } from './hooks/useUserProfile';
 import { useAuthAudit } from './hooks/useAuthAudit';
+import { Toaster } from './components/ui/sonner';
 
 function AppContent() {
   const { profile, loading: profileLoading } = useUserProfile();
@@ -127,6 +128,7 @@ function AppContent() {
           </div>
         </DialogContent>
       </Dialog>
+      <Toaster />
     </ContractTemplatesProvider>
   );
 }
