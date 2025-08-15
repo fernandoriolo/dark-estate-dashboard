@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import React from "react";
@@ -45,6 +45,11 @@ type View =
 const Index = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  
+  // Usar refs para evitar re-renderizações desnecessárias
+  const isInitialMount = useRef(true);
+  const lastNavigatedPath = useRef<string>("");
+  
   const [currentView, setCurrentView] = useState<View>(() => {
     try {
       const path = window.location.pathname.replace(/^\//, "");
@@ -103,36 +108,53 @@ const Index = () => {
     }
   }, [currentView, hasPermission, fallbackViews]);
 
-  // Sincroniza currentView com URL (path + ?view= compat) e localStorage
+  // Sincroniza currentView com URL - CORRIGIDO para evitar loops
   useEffect(() => {
+    // Salvar no localStorage (sem causar navegação)
     try {
       localStorage.setItem("current-view", currentView);
     } catch {}
-    const path = `/${currentView}`;
-    if (location.pathname !== path) {
-      navigate(path, { replace: true });
+    
+    // Apenas navegar se realmente necessário
+    const targetPath = `/${currentView}`;
+    
+    // Verificar se já estamos no caminho correto
+    if (location.pathname === targetPath && lastNavigatedPath.current === targetPath) {
+      // Já estamos no lugar certo, não fazer nada
       return;
     }
-    // Remover legacy ?view=
+    
+    // Verificar se realmente precisamos navegar
+    if (location.pathname !== targetPath) {
+      // Evitar navegação durante a montagem inicial se já estivermos no lugar certo
+      if (isInitialMount.current) {
+        isInitialMount.current = false;
+        lastNavigatedPath.current = location.pathname;
+        // Se na montagem inicial o pathname já corresponde, não navegar
+        if (location.pathname === targetPath) {
+          return;
+        }
+      }
+      
+      // Atualizar o ref antes de navegar para evitar loops
+      lastNavigatedPath.current = targetPath;
+      
+      // Usar replace para não adicionar ao histórico desnecessariamente
+      navigate(targetPath, { replace: true });
+      return;
+    }
+    
+    // Limpar query params legados apenas se necessário
     const params = new URLSearchParams(location.search);
     if (params.has("view")) {
       params.delete("view");
-      navigate({ pathname: path, search: params.toString() }, { replace: true });
+      const newSearch = params.toString();
+      // Apenas navegar se realmente houver mudança
+      if (location.search !== (newSearch ? `?${newSearch}` : '')) {
+        navigate({ pathname: targetPath, search: newSearch }, { replace: true });
+      }
     }
-  }, [currentView, location.pathname, location.search, navigate]);
-
-  // Persiste ao ocultar janela/aba
-  useEffect(() => {
-    const handler = () => {
-      try { localStorage.setItem("current-view", currentView); } catch {}
-    };
-    document.addEventListener("visibilitychange", handler);
-    window.addEventListener("beforeunload", handler);
-    return () => {
-      document.removeEventListener("visibilitychange", handler);
-      window.removeEventListener("beforeunload", handler);
-    };
-  }, [currentView]);
+  }, [currentView, navigate, location.pathname, location.search]);
 
   // Prefetch em idle dos módulos mais acessados (sem bloquear a thread principal)
   useEffect(() => {
