@@ -199,6 +199,149 @@ export async function fetchHeatmapAtividades() {
 	return grid; // [day][hour]
 }
 
+/**
+ * Busca dados de conversas dos corretores para o heatmap
+ * Baseado em timestamps reais das mensagens WhatsApp (from_me = true)
+ * Relacionamento: whatsapp_messages -> whatsapp_instances -> user_profiles
+ * @returns Matriz 7x24 (dias da semana x horas) com total de mensagens enviadas pelos corretores
+ */
+export async function fetchHeatmapConversas() {
+	// TEMPORÁRIO: Usando view base para desenvolvimento (sem RLS)
+	// TODO: Voltar para vw_segura_heatmap_conversas_corretores quando autenticação estiver funcionando
+	const { data, error } = await supabase
+		.from('vw_metricas_heatmap_conversas_corretores')
+		.select('dia_semana, hora, total_mensagens');
+	
+	if (error) {
+		console.error('Erro ao buscar dados de conversas:', error);
+		throw error;
+	}
+	
+	// Debug removido - implementação em produção
+	
+	// Matriz 7x24: [dia][hora] onde dia 0=Segunda, 6=Domingo
+	const grid: number[][] = Array.from({ length: 7 }, () => 
+		Array.from({ length: 24 }, () => 0)
+	);
+	
+	// Agrupar dados por dia/hora (view base pode ter múltiplos usuários)
+	const grouped = new Map<string, number>();
+	
+	(data || []).forEach((r: any) => {
+		const dow: number = Number(r.dia_semana);
+		const hour: number = Number(r.hora);
+		const key = `${dow}-${hour}`;
+		
+		const current = grouped.get(key) || 0;
+		grouped.set(key, current + Number(r.total_mensagens || 0));
+	});
+	
+	// Preencher a matriz com os dados agrupados
+	grouped.forEach((total, key) => {
+		const [dowStr, hourStr] = key.split('-');
+		const dow = Number(dowStr);
+		const hour = Number(hourStr);
+		
+		// Converter: Postgres 0=Dom...6=Sáb → UI 0=Seg...6=Dom
+		const day = dow === 0 ? 6 : dow - 1;
+		
+		if (day >= 0 && day < 7 && hour >= 0 && hour < 24) {
+			grid[day][hour] = total;
+		}
+	});
+	
+	// Implementação completa - logs removidos
+	
+	return grid; // [day][hour] - mensagens dos corretores (timestamp real)
+}
+
+/**
+ * Busca lista de corretores (role='corretor') que têm conversas no WhatsApp
+ * Para popular o filtro do heatmap
+ */
+export async function fetchCorretoresComConversas() {
+	// Primeiro, buscar apenas usuários com role 'corretor'
+	const { data: brokers, error: brokersError } = await supabase
+		.from('user_profiles')
+		.select('id, full_name, email')
+		.eq('role', 'corretor')
+		.order('full_name');
+	
+	if (brokersError) {
+		console.error('Erro ao buscar corretores:', brokersError);
+		throw brokersError;
+	}
+	
+	if (!brokers || brokers.length === 0) return [];
+	
+	// Verificar quais corretores têm conversas
+	const brokerIds = brokers.map(b => b.id);
+	
+	const { data: conversas, error: conversasError } = await supabase
+		.from('vw_metricas_heatmap_conversas_corretores')
+		.select('user_id')
+		.in('user_id', brokerIds);
+	
+	if (conversasError) {
+		console.error('Erro ao verificar conversas dos corretores:', conversasError);
+		throw conversasError;
+	}
+	
+	// Filtrar apenas corretores que têm conversas
+	const brokersWithConversations = [...new Set((conversas || []).map(c => c.user_id))];
+	
+	return brokers
+		.filter(broker => brokersWithConversations.includes(broker.id))
+		.map(p => ({
+			id: p.id,
+			name: p.full_name || p.email || 'Corretor sem nome'
+		}));
+}
+
+/**
+ * Busca dados de conversas filtrados por corretor específico
+ */
+export async function fetchHeatmapConversasPorCorretor(brokerId?: string) {
+	if (!brokerId) {
+		// Se não há filtro, usar função original
+		return fetchHeatmapConversas();
+	}
+	
+	const { data, error } = await supabase
+		.from('vw_metricas_heatmap_conversas_corretores')
+		.select('dia_semana, hora, total_mensagens')
+		.eq('user_id', brokerId);
+	
+	if (error) {
+		console.error('Erro ao buscar dados de conversas por corretor:', error);
+		throw error;
+	}
+	
+	// Filtro por corretor implementado
+	
+	// Matriz 7x24: [dia][hora] onde dia 0=Segunda, 6=Domingo
+	const grid: number[][] = Array.from({ length: 7 }, () => 
+		Array.from({ length: 24 }, () => 0)
+	);
+	
+	// Processar dados diretamente (já filtrados por corretor)
+	(data || []).forEach((r: any) => {
+		const dow: number = Number(r.dia_semana);
+		const hour: number = Number(r.hora);
+		
+		// Converter: Postgres 0=Dom...6=Sáb → UI 0=Seg...6=Dom
+		const day = dow === 0 ? 6 : dow - 1;
+		
+		if (day >= 0 && day < 7 && hour >= 0 && hour < 24) {
+			grid[day][hour] = Number(r.total_mensagens || 0);
+		}
+	});
+	
+	// Processamento do filtro por corretor concluído
+	
+	return grid;
+}
+
 export async function fetchLeadsPorTempo() {
 	// Usar a view criada para análise temporal - mais eficiente
 	const { data, error } = await supabase

@@ -10,7 +10,7 @@ import { formatCurrencyCompact, monthLabel } from '@/lib/charts/formatters';
 import { chartPalette, pieChartColors } from '@/lib/charts/palette';
 import { gridStyle, tooltipSlotProps, vgvTooltipSlotProps, currencyValueFormatter, numberValueFormatter } from '@/lib/charts/config';
 import { supabase } from '@/integrations/supabase/client';
-import { fetchDistribuicaoPorTipo, fetchFunilLeads, fetchHeatmapAtividades, fetchLeadsPorCanalTop8, fetchLeadsPorCorretor, fetchLeadsCorretorEstagio, fetchLeadsPorTempo, fetchLeadsSemCorretor, fetchTaxaOcupacao, fetchVgvByPeriod, VgvPeriod } from '@/services/metrics';
+import { fetchDistribuicaoPorTipo, fetchFunilLeads, fetchHeatmapConversas, fetchCorretoresComConversas, fetchHeatmapConversasPorCorretor, fetchLeadsPorCanalTop8, fetchLeadsPorCorretor, fetchLeadsCorretorEstagio, fetchLeadsPorTempo, fetchLeadsSemCorretor, fetchTaxaOcupacao, fetchVgvByPeriod, VgvPeriod } from '@/services/metrics';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
@@ -38,11 +38,27 @@ export const DashboardCharts: React.FC = () => {
 	// Estados para filtros e opções VGV
 	const [vgvPeriod, setVgvPeriod] = React.useState<VgvPeriod>('mensal');
 	const [vgvChartType, setVgvChartType] = React.useState<'area' | 'line' | 'bar' | 'combined'>('combined');
+	
+	// Estados para filtro de corretor no heatmap
+	const [selectedBrokerForHeat, setSelectedBrokerForHeat] = React.useState<string>('');
+	const [availableBrokers, setAvailableBrokers] = React.useState<{id: string, name: string}[]>([]);
 
 	// Effect para atualizar VGV quando período muda
 	React.useEffect(() => {
 		fetchVgvByPeriod(vgvPeriod).then(setVgv).catch(() => setVgv([]));
 	}, [vgvPeriod]);
+
+	// Função para buscar dados do heatmap com filtro de corretor
+	const refetchHeatmapData = React.useCallback(() => {
+		fetchHeatmapConversasPorCorretor(selectedBrokerForHeat || undefined)
+			.then(setHeat)
+			.catch(() => setHeat([]));
+	}, [selectedBrokerForHeat]);
+
+	// Effect para atualizar heatmap quando filtro de corretor mudar
+	React.useEffect(() => {
+		refetchHeatmapData();
+	}, [refetchHeatmapData]);
 
 	React.useEffect(() => {
 		const refetchAll = () => {
@@ -51,13 +67,16 @@ export const DashboardCharts: React.FC = () => {
 				fetchLeadsPorCanalTop8().then(setCanal).catch(() => setCanal([])),
 				fetchDistribuicaoPorTipo().then(setTipos).catch(() => setTipos([])),
 				fetchFunilLeads().then(setFunil).catch(() => setFunil([])),
-				fetchHeatmapAtividades().then(setHeat).catch(() => setHeat([])),
 				fetchLeadsPorTempo().then(setLeadsTempo).catch(() => setLeadsTempo([])),
 				fetchLeadsPorCorretor().then(setBrokers).catch(() => setBrokers([])),
 				fetchLeadsCorretorEstagio().then(setBrokersStages).catch(() => setBrokersStages(new Map())),
 				fetchLeadsSemCorretor().then(setUnassignedLeads).catch(() => setUnassignedLeads(0)),
 				fetchTaxaOcupacao().then(setGauge).catch(() => setGauge({ ocupacao: 0, total: 0, disponiveis: 0 } as any)),
+				// Buscar corretores disponíveis para filtro
+				fetchCorretoresComConversas().then(setAvailableBrokers).catch(() => setAvailableBrokers([])),
 			]);
+			// Buscar dados do heatmap separadamente para considerar filtro
+			refetchHeatmapData();
 		};
 		refetchAll();
 		const channel = supabase
@@ -65,9 +84,10 @@ export const DashboardCharts: React.FC = () => {
 			.on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, refetchAll)
 			.on('postgres_changes', { event: '*', schema: 'public', table: 'contracts' }, refetchAll)
 			.on('postgres_changes', { event: '*', schema: 'public', table: 'imoveisvivareal' }, refetchAll)
+			.on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_messages' }, refetchAll)
 			.subscribe();
 		return () => { supabase.removeChannel(channel); };
-	}, [vgvPeriod]);
+	}, [vgvPeriod, refetchHeatmapData]);
 
 	const months = React.useMemo(() => vgv.map(v => {
 		if (vgvPeriod === 'diario' || vgvPeriod === 'semanal') return v.month;
@@ -253,7 +273,14 @@ export const DashboardCharts: React.FC = () => {
 	// Matriz heatmap (7 x 24): 0=Seg ... 6=Dom (já normalizado em fetch)
 	const heatMax = React.useMemo(() => {
 		let m = 0;
-		for (const row of heat) for (const v of row) m = Math.max(m, v || 0);
+		let total = 0;
+		for (const row of heat) {
+			for (const v of row) {
+				m = Math.max(m, v || 0);
+				total += (v || 0);
+			}
+		}
+		// Heatmap com filtro por corretor implementado
 		return m || 1;
 	}, [heat]);
 
@@ -685,7 +712,25 @@ export const DashboardCharts: React.FC = () => {
 
 			<Card className="bg-gray-800/50 border-gray-700/50 xl:col-span-6">
 				<CardHeader>
-					<CardTitle className="text-white font-semibold">Atividade por hora × dia</CardTitle>
+					<div className="flex items-center justify-between">
+						<CardTitle className="text-white font-semibold">Conversas dos corretores por hora × dia</CardTitle>
+						{/* Filtro por corretor */}
+						<div className="flex items-center gap-2">
+							<span className="text-xs text-gray-400">Corretor:</span>
+							<select
+								value={selectedBrokerForHeat}
+								onChange={(e) => setSelectedBrokerForHeat(e.target.value)}
+								className="bg-gray-700 text-white text-xs border border-gray-600 rounded px-2 py-1 min-w-[120px]"
+							>
+								<option value="">Todos</option>
+								{availableBrokers.map(broker => (
+									<option key={broker.id} value={broker.id}>
+										{broker.name}
+									</option>
+								))}
+							</select>
+						</div>
+					</div>
 				</CardHeader>
 				<CardContent>
 					<div className="h-96 flex flex-col">
@@ -719,18 +764,30 @@ export const DashboardCharts: React.FC = () => {
 											let bgColor;
 											if (value === 0) {
 												bgColor = 'rgba(55, 65, 81, 0.3)'; // gray-700 para vazio
-											} else if (intensity > 0.7) {
-												bgColor = `rgba(34, 197, 94, ${Math.max(0.4, intensity)})`; // green-500
-											} else if (intensity > 0.4) {
-												bgColor = `rgba(234, 179, 8, ${Math.max(0.4, intensity)})`; // yellow-500  
 											} else {
-												bgColor = `rgba(59, 130, 246, ${Math.max(0.3, intensity)})`; // blue-500
+												// Esquema de cores: azul (frio) → vermelho (quente)
+												if (intensity <= 0.2) {
+													// Azul claro - baixa atividade
+													bgColor = `rgba(59, 130, 246, ${Math.max(0.4, intensity * 2)})`;
+												} else if (intensity <= 0.4) {
+													// Azul → Ciano
+													bgColor = `rgba(6, 182, 212, ${Math.max(0.5, intensity * 1.5)})`;
+												} else if (intensity <= 0.6) {
+													// Verde/Amarelo - atividade média
+													bgColor = `rgba(34, 197, 94, ${Math.max(0.6, intensity * 1.2)})`;
+												} else if (intensity <= 0.8) {
+													// Laranja - alta atividade
+													bgColor = `rgba(251, 146, 60, ${Math.max(0.7, intensity)})`;
+												} else {
+													// Vermelho - máxima atividade
+													bgColor = `rgba(239, 68, 68, ${Math.max(0.8, intensity)})`;
+												}
 											}
 											
 										return (
 											<div 
 													key={`${dayIndex}-${hour}`}
-													title={`${['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][dayIndex]} às ${String(hour).padStart(2, '0')}h: ${value} atividade${value !== 1 ? 's' : ''}`}
+													title={`${['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][dayIndex]} às ${String(hour).padStart(2, '0')}h: ${value} conversa${value !== 1 ? 's' : ''}`}
 													className="h-4 w-full rounded-sm transition-all duration-300 hover:scale-125 hover:shadow-lg cursor-pointer border"
 													style={{ 
 														backgroundColor: bgColor,
@@ -747,20 +804,27 @@ export const DashboardCharts: React.FC = () => {
 						{/* Legenda e estatísticas */}
 						<div className="mt-3 pt-3 border-t border-gray-700">
 							<div className="flex items-center justify-between">
-								{/* Legenda de cores */}
+								{/* Legenda de cores com índice */}
 								<div className="flex items-center gap-2 text-xs text-gray-400">
-									<span>Atividade:</span>
+									<span>Intensidade:</span>
 							<div className="flex items-center gap-1">
-										<div className="w-3 h-3 rounded-sm bg-gray-700" title="Nenhuma atividade" />
-										<div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(59, 130, 246, 0.5)' }} title="Baixa" />
-										<div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(234, 179, 8, 0.7)' }} title="Média" />
-										<div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(34, 197, 94, 0.8)' }} title="Alta" />
+										<div className="w-3 h-3 rounded-sm bg-gray-700" title="0 conversas" />
+										<div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(59, 130, 246, 0.6)' }} title="Baixa (1-20%)" />
+										<div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(6, 182, 212, 0.7)' }} title="Moderada (21-40%)" />
+										<div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(34, 197, 94, 0.8)' }} title="Média (41-60%)" />
+										<div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(251, 146, 60, 0.8)' }} title="Alta (61-80%)" />
+										<div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(239, 68, 68, 0.9)' }} title="Máxima (81-100%)" />
 									</div>
 								</div>
 								
 								{/* Estatísticas */}
 								<div className="text-xs text-gray-400">
-									Pico: {heatMax} atividade{heatMax !== 1 ? 's' : ''}
+									Pico: {heatMax} conversa{heatMax !== 1 ? 's' : ''}
+									{selectedBrokerForHeat && (
+										<div className="mt-1">
+											Filtro: {availableBrokers.find(b => b.id === selectedBrokerForHeat)?.name || 'Corretor'}
+										</div>
+									)}
 								</div>
 							</div>
 						</div>
