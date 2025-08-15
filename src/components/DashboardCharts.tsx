@@ -10,7 +10,7 @@ import { formatCurrencyCompact, monthLabel } from '@/lib/charts/formatters';
 import { chartPalette, pieChartColors } from '@/lib/charts/palette';
 import { gridStyle, tooltipSlotProps, vgvTooltipSlotProps, currencyValueFormatter, numberValueFormatter } from '@/lib/charts/config';
 import { supabase } from '@/integrations/supabase/client';
-import { fetchDistribuicaoPorTipo, fetchFunilLeads, fetchHeatmapAtividades, fetchLeadsPorCanalTop8, fetchLeadsPorCorretor, fetchLeadsCorretorEstagio, fetchLeadsPorTempo, fetchTaxaOcupacao, fetchVgvByPeriod, VgvPeriod } from '@/services/metrics';
+import { fetchDistribuicaoPorTipo, fetchFunilLeads, fetchHeatmapAtividades, fetchLeadsPorCanalTop8, fetchLeadsPorCorretor, fetchLeadsCorretorEstagio, fetchLeadsPorTempo, fetchLeadsSemCorretor, fetchTaxaOcupacao, fetchVgvByPeriod, VgvPeriod } from '@/services/metrics';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
@@ -23,7 +23,9 @@ export const DashboardCharts: React.FC = () => {
 	const [leadsTempo, setLeadsTempo] = React.useState<{ month: string; count: number }[]>([]);
 	const [brokers, setBrokers] = React.useState<{ name: string; value: number }[]>([]);
 	const [brokersStages, setBrokersStages] = React.useState<Map<string, Record<string, number>>>(new Map());
-	const [selectedBroker, setSelectedBroker] = React.useState<string | null>(null);
+	const [selectedBrokers, setSelectedBrokers] = React.useState<Set<string>>(new Set());
+	const [showBrokerSelection, setShowBrokerSelection] = React.useState(false);
+	const [unassignedLeads, setUnassignedLeads] = React.useState<number>(0);
 	const [gauge, setGauge] = React.useState<{
 		ocupacao: number;
 		total: number;
@@ -53,6 +55,7 @@ export const DashboardCharts: React.FC = () => {
 				fetchLeadsPorTempo().then(setLeadsTempo).catch(() => setLeadsTempo([])),
 				fetchLeadsPorCorretor().then(setBrokers).catch(() => setBrokers([])),
 				fetchLeadsCorretorEstagio().then(setBrokersStages).catch(() => setBrokersStages(new Map())),
+				fetchLeadsSemCorretor().then(setUnassignedLeads).catch(() => setUnassignedLeads(0)),
 				fetchTaxaOcupacao().then(setGauge).catch(() => setGauge({ ocupacao: 0, total: 0, disponiveis: 0 } as any)),
 			]);
 		};
@@ -87,6 +90,61 @@ export const DashboardCharts: React.FC = () => {
 		}
 		return fallback;
 	}, [leadsTempo]);
+
+	// Processar dados dos corretores para gráfico de barras
+	const brokersChartData = React.useMemo(() => {
+		if (selectedBrokers.size === 0) {
+			// Modo agrupado: agrupar por número de leads e mostrar quantidade de corretores
+			const groupedData = new Map<number, string[]>();
+			
+			// Agrupar APENAS corretores reais (filtrar "Sem corretor" se houver)
+			brokers
+				.filter(broker => broker.name !== 'Sem corretor' && broker.name !== 'Nenhum corretor')
+				.forEach(broker => {
+					const leadsCount = broker.value;
+					if (!groupedData.has(leadsCount)) {
+						groupedData.set(leadsCount, []);
+					}
+					groupedData.get(leadsCount)!.push(broker.name);
+				});
+			
+			const chartData = [];
+			
+			// Adicionar leads sem corretor se houver (primeira barra)
+			if (unassignedLeads > 0) {
+				chartData.push({
+					name: 'Nenhum corretor',
+					value: unassignedLeads,
+					tooltip: `${unassignedLeads} lead${unassignedLeads !== 1 ? 's' : ''} não atribuído${unassignedLeads !== 1 ? 's' : ''}`,
+					isUnassigned: true
+				});
+			}
+			
+			// Adicionar barras de corretores agrupados por quantidade de leads
+			Array.from(groupedData.entries())
+				.sort(([a], [b]) => a - b) // Ordenar por número de leads (menor primeiro)
+				.forEach(([leadsCount, brokerNames]) => {
+					chartData.push({
+						name: `${brokerNames.length} corretor${brokerNames.length !== 1 ? 'es' : ''}`,
+						value: leadsCount,
+						tooltip: `${brokerNames.join(', ')} (${leadsCount} lead${leadsCount !== 1 ? 's' : ''} cada)`,
+						isUnassigned: false
+					});
+				});
+			
+			return chartData;
+		} else {
+			// Modo comparativo: mostrar corretores selecionados com suas quantidades de leads
+			return brokers
+				.filter(broker => selectedBrokers.has(broker.name))
+				.map(broker => ({
+					name: broker.name.length > 12 ? broker.name.substring(0, 12) + '...' : broker.name,
+					value: broker.value,
+					tooltip: `${broker.name}: ${broker.value} lead${broker.value !== 1 ? 's' : ''}`,
+					isUnassigned: false
+				}));
+		}
+	}, [brokers, selectedBrokers, unassignedLeads]);
 
 	const vgvSeriesConfig = React.useMemo(() => {
 		const vgvData = vgv.map(v => v.vgv);
@@ -315,17 +373,17 @@ export const DashboardCharts: React.FC = () => {
 						<div className="flex flex-col">
 							<h4 className="text-sm font-medium text-gray-300 mb-2">Por Canal</h4>
 							<div className="flex-1" style={{ overflow: 'visible' }}>
-								<ChartContainer
-									xAxis={[{ 
-										scaleType: 'linear', 
-										position: 'bottom', 
-										valueFormatter: (v: number) => `${Number(v||0).toLocaleString('pt-BR')}`,
+						<ChartContainer
+							xAxis={[{ 
+								scaleType: 'linear', 
+								position: 'bottom', 
+								valueFormatter: (v: number) => `${Number(v||0).toLocaleString('pt-BR')}`,
 										tickLabelStyle: { fill: chartPalette.textSecondary, fontSize: '0.7rem' }
-									}]}
-									yAxis={[{ 
-										scaleType: 'band', 
-										position: 'left', 
-										data: canal.map(c => c.name),
+							}]}
+							yAxis={[{ 
+								scaleType: 'band', 
+								position: 'left', 
+								data: canal.map(c => c.name),
 										tickLabelStyle: { 
 											fill: chartPalette.textPrimary, 
 											fontSize: '0.75rem', 
@@ -443,39 +501,40 @@ export const DashboardCharts: React.FC = () => {
 				</CardContent>
 			</Card>
 
-						<Card className="bg-gray-800/50 border-gray-700/50 xl:col-span-6">
+			<Card className="bg-gray-800/50 border-gray-700/50 xl:col-span-6">
 				<CardHeader>
 					<CardTitle className="text-white font-semibold">Funil de estágios</CardTitle>
 				</CardHeader>
 				<CardContent>
-					<div className="h-72 flex flex-col">
+					<div className="h-96 flex flex-col">
 						{/* Gráfico de curvas vertical do funil */}
 						<div className="h-40 mb-4">
-							<ChartContainer
-								xAxis={[{ 
-									scaleType: 'band', 
-									position: 'bottom', 
-									data: funil.map(f => f.name),
+						<ChartContainer
+							xAxis={[{ 
+								scaleType: 'band', 
+								position: 'bottom', 
+								data: funil.map(f => f.name),
 									tickLabelStyle: { 
 										fill: chartPalette.textPrimary, 
 										fontSize: '0.75rem', 
 										fontWeight: 500 
 									}
-								}]}
-								yAxis={[{ 
-									scaleType: 'linear', 
-									position: 'left',
-									valueFormatter: numberValueFormatter,
+							}]}
+							yAxis={[{ 
+								scaleType: 'linear', 
+								position: 'left',
+									label: 'Qtd. Leads',
+								valueFormatter: numberValueFormatter,
 									tickLabelStyle: { 
 										fill: chartPalette.textSecondary, 
 										fontSize: '0.7rem' 
 									},
 									min: 0
-								}]}
-								series={[{ 
+							}]}
+							series={[{ 
 									type: 'line', 
 									id: 'funil-line', 
-									data: funil.map(f => f.value),
+								data: funil.map(f => f.value),
 									color: chartPalette.accent,
 									showMark: true,
 									curve: 'catmullRom' as any,
@@ -490,88 +549,133 @@ export const DashboardCharts: React.FC = () => {
 								}}
 							>
 								{/* Gradiente para área do funil */}
-								<defs>
+							<defs>
 									<linearGradient id="funil-area-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
 										<stop offset="0%" stopColor={chartPalette.accent} stopOpacity={0.6} />
 										<stop offset="100%" stopColor={chartPalette.accent} stopOpacity={0.1} />
-									</linearGradient>
-								</defs>
-								
-								<ChartsGrid vertical style={gridStyle} />
+								</linearGradient>
+							</defs>
+							
+							<ChartsGrid vertical style={gridStyle} />
 								<LinePlot />
 								<AreaPlot />
-								<ChartsAxis />
+							<ChartsAxis />
 								<ChartsTooltip />
-							</ChartContainer>
+						</ChartContainer>
 						</div>
 						
-						{/* Gráfico de leads por corretor */}
-						<div className="flex-1">
-							<h5 className="text-sm font-medium text-gray-300 mb-3">Leads por corretor</h5>
-							<div className="space-y-2">
-								{brokers.slice(0, 4).map((broker) => {
-									const percentage = brokers.length > 0 ? (broker.value / Math.max(...brokers.map(b => b.value))) * 100 : 0;
-									const stages = brokersStages.get(broker.name) || {};
-									const isSelected = selectedBroker === broker.name;
-									
-									return (
-										<div key={broker.name} className="group">
-											<div 
-												className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-all duration-200 ${
-													isSelected ? 'bg-blue-900/30 border border-blue-600/30' : 'hover:bg-gray-700/30'
-												}`}
-												onClick={() => setSelectedBroker(isSelected ? null : broker.name)}
-											>
-												{/* Nome do corretor */}
-												<div className="w-24 text-xs text-gray-300 truncate" title={broker.name}>
-													{broker.name}
-												</div>
-												
-												{/* Barra de progresso */}
-												<div className="flex-1 relative">
-													<div className="bg-gray-700 rounded h-4 overflow-hidden">
-														<div 
-															className="bg-blue-500 h-full rounded transition-all duration-500 flex items-center justify-end pr-2"
-															style={{ width: `${Math.max(percentage, 10)}%` }}
-														>
-															<span className="text-white text-xs font-semibold">
-																{broker.value}
-															</span>
-														</div>
-													</div>
-												</div>
-											</div>
-											
-											{/* Breakdown por estágio (quando selecionado) */}
-											{isSelected && Object.keys(stages).length > 0 && (
-												<div className="mt-2 ml-6 p-2 bg-gray-800/50 rounded border border-gray-600/30">
-													<div className="text-xs text-gray-400 mb-1">Distribuição por estágio:</div>
-													<div className="grid grid-cols-2 gap-1 text-xs">
-														{['Novo Lead', 'Visita Agendada', 'Em Negociação', 'Fechamento'].map(stage => {
-															const count = stages[stage] || 0;
-															if (count === 0) return null;
-															return (
-																<div key={stage} className="flex justify-between">
-																	<span className="text-gray-300">{stage}:</span>
-																	<span className="text-white font-medium">{count}</span>
-																</div>
-															);
-														})}
-													</div>
-												</div>
-											)}
-										</div>
-									);
-								})}
+						{/* Gráfico de corretores por leads */}
+						<div className="flex-1 flex flex-col">
+							<div className="flex items-center justify-between mb-2">
+								<h5 className="text-sm font-semibold text-gray-300">Corretores por Leads</h5>
+								<button 
+									onClick={() => setShowBrokerSelection(!showBrokerSelection)}
+									className="text-xs text-blue-400 hover:text-blue-300 transition-colors px-2 py-1 rounded hover:bg-blue-900/20"
+								>
+									{showBrokerSelection ? '✕' : '⚙️'} {showBrokerSelection ? 'Fechar' : 'Filtrar'}
+								</button>
 							</div>
 							
-							{/* Total geral */}
-							<div className="mt-3 pt-2 border-t border-gray-700">
-								<div className="text-center text-xs">
-									<span className="text-gray-400">Total geral: </span>
-									<span className="text-white font-semibold">
-										{funil.reduce((sum, item) => sum + item.value, 0)} leads
-									</span>
+							<div className="flex-1 flex">
+								{/* Painel de seleção lateral (quando ativo) */}
+								{showBrokerSelection && (
+									<div className="w-40 mr-3 p-2 bg-gray-800/60 rounded border border-gray-600/30 flex flex-col">
+										<div className="text-xs text-gray-400 mb-2 font-medium">Corretores:</div>
+										<div className="flex-1 overflow-y-auto space-y-1">
+											{brokers.map(broker => (
+												<label key={broker.name} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-700/40 p-1.5 rounded transition-colors">
+													<input
+														type="checkbox"
+														checked={selectedBrokers.has(broker.name)}
+														onChange={(e) => {
+															const newSelected = new Set(selectedBrokers);
+															if (e.target.checked) {
+																newSelected.add(broker.name);
+															} else {
+																newSelected.delete(broker.name);
+															}
+															setSelectedBrokers(newSelected);
+														}}
+														className="w-3 h-3 accent-blue-500"
+													/>
+													<span className="text-gray-300 truncate leading-tight" title={broker.name}>
+														{broker.name.length > 12 ? broker.name.substring(0, 12) + '...' : broker.name}
+														<span className="text-gray-500 ml-1">({broker.value})</span>
+													</span>
+												</label>
+											))}
+										</div>
+										{selectedBrokers.size > 0 && (
+											<button 
+												onClick={() => setSelectedBrokers(new Set())}
+												className="mt-2 text-xs text-red-400 hover:text-red-300 transition-colors py-1 text-center"
+											>
+												Limpar ({selectedBrokers.size})
+											</button>
+										)}
+									</div>
+								)}
+								
+								{/* Gráfico de barras verticais */}
+								<div className="flex-1">
+									{brokersChartData.length > 0 ? (
+										<ChartContainer
+											xAxis={[{ 
+												scaleType: 'band', 
+												position: 'bottom', 
+												data: brokersChartData.map(d => d.name),
+												tickLabelStyle: { 
+													fill: chartPalette.textPrimary, 
+													fontSize: '0.7rem', 
+													fontWeight: 500 
+												}
+											}]}
+											yAxis={[{ 
+												scaleType: 'linear', 
+												position: 'left',
+												label: 'Qtd. Leads',
+												valueFormatter: numberValueFormatter,
+												tickLabelStyle: { 
+													fill: chartPalette.textSecondary, 
+													fontSize: '0.7rem' 
+												},
+												min: 0
+											}]}
+											series={brokersChartData.map((item, index) => ({
+												type: 'bar' as const,
+												id: `bar-${index}`,
+												data: brokersChartData.map((_, i) => i === index ? item.value : 0),
+												color: item.isUnassigned ? '#ef4444' : chartPalette.secondary,
+												label: item.tooltip // Usar tooltip como label da série
+											}))}
+											height={showBrokerSelection ? 140 : 160}
+											margin={{
+												left: 50,
+												right: 20,
+												top: 20,
+												bottom: 40
+											}}
+										>
+											<ChartsGrid horizontal style={gridStyle} />
+											<BarPlot />
+											<ChartsAxis />
+											<ChartsTooltip />
+										</ChartContainer>
+									) : (
+										<div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
+											Nenhum dado de corretor disponível
+										</div>
+									)}
+									
+									{/* Legenda explicativa */}
+									<div className="mt-1 pt-2 border-t border-gray-700/50">
+										<div className="text-center text-xs text-gray-400">
+											{selectedBrokers.size === 0 
+												? `Eixo X: Quantidade de corretores • Eixo Y: Leads por grupo • Vermelho: Não atribuídos`
+												: `Comparativo: ${selectedBrokers.size} corretor${selectedBrokers.size !== 1 ? 'es' : ''} selecionado${selectedBrokers.size !== 1 ? 's' : ''}`
+											}
+										</div>
+									</div>
 								</div>
 							</div>
 						</div>
@@ -584,16 +688,16 @@ export const DashboardCharts: React.FC = () => {
 					<CardTitle className="text-white font-semibold">Atividade por hora × dia</CardTitle>
 				</CardHeader>
 				<CardContent>
-					<div className="h-72 flex flex-col">
+					<div className="h-96 flex flex-col">
 						{/* Header com dias e horas mais detalhado */}
 						<div className="flex mb-3">
 							<div className="w-12"></div> {/* Espaço para labels de hora */}
 							<div className="grid grid-cols-7 gap-1 flex-1">
-								{['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day, i) => (
+							{['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day, i) => (
 									<div key={i} className="text-center text-xs font-semibold text-gray-300 py-1">
-										{day}
-									</div>
-								))}
+									{day}
+								</div>
+							))}
 							</div>
 						</div>
 						
@@ -607,7 +711,7 @@ export const DashboardCharts: React.FC = () => {
 									</div>
 									
 									{/* Células do heatmap para cada dia nesta hora */}
-									<div className="grid grid-cols-7 gap-1 flex-1">
+						<div className="grid grid-cols-7 gap-1 flex-1">
 										{heat.map((dayData, dayIndex) => {
 											const value = dayData[hour] || 0;
 											const intensity = heatMax > 0 ? value / heatMax : 0;
@@ -623,8 +727,8 @@ export const DashboardCharts: React.FC = () => {
 												bgColor = `rgba(59, 130, 246, ${Math.max(0.3, intensity)})`; // blue-500
 											}
 											
-											return (
-												<div 
+										return (
+											<div 
 													key={`${dayIndex}-${hour}`}
 													title={`${['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][dayIndex]} às ${String(hour).padStart(2, '0')}h: ${value} atividade${value !== 1 ? 's' : ''}`}
 													className="h-4 w-full rounded-sm transition-all duration-300 hover:scale-125 hover:shadow-lg cursor-pointer border"
@@ -632,9 +736,9 @@ export const DashboardCharts: React.FC = () => {
 														backgroundColor: bgColor,
 														borderColor: value > 0 ? 'rgba(255,255,255,0.1)' : 'rgba(107,114,128,0.2)'
 													}}
-												/>
-											);
-										})}
+											/>
+										);
+									})}
 									</div>
 								</div>
 							))}
@@ -646,7 +750,7 @@ export const DashboardCharts: React.FC = () => {
 								{/* Legenda de cores */}
 								<div className="flex items-center gap-2 text-xs text-gray-400">
 									<span>Atividade:</span>
-									<div className="flex items-center gap-1">
+							<div className="flex items-center gap-1">
 										<div className="w-3 h-3 rounded-sm bg-gray-700" title="Nenhuma atividade" />
 										<div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(59, 130, 246, 0.5)' }} title="Baixa" />
 										<div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(234, 179, 8, 0.7)' }} title="Média" />

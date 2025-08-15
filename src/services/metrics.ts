@@ -131,12 +131,31 @@ export async function fetchLeadsPorCorretor() {
 	const { data, error } = await supabase
 		.from('vw_chart_leads_por_corretor')
 		.select('corretor_nome, total_leads')
-		.limit(5); // Top 5 corretores
+		.order('total_leads', { ascending: false });
 	if (error) throw error;
 	return (data || []).map((r: any) => ({ 
 		name: r.corretor_nome || 'Sem corretor', 
 		value: Number(r.total_leads || 0) 
 	}));
+}
+
+export async function fetchLeadsSemCorretor(): Promise<number> {
+	try {
+		const { count, error } = await supabase
+			.from('leads')
+			.select('*', { count: 'exact', head: true })
+			.is('id_corretor_responsavel', null);
+
+		if (error) {
+			console.error('Erro ao buscar leads sem corretor:', error);
+			return 0;
+		}
+
+		return count || 0;
+	} catch (error) {
+		console.error('Erro na consulta de leads sem corretor:', error);
+		return 0;
+	}
 }
 
 export async function fetchLeadsCorretorEstagio() {

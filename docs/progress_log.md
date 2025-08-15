@@ -354,4 +354,227 @@ Próximos passos sugeridos:
   - **Tooltips**: Nome completo do corretor e detalhes dos estágios
   - **Estado selecionado**: Visual diferenciado com background azul e border
 - **Layout híbrido**: Combina análise macro (funil geral) com micro (performance individual)
+
+### 📊 **Fase 12 - Otimizações de Layout e Interatividade (Janeiro 2025)**
+- **Layout expandido**:
+  - **Funil de Estágios**: Expandido de 6 para 8 colunas (xl:col-span-8)
+  - **Atividade por hora × dia**: Reduzido de 6 para 4 colunas (xl:col-span-4)
+  - **Melhor proporção**: Mais espaço para gráficos complexos do funil
+- **Gráfico de barras verticais**:
+  - **Substituição**: Barras horizontais → barras verticais (ChartContainer + BarPlot)
+  - **Altura otimizada**: 120px para melhor visualização
+  - **Cores dinâmicas**: Roxo para modo agrupado, azul para modo comparativo
+- **Sistema de seleção de corretores**:
+  - **Painel expansível**: Toggle "Selecionar corretores" / "Ocultar seleção"
+  - **Checkboxes**: Lista completa de corretores com quantidade de leads
+  - **Estados**: Hover effects, scroll automático, botão "Limpar seleção"
+- **Modo agrupado (padrão)**:
+  - **Agrupamento inteligente**: Corretores com mesmo número de leads no mesmo índice
+  - **Labels descritivos**: "X leads" mostrando quantos corretores têm essa quantidade
+  - **Tooltip informativo**: Lista completa de corretores em cada grupo
+- **Modo comparativo (com seleção)**:
+  - **Comparação direta**: Barras individuais para corretores selecionados
+  - **Nomes truncados**: Corte automático em 15 caracteres + "..."
+  - **Tooltips detalhados**: Nome completo + quantidade de leads
+- **Interface melhorada**:
+  - **Legenda explicativa**: Contexto claro sobre modo ativo
+  - **Estados visuais**: Loading state, empty state, transition effects
+  - **Responsividade**: Layout adaptável para diferentes tamanhos
+### 📊 **Fase 13 - Correções de Layout e Conceito de Gráfico (Janeiro 2025)**
+- **Reversão de layout horizontal**:
+  - **Funil de Estágios**: Voltou de 8 para 6 colunas (xl:col-span-6)
+  - **Atividade por hora × dia**: Voltou de 4 para 6 colunas (xl:col-span-6)
+  - **Expansão vertical**: Altura aumentada de h-72 para h-96 (384px)
+  - **Proporção 50/50**: Cada card ocupa exatamente metade da largura
+- **Correção conceitual do gráfico**:
+  - **Título atualizado**: "Leads por corretor" → "Corretores por Leads"
+  - **Inversão lógica**: Eixo X mostra quantidade de leads, eixo Y mostra quantidade de corretores
+  - **Ordenação corrigida**: Menor para maior quantidade de leads (sort `a - b`)
+  - **Labels do eixo Y**: "Qtd. Corretores" (agrupado) / "Qtd. Leads" (comparativo)
+- **Layout lateral do painel de seleção**:
+  - **Painel lateral**: 160px de largura fixa à esquerda quando ativo
+  - **Botão melhorado**: Ícones ⚙️ (Filtrar) / ✕ (Fechar) com hover effects
+  - **Lista otimizada**: Scroll vertical, checkboxes accent-blue-500, hover states
+  - **Truncamento inteligente**: Nomes limitados a 12 caracteres + "..."
+  - **Contador dinâmico**: "Limpar (X)" mostra quantidade selecionada
+- **Adaptação responsiva do gráfico**:
+  - **Altura dinâmica**: 140px (painel aberto) / 160px (painel fechado)
+  - **Margem otimizada**: left:45px para acomodar label do eixo Y
+  - **Flexbox inteligente**: Painel e gráfico compartilham espaço harmoniosamente
+- **Melhorias de UX**:
+  - **Legenda explicativa**: Diferencia modo agrupado vs comparativo
+  - **Visual feedback**: Borders, shadows, transitions suaves
+  - **Estados claros**: Empty state, loading, seleção ativa
+### 📊 **Fase 14 - Lógica Correta do Gráfico "Corretores por Leads" (Janeiro 2025)**
+- **Correção conceitual fundamental**:
+  - **Lógica anterior**: Mostrava corretores individuais com suas quantidades de leads
+  - **Lógica correta**: Agrupa corretores que têm a mesma quantidade de leads
+  - **Exemplo**: "3 corretores" (eixo X) = 3 corretores que têm 2 leads cada (eixo Y)
+- **Implementação do agrupamento**:
+  - **Map de agrupamento**: `Map<number, string[]>` agrupa corretores por quantidade de leads
+  - **Ordenação**: Menor para maior quantidade de leads (1 lead, 2 leads, 5 leads...)
+  - **Labels do eixo X**: "X corretor(es)" indica quantos corretores têm a mesma quantidade
+  - **Tooltips informativos**: Mostra quais corretores estão no grupo e quantos leads cada um tem
+- **Leads não atribuídos**:
+  - **Nova função**: `fetchLeadsSemCorretor()` busca leads com `id_corretor_responsavel = null`
+  - **Barra especial**: "Nenhum corretor" em vermelho (`#ef4444`)
+  - **Estado adicional**: `unassignedLeads` para controlar leads sem atribuição
+  - **Integração**: Automaticamente incluído no useEffect e no processamento
+- **Sistema de cores melhorado**:
+  - **Leads não atribuídos**: Vermelho para destacar problema
+  - **Leads atribuídos**: Roxo (agrupado) / Azul (comparativo)
+  - **Series dinâmicas**: Cada barra tem cor individual baseada no tipo
+- **Processamento de dados otimizado**:
+  - **Dois modos**: Agrupamento (padrão) vs Comparativo (seleção ativa)
+  - **Estrutura unificada**: `{name, value, tooltip, isUnassigned}` para ambos os modos
+  - **Tooltips descritivos**: Explicam exatamente quais corretores e quantos leads
+- **Interface atualizada**:
+  - **Label do eixo Y**: "Qtd. Leads" em ambos os modos
+  - **Legenda explicativa**: "Eixo X: Quantidade de corretores • Eixo Y: Leads por grupo • Vermelho: Não atribuídos"
+  - **Visual feedback**: Cor vermelha destaca leads sem atribuição
+### 📊 **Fase 15 - Refinamentos de Interface e UX (Janeiro 2025)**
+- **Padronização de títulos**:
+  - **"Corretores por Leads"**: Agora usa `font-semibold` igual ao título "Funil de estágios"
+  - **Consistência visual**: Mesmo tamanho, peso e estilo entre os subtítulos dos gráficos
+- **Melhoria do gráfico Funil de Estágios**:
+  - **Label do eixo Y**: Adicionado "Qtd. Leads" para maior clareza
+  - **Contexto visual**: Usuario entende imediatamente que o eixo Y representa quantidade de leads
+- **Tooltip otimizado para "Corretores por Leads"**:
+  - **Foco nos nomes**: Tooltip agora mostra apenas os nomes dos corretores do grupo
+  - **Implementação simplificada**: Usa `label` das series para evitar conflitos de TypeScript
+  - **Informação essencial**: Remove informações redundantes, mantém só o necessário
+- **Sistema de labels melhorado**:
+  - **Leads não atribuídos**: Label "Leads não atribuídos" no tooltip
+  - **Corretores agrupados**: Label mostra nomes dos corretores separados por vírgula
+  - **Clareza visual**: Cada tooltip mostra exatamente quem está envolvido na barra
+- **Correções técnicas**:
+  - **Lint limpo**: Removido `font-medium` duplicado com `font-semibold`
+  - **TypeScript correto**: Tooltip implementado de forma compatível com MUI X-Charts
+  - **Performance otimizada**: Sem custom content complexo que causava re-renders
+### 📊 **Fase 16 - Correção da Lógica de Agrupamento de Corretores (Janeiro 2025)**
+- **Problema identificado**:
+  - **Duplicação**: Barra "Nenhum corretor" aparecia duas vezes
+  - **Confusão de dados**: Sistema tratava leads não atribuídos como se fossem um corretor
+  - **Dados atuais**: 5 leads não atribuídos + 2 corretores com 1 lead cada
+- **Correção da lógica de agrupamento**:
+  - **Filtro específico**: Excluir "Sem corretor" e "Nenhum corretor" do agrupamento de corretores
+  - **Separação clara**: Leads não atribuídos vs corretores reais agrupados
+  - **Dados corretos**: Apenas uma barra vermelha para leads não atribuídos
+- **Estrutura de dados corrigida**:
+  - **Primeira barra (vermelha)**: "Nenhum corretor" = 5 leads não atribuídos
+  - **Segunda barra (lilás)**: "2 corretores" = 2 corretores com 1 lead cada
+  - **Não há mais duplicação**: Cada lead é contado apenas uma vez
+- **Tooltip aprimorado**:
+  - **Leads não atribuídos**: "X leads não atribuídos" (simples e direto)
+  - **Corretores agrupados**: "Nome1, Nome2 (X leads cada)" (nomes + quantidade)
+  - **Informação específica**: Cada tooltip mostra apenas dados do grupo selecionado
+- **Sistema de cores mantido**:
+  - **Vermelho (#ef4444)**: Leads não atribuídos (problema visual)
+  - **Lilás (chartPalette.secondary)**: Grupos de corretores (dados normais)
+  - **Consistência visual**: Cores diferenciadas para tipos diferentes
+- **Validação dos dados**:
+  - **5 leads não atribuídos**: Barra vermelha única
+  - **2 corretores com 1 lead cada**: Barra lilás única
+  - **Total correto**: 7 leads no sistema (5 + 1 + 1)
+### 📊 **Fase 17 - Solução Definitiva para Tooltips Isolados (Janeiro 2025)**
+- **Problema identificado no MUI X-Charts**:
+  - **Tooltip global**: MUI X-Charts mostra dados de todas as series simultaneamente
+  - **Limitação técnica**: Impossível isolar tooltip para mostrar apenas dados de uma barra
+  - **Necessidade**: Cada barra deve mostrar apenas seus próprios dados no tooltip
+- **Solução implementada - Gráfico customizado**:
+  - **Abandono do MUI X-Charts**: Para o gráfico de corretores, criação de barras nativas com HTML/CSS
+  - **Controle total**: Tooltip específico para cada barra sem interferências
+  - **Performance otimizada**: Sem overhead de biblioteca complexa
+- **Implementação técnica**:
+  - **Barras customizadas**: Divs com `height` proporcional ao valor
+  - **Layout flexível**: `flex items-end justify-center gap-4` para alinhamento
+  - **Cores dinâmicas**: Vermelho (#ef4444) para não atribuídos, lilás (chartPalette.secondary) para corretores
+  - **Responsividade**: Largura fixa de 40px por barra, altura proporcional
+- **Sistema de tooltip isolado**:
+  - **Trigger hover**: `:hover` em CSS com `group` classes do Tailwind
+  - **Tooltip específico**: Cada barra mostra apenas `item.tooltip` correspondente
+  - **Transições suaves**: `opacity-0 group-hover:opacity-100 transition-opacity duration-200`
+  - **Posicionamento**: `absolute bottom-full left-1/2 transform -translate-x-1/2`
+- **Interface aprimorada**:
+  - **Valores visíveis**: Número acima de cada barra
+  - **Labels claros**: Nome do grupo abaixo de cada barra
+  - **Eixo Y manual**: Escala de 0 ao valor máximo em 5 divisões
+  - **Label do eixo**: "Qtd. Leads" rotacionado 90 graus
+- **Comportamento dos tooltips**:
+  - **Barra vermelha**: Hover mostra "5 leads não atribuídos"
+  - **Barra lilás**: Hover mostra "Corretor1, Corretor2 (1 lead cada)"
+  - **Isolamento total**: Nenhuma interferência entre tooltips
+- **Layout otimizado**:
+  - **Padding**: `pb-12 pt-8` para espaço adequado
+  - **Gap**: `gap-4` entre barras para clareza
+  - **Max-width**: `max-w-48` no tooltip para quebra de linha em textos longos
+  - **Z-index**: `z-10` para tooltips ficarem sobre outros elementos
+### 📊 **Fase 18 - Correção de Grid e Alinhamento do Gráfico Customizado (Janeiro 2025)**
+- **Problema identificado**:
+  - **Linhas de grade ausentes**: Gráfico customizado perdeu as linhas de referência
+  - **Barras flutuantes**: Posicionamento irregular das barras no espaço vazio
+  - **Falta de estrutura**: Ausência de eixos e referências visuais
+- **Solução implementada - Grid e estrutura profissional**:
+  - **Linhas de grade horizontais**: 5 linhas com `border-gray-600/30`
+  - **Área de gráfico definida**: Padding específico para labels (50px esquerda, 20px direita, 20px topo, 40px base)
+  - **Posicionamento absoluto**: Grid lines e barras em camadas organizadas
+- **Sistema de coordenadas corrigido**:
+  - **Eixo Y proporcional**: Valores de 0 ao máximo em 5 divisões iguais
+  - **Altura das barras**: `(item.value / maxValue) * 85%` da área disponível
+  - **Alinhamento de base**: `items-end` para barras alinhadas na linha base
+  - **Distribuição uniforme**: `justify-around` para espaçamento igual
+- **Melhorias visuais**:
+  - **Largura das barras**: Reduzida para 32px para melhor proporção
+  - **Labels dos valores**: Posicionados `-top-5` para não conflitar com grid
+  - **Z-index otimizado**: Tooltip em `z-20` para ficar sobre grid lines
+  - **Altura mínima**: `minHeight: '8px'` para barras muito pequenas serem visíveis
+- **Estrutura de layout melhorada**:
+  - **Área de gráfico**: Container absoluto com padding calculado
+  - **Grid lines**: Layer independente com posicionamento percentual
+  - **Container de barras**: Layer relativa para interações
+  - **Eixo Y**: Posicionamento absoluto alinhado com grid lines
+- **Labels e escalas**:
+  - **Eixo Y numérico**: Valores calculados proporcionalmente ao máximo
+  - **Posicionamento preciso**: `-mt-2` para alinhar com grid lines
+  - **Label rotacionado**: "Qtd. Leads" em 90 graus à esquerda
+  - **Labels das barras**: Largura reduzida (16px) com `leading-tight`
+- **Sistema responsivo mantido**:
+  - **Tooltips isolados**: Cada barra mantém seu tooltip específico
+  - **Hover effects**: Transições suaves preservadas
+  - **Cores diferenciadas**: Vermelho (não atribuídos) vs Lilás (corretores)
+### 📊 **Fase 19 - Auditoria e Correção Definitiva do Gráfico (Janeiro 2025)**
+- **Auditoria dos problemas identificados**:
+  - **Layout quebrado**: Gráfico customizado com barras desalinhadas
+  - **Eixos invisíveis**: Falta de estrutura profissional clara
+  - **Posicionamento irregular**: Barras flutuando sem referência
+  - **Impossível de entender**: Interface confusa e não funcional
+- **Decisão estratégica - Retorno ao MUI X-Charts**:
+  - **Abandono da customização**: HTML/CSS customizado causou mais problemas que soluções
+  - **Volta à biblioteca profissional**: MUI X-Charts oferece estrutura sólida
+  - **Abordagem inteligente**: Series separadas para isolar tooltips mantendo estrutura
+- **Implementação da solução híbrida**:
+  - **ChartContainer base**: Estrutura profissional com eixos, grid e labels corretos
+  - **Series individuais**: Cada barra como série separada para tooltip isolado
+  - **Data array otimizado**: `data: [0, 0, value, 0, 0]` onde apenas o índice correto tem valor
+  - **Cores dinâmicas**: Vermelho (#ef4444) para não atribuídos, lilás para corretores
+- **Configuração técnica corrigida**:
+  - **XAxis**: `scaleType: 'band'` com labels dos grupos
+  - **YAxis**: `scaleType: 'linear'` com `label: 'Qtd. Leads'` e `min: 0`
+  - **Grid horizontal**: `<ChartsGrid horizontal style={gridStyle} />`
+  - **Margins adequadas**: `{left: 50, right: 20, top: 20, bottom: 40}`
+- **Sistema de tooltips funcional**:
+  - **Label das series**: `item.tooltip` como label de cada série
+  - **Isolamento natural**: MUI X-Charts mostra apenas dados da série ativa
+  - **Comportamento correto**: Cada barra mostra apenas seus próprios dados
+  - **Estilização consistente**: Tooltip padrão com tema escuro
+- **Estrutura visual restaurada**:
+  - **Eixos visíveis**: X (grupos) e Y (quantidade) claramente definidos
+  - **Grid profissional**: Linhas horizontais de referência
+  - **Barras alinhadas**: Posicionamento correto na base do gráfico
+  - **Labels legíveis**: Nomes dos grupos e valores numéricos claros
+- **Performance e manutenibilidade**:
+  - **Biblioteca madura**: MUI X-Charts é testado e confiável
+  - **Código mais limpo**: Menos linhas, mais funcionalidade
+  - **Fácil manutenção**: Padrão conhecido da equipe
+  - **Responsividade nativa**: Adaptação automática a diferentes tamanhos
 - **Resultado**: Layout otimizado, dados corretos, alinhamento perfeito, visual profissional, dupla visualização de leads e sem erros de compilação
