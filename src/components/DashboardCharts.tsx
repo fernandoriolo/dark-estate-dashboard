@@ -43,7 +43,7 @@ export const DashboardCharts: React.FC = () => {
 
 	const months = React.useMemo(() => vgv.map(v => monthLabel(v.month)), [vgv]);
 	const vgvSeries = React.useMemo(() => [{ type: 'line' as const, id: 'vgv', label: 'VGV', data: vgv.map(v => v.vgv) }], [vgv]);
-	const convSeries = React.useMemo(() => [{ type: 'bar' as const, id: 'conv', label: 'Contratos', data: vgv.map(v => v.qtd) }], [vgv]);
+	const convSeries = React.useMemo(() => [{ type: 'bar' as const, id: 'conv', label: 'Imóveis', data: vgv.map(v => v.qtd) }], [vgv]);
 	const xAxisMonths = React.useMemo(() => [{ scaleType: 'band' as const, data: months, position: 'bottom' as const, valueFormatter: (v: string) => v }], [months]);
 	const yAxisCurrency = React.useMemo(() => [{ scaleType: 'linear' as const, position: 'left' as const, valueFormatter: (v: number) => formatCurrencyCompact(v) }], []);
 
@@ -51,7 +51,7 @@ export const DashboardCharts: React.FC = () => {
 		<div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
 			<Card className="bg-gray-800/50 border-gray-700/50 xl:col-span-8">
 				<CardHeader>
-					<CardTitle className="text-white">VGV mensal (12m) e conversões</CardTitle>
+					<CardTitle className="text-white">VGV mensal (12m) e imóveis</CardTitle>
 				</CardHeader>
 				<CardContent>
 					<div className="h-72">

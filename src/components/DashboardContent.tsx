@@ -119,13 +119,11 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
         .from('leads')
         .select('id', { count: 'exact', head: true }) as unknown as Promise<{ count: number | null }>;
 
-      // VGV do mês atual (soma de contratos de Venda assinados no mês)
+      // VGV atual (estoque de venda disponível) via view segura
       const vgvCurrentPromise = supabase
-        .from('contracts')
-        .select('valor, data_assinatura, tipo')
-        .eq('tipo', 'Venda')
-        .gte('data_assinatura', firstDayThisMonthISO)
-        .lt('data_assinatura', firstDayNextMonthISO);
+        .from('vw_segura_metricas_vgv_atual')
+        .select('soma_vgv')
+        .maybeSingle();
 
       // Totais até o final do mês anterior (baseline para % de variação)
       const prevTotalsPropsPromise = supabase
@@ -142,15 +140,13 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
         .select('id', { count: 'exact', head: true })
         .lt('created_at', firstDayThisMonthISO) as unknown as Promise<{ count: number | null }>;
 
-      // VGV do mês anterior
-      const firstDayLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
-      const firstDayThisMonthISO_2 = firstDayThisMonthISO;
+      // VGV anterior (último mês com dados na série mensal)
       const vgvPrevPromise = supabase
-        .from('contracts')
-        .select('valor, data_assinatura, tipo')
-        .eq('tipo', 'Venda')
-        .gte('data_assinatura', firstDayLastMonth)
-        .lt('data_assinatura', firstDayThisMonthISO_2);
+        .from('vw_segura_metricas_vgv_mensal')
+        .select('mes, soma_vgv')
+        .lt('mes', firstDayThisMonthISO)
+        .order('mes', { ascending: false })
+        .limit(1);
 
       const [totalRes, dispRes, leadsRes, vgvNowRes, prevPropsRes, prevAvailRes, prevLeadsRes, vgvPrevRes] = await Promise.all([
         totalResPromise,
@@ -166,8 +162,8 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
       const totalProps = (totalRes.count || 0);
       const availProps = (dispRes.count || 0);
       const leadsTotal = (leadsRes.count || 0);
-      const vgvNow = Array.isArray(vgvNowRes.data) ? vgvNowRes.data.reduce((s: number, r: any) => s + Number(r.valor || 0), 0) : 0;
-      const vgvPrev = Array.isArray(vgvPrevRes.data) ? vgvPrevRes.data.reduce((s: number, r: any) => s + Number(r.valor || 0), 0) : 0;
+      const vgvNow = Number((vgvNowRes as any)?.data?.soma_vgv || 0);
+      const vgvPrev = Array.isArray((vgvPrevRes as any)?.data) ? Number((vgvPrevRes as any).data[0]?.soma_vgv || 0) : 0;
 
       setTotalProperties(totalProps);
       setAvailableProperties(availProps);
@@ -256,7 +252,7 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
 
   const stats = [
     {
-      title: "VGV (Venda)",
+      title: "VGV",
       value: formatCurrencyCompact(vgvCurrent),
       icon: TrendingUp,
       change: vgvChange.change,
