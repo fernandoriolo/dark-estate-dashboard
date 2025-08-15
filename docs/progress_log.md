@@ -312,4 +312,46 @@ Próximos passos sugeridos:
 - **Legenda com números**: Formato "Status (quantidade)" igual aos outros gráficos de pizza
 - **Configuração padrão**: `innerRadius: 60`, `outerRadius: 100`, `paddingAngle: 3`, `cornerRadius: 8`
 - **Limpeza de código**: Removidas funções SVG customizadas, imports desnecessários (`Gauge`, `availabilityColors`)
+
+### 📊 **Fase 10 - Reestruturação Funil e Heatmap (Janeiro 2025)**
+- **Views funcionais criadas**:
+  - `vw_chart_funil_leads` e `vw_segura_chart_funil_leads` - baseadas em dados reais da tabela `leads.stage`
+  - `vw_chart_mapa_calor_atividade` e `vw_segura_chart_mapa_calor_atividade` - baseadas em `leads.created_at`
+- **Funil de Estágios redesenhado**:
+  - **Design customizado**: Barras horizontais com cores diferenciadas por estágio
+  - **Cores específicas**: Azul (Novo Lead), Amarelo (Visita Agendada), Laranja (Em Negociação), Verde (Fechamento)
+  - **Percentuais relativos**: Baseados no maior valor do funil para comparação visual
+  - **Resumo total**: Exibe soma total de leads no rodapé
+  - **Animações**: Transições suaves de 700ms nas barras
+- **Mapa de Calor otimizado**:
+  - **Layout vertical**: 24 horas × 7 dias com scroll suave
+  - **Labels de hora**: 00h-23h na lateral esquerda
+  - **Tooltips informativos**: "Dia às XXh: N atividade(s)"
+  - **Cores aprimoradas**: Cinza (vazio), Azul (baixa), Amarelo (média), Verde (alta)
+  - **Interatividade**: Hover com scale e shadow effects
+  - **Estatísticas**: Mostra valor de pico de atividade no rodapé
+- **Dados funcionais**: Ambos gráficos agora exibem dados reais do banco baseados na tabela `leads`
+- **Correção crítica RLS**: Problema das views seguras contornado usando views base diretamente
+- **Ordenação lógica do funil**: Estágios organizados pelo fluxo de vendas (Novo Lead → Visita → Negociação → Fechamento)
+- **Cores por estágio**: Mapeamento específico por nome do estágio, não por índice
+
+### 🎯 **Fase 11 - Funil Avançado com Análise por Corretor (Janeiro 2025)**
+- **Views para corretores criadas**:
+  - `vw_chart_leads_por_corretor` - total de leads por corretor
+  - `vw_chart_leads_corretor_estagio` - breakdown detalhado por corretor e estágio
+- **Novo design do Funil de Estágios**:
+  - **Gráfico superior**: Curva vertical com área (LinePlot + AreaPlot) mostrando fluxo do funil
+  - **Configuração**: Curve catmullRom, markers visíveis, gradiente na área
+  - **Altura otimizada**: 160px para o gráfico, restante para análise de corretores
+- **Gráfico Leads por Corretor**:
+  - **Top 4 corretores** com barras horizontais azuis
+  - **Interatividade**: Click para expandir breakdown por estágio
+  - **Estados visuais**: Hover effects, selected state com border azul
+  - **Dados reais**: "Sem corretor" (5), "isis@n8nlabz.com.br" (1), "arthur@n8nlabz.com.br" (1)
+- **Funcionalidades interativas**:
+  - **Click no corretor**: Expande painel mostrando distribuição por estágio
+  - **Animações**: Transições suaves de 200-500ms em todos os elementos
+  - **Tooltips**: Nome completo do corretor e detalhes dos estágios
+  - **Estado selecionado**: Visual diferenciado com background azul e border
+- **Layout híbrido**: Combina análise macro (funil geral) com micro (performance individual)
 - **Resultado**: Layout otimizado, dados corretos, alinhamento perfeito, visual profissional, dupla visualização de leads e sem erros de compilação

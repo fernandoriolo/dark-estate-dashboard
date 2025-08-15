@@ -10,7 +10,7 @@ import { formatCurrencyCompact, monthLabel } from '@/lib/charts/formatters';
 import { chartPalette, pieChartColors } from '@/lib/charts/palette';
 import { gridStyle, tooltipSlotProps, vgvTooltipSlotProps, currencyValueFormatter, numberValueFormatter } from '@/lib/charts/config';
 import { supabase } from '@/integrations/supabase/client';
-import { fetchDistribuicaoPorTipo, fetchFunilLeads, fetchHeatmapAtividades, fetchLeadsPorCanalTop8, fetchLeadsPorTempo, fetchTaxaOcupacao, fetchVgvByPeriod, VgvPeriod } from '@/services/metrics';
+import { fetchDistribuicaoPorTipo, fetchFunilLeads, fetchHeatmapAtividades, fetchLeadsPorCanalTop8, fetchLeadsPorCorretor, fetchLeadsCorretorEstagio, fetchLeadsPorTempo, fetchTaxaOcupacao, fetchVgvByPeriod, VgvPeriod } from '@/services/metrics';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
@@ -21,6 +21,9 @@ export const DashboardCharts: React.FC = () => {
 	const [funil, setFunil] = React.useState<{ name: string; value: number }[]>([]);
 	const [heat, setHeat] = React.useState<number[][]>([]);
 	const [leadsTempo, setLeadsTempo] = React.useState<{ month: string; count: number }[]>([]);
+	const [brokers, setBrokers] = React.useState<{ name: string; value: number }[]>([]);
+	const [brokersStages, setBrokersStages] = React.useState<Map<string, Record<string, number>>>(new Map());
+	const [selectedBroker, setSelectedBroker] = React.useState<string | null>(null);
 	const [gauge, setGauge] = React.useState<{
 		ocupacao: number;
 		total: number;
@@ -48,6 +51,8 @@ export const DashboardCharts: React.FC = () => {
 				fetchFunilLeads().then(setFunil).catch(() => setFunil([])),
 				fetchHeatmapAtividades().then(setHeat).catch(() => setHeat([])),
 				fetchLeadsPorTempo().then(setLeadsTempo).catch(() => setLeadsTempo([])),
+				fetchLeadsPorCorretor().then(setBrokers).catch(() => setBrokers([])),
+				fetchLeadsCorretorEstagio().then(setBrokersStages).catch(() => setBrokersStages(new Map())),
 				fetchTaxaOcupacao().then(setGauge).catch(() => setGauge({ ocupacao: 0, total: 0, disponiveis: 0 } as any)),
 			]);
 		};
@@ -438,47 +443,138 @@ export const DashboardCharts: React.FC = () => {
 				</CardContent>
 			</Card>
 
-			<Card className="bg-gray-800/50 border-gray-700/50 xl:col-span-6">
+						<Card className="bg-gray-800/50 border-gray-700/50 xl:col-span-6">
 				<CardHeader>
 					<CardTitle className="text-white font-semibold">Funil de estágios</CardTitle>
 				</CardHeader>
 				<CardContent>
-					<div className="h-72">
-						<ChartContainer
-							xAxis={[{ 
-								scaleType: 'band', 
-								position: 'bottom', 
-								data: funil.map(f => f.name),
-								tickLabelStyle: { fill: chartPalette.textPrimary, fontSize: '0.875rem', fontWeight: 500 }
-							}]}
-							yAxis={[{ 
-								scaleType: 'linear', 
-								position: 'left',
-								valueFormatter: numberValueFormatter,
-								tickLabelStyle: { fill: chartPalette.textSecondary, fontSize: '0.75rem' }
-							}]}
-							series={[{ 
-								type: 'bar', 
-								id: 'funil', 
-								data: funil.map(f => f.value),
-								color: `url(#funil-gradient)`,
-
-							}]}
-							height={280}
-						>
-							{/* Gradiente para funil */}
-							<defs>
-								<linearGradient id="funil-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-									<stop offset="0%" stopColor={chartPalette.tertiary} stopOpacity={1} />
-									<stop offset="100%" stopColor={chartPalette.tertiary} stopOpacity={0.7} />
-								</linearGradient>
-							</defs>
+					<div className="h-72 flex flex-col">
+						{/* Gráfico de curvas vertical do funil */}
+						<div className="h-40 mb-4">
+							<ChartContainer
+								xAxis={[{ 
+									scaleType: 'band', 
+									position: 'bottom', 
+									data: funil.map(f => f.name),
+									tickLabelStyle: { 
+										fill: chartPalette.textPrimary, 
+										fontSize: '0.75rem', 
+										fontWeight: 500 
+									}
+								}]}
+								yAxis={[{ 
+									scaleType: 'linear', 
+									position: 'left',
+									valueFormatter: numberValueFormatter,
+									tickLabelStyle: { 
+										fill: chartPalette.textSecondary, 
+										fontSize: '0.7rem' 
+									},
+									min: 0
+								}]}
+								series={[{ 
+									type: 'line', 
+									id: 'funil-line', 
+									data: funil.map(f => f.value),
+									color: chartPalette.accent,
+									showMark: true,
+									curve: 'catmullRom' as any,
+									area: true as any
+								}]}
+								height={160}
+								margin={{
+									left: 40,
+									right: 20,
+									top: 10,
+									bottom: 40
+								}}
+							>
+								{/* Gradiente para área do funil */}
+								<defs>
+									<linearGradient id="funil-area-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+										<stop offset="0%" stopColor={chartPalette.accent} stopOpacity={0.6} />
+										<stop offset="100%" stopColor={chartPalette.accent} stopOpacity={0.1} />
+									</linearGradient>
+								</defs>
+								
+								<ChartsGrid vertical style={gridStyle} />
+								<LinePlot />
+								<AreaPlot />
+								<ChartsAxis />
+								<ChartsTooltip />
+							</ChartContainer>
+						</div>
+						
+						{/* Gráfico de leads por corretor */}
+						<div className="flex-1">
+							<h5 className="text-sm font-medium text-gray-300 mb-3">Leads por corretor</h5>
+							<div className="space-y-2">
+								{brokers.slice(0, 4).map((broker) => {
+									const percentage = brokers.length > 0 ? (broker.value / Math.max(...brokers.map(b => b.value))) * 100 : 0;
+									const stages = brokersStages.get(broker.name) || {};
+									const isSelected = selectedBroker === broker.name;
+									
+									return (
+										<div key={broker.name} className="group">
+											<div 
+												className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-all duration-200 ${
+													isSelected ? 'bg-blue-900/30 border border-blue-600/30' : 'hover:bg-gray-700/30'
+												}`}
+												onClick={() => setSelectedBroker(isSelected ? null : broker.name)}
+											>
+												{/* Nome do corretor */}
+												<div className="w-24 text-xs text-gray-300 truncate" title={broker.name}>
+													{broker.name}
+												</div>
+												
+												{/* Barra de progresso */}
+												<div className="flex-1 relative">
+													<div className="bg-gray-700 rounded h-4 overflow-hidden">
+														<div 
+															className="bg-blue-500 h-full rounded transition-all duration-500 flex items-center justify-end pr-2"
+															style={{ width: `${Math.max(percentage, 10)}%` }}
+														>
+															<span className="text-white text-xs font-semibold">
+																{broker.value}
+															</span>
+														</div>
+													</div>
+												</div>
+											</div>
+											
+											{/* Breakdown por estágio (quando selecionado) */}
+											{isSelected && Object.keys(stages).length > 0 && (
+												<div className="mt-2 ml-6 p-2 bg-gray-800/50 rounded border border-gray-600/30">
+													<div className="text-xs text-gray-400 mb-1">Distribuição por estágio:</div>
+													<div className="grid grid-cols-2 gap-1 text-xs">
+														{['Novo Lead', 'Visita Agendada', 'Em Negociação', 'Fechamento'].map(stage => {
+															const count = stages[stage] || 0;
+															if (count === 0) return null;
+															return (
+																<div key={stage} className="flex justify-between">
+																	<span className="text-gray-300">{stage}:</span>
+																	<span className="text-white font-medium">{count}</span>
+																</div>
+															);
+														})}
+													</div>
+												</div>
+											)}
+										</div>
+									);
+								})}
+							</div>
 							
-							<ChartsGrid vertical style={gridStyle} />
-							<BarPlot />
-							<ChartsAxis />
-							<ChartsTooltip />
-						</ChartContainer>
+							{/* Total geral */}
+							<div className="mt-3 pt-2 border-t border-gray-700">
+								<div className="text-center text-xs">
+									<span className="text-gray-400">Total geral: </span>
+									<span className="text-white font-semibold">
+										{funil.reduce((sum, item) => sum + item.value, 0)} leads
+									</span>
+								</div>
+							</div>
+						</div>
 					</div>
 				</CardContent>
 			</Card>
@@ -488,49 +584,81 @@ export const DashboardCharts: React.FC = () => {
 					<CardTitle className="text-white font-semibold">Atividade por hora × dia</CardTitle>
 				</CardHeader>
 				<CardContent>
-					<div className="h-72">
-						{/* Labels dos dias */}
-						<div className="grid grid-cols-7 gap-1 mb-2">
-							{['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day, i) => (
-								<div key={i} className="text-center text-xs font-medium text-gray-300 py-1">
-									{day}
-								</div>
-							))}
-						</div>
-						
-						{/* Heatmap grid */}
-						<div className="grid grid-cols-7 gap-1 flex-1">
-							{heat.map((row, y) => (
-								<div key={y} className="flex flex-col gap-1">
-									{row.map((v, x) => {
-										const intensity = (v || 0) / heatMax;
-										const bg = intensity > 0.7 
-											? `rgba(52, 211, 153, ${Math.max(0.3, intensity)})` // Verde para alta atividade
-											: intensity > 0.4 
-											? `rgba(245, 158, 11, ${Math.max(0.3, intensity)})` // Amarelo para média
-											: `rgba(59, 130, 246, ${Math.max(0.08, intensity)})`; // Azul para baixa
-										return (
-											<div 
-												key={x} 
-												title={`${['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][y]} ${x}h: ${v || 0} atividades`} 
-												className="h-3 w-full rounded-sm transition-all duration-200 hover:scale-110 hover:shadow-sm cursor-pointer" 
-												style={{ background: bg, border: intensity > 0.5 ? '1px solid rgba(255,255,255,0.1)' : 'none' }} 
-											/>
-										);
-									})}
-								</div>
-							))}
-						</div>
-						
-						{/* Legenda */}
-						<div className="mt-3 flex items-center justify-between text-xs text-gray-400">
-							<span>Baixa atividade</span>
-							<div className="flex items-center gap-1">
-								<div className="w-3 h-3 rounded-sm" style={{ background: 'rgba(59, 130, 246, 0.3)' }} />
-								<div className="w-3 h-3 rounded-sm" style={{ background: 'rgba(245, 158, 11, 0.6)' }} />
-								<div className="w-3 h-3 rounded-sm" style={{ background: 'rgba(52, 211, 153, 0.8)' }} />
+					<div className="h-72 flex flex-col">
+						{/* Header com dias e horas mais detalhado */}
+						<div className="flex mb-3">
+							<div className="w-12"></div> {/* Espaço para labels de hora */}
+							<div className="grid grid-cols-7 gap-1 flex-1">
+								{['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day, i) => (
+									<div key={i} className="text-center text-xs font-semibold text-gray-300 py-1">
+										{day}
+									</div>
+								))}
 							</div>
-							<span>Alta atividade</span>
+						</div>
+						
+						{/* Heatmap grid com labels de hora */}
+						<div className="flex-1 overflow-y-auto">
+							{Array.from({ length: 24 }, (_, hour) => (
+								<div key={hour} className="flex items-center mb-1">
+									{/* Label da hora */}
+									<div className="w-12 text-xs text-gray-400 text-right pr-2">
+										{String(hour).padStart(2, '0')}h
+									</div>
+									
+									{/* Células do heatmap para cada dia nesta hora */}
+									<div className="grid grid-cols-7 gap-1 flex-1">
+										{heat.map((dayData, dayIndex) => {
+											const value = dayData[hour] || 0;
+											const intensity = heatMax > 0 ? value / heatMax : 0;
+											
+											let bgColor;
+											if (value === 0) {
+												bgColor = 'rgba(55, 65, 81, 0.3)'; // gray-700 para vazio
+											} else if (intensity > 0.7) {
+												bgColor = `rgba(34, 197, 94, ${Math.max(0.4, intensity)})`; // green-500
+											} else if (intensity > 0.4) {
+												bgColor = `rgba(234, 179, 8, ${Math.max(0.4, intensity)})`; // yellow-500  
+											} else {
+												bgColor = `rgba(59, 130, 246, ${Math.max(0.3, intensity)})`; // blue-500
+											}
+											
+											return (
+												<div 
+													key={`${dayIndex}-${hour}`}
+													title={`${['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][dayIndex]} às ${String(hour).padStart(2, '0')}h: ${value} atividade${value !== 1 ? 's' : ''}`}
+													className="h-4 w-full rounded-sm transition-all duration-300 hover:scale-125 hover:shadow-lg cursor-pointer border"
+													style={{ 
+														backgroundColor: bgColor,
+														borderColor: value > 0 ? 'rgba(255,255,255,0.1)' : 'rgba(107,114,128,0.2)'
+													}}
+												/>
+											);
+										})}
+									</div>
+								</div>
+							))}
+						</div>
+						
+						{/* Legenda e estatísticas */}
+						<div className="mt-3 pt-3 border-t border-gray-700">
+							<div className="flex items-center justify-between">
+								{/* Legenda de cores */}
+								<div className="flex items-center gap-2 text-xs text-gray-400">
+									<span>Atividade:</span>
+									<div className="flex items-center gap-1">
+										<div className="w-3 h-3 rounded-sm bg-gray-700" title="Nenhuma atividade" />
+										<div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(59, 130, 246, 0.5)' }} title="Baixa" />
+										<div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(234, 179, 8, 0.7)' }} title="Média" />
+										<div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(34, 197, 94, 0.8)' }} title="Alta" />
+									</div>
+								</div>
+								
+								{/* Estatísticas */}
+								<div className="text-xs text-gray-400">
+									Pico: {heatMax} atividade{heatMax !== 1 ? 's' : ''}
+								</div>
+							</div>
 						</div>
 					</div>
 				</CardContent>

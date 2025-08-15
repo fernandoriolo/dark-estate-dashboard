@@ -113,15 +113,58 @@ export async function fetchDistribuicaoPorTipo() {
 
 export async function fetchFunilLeads() {
 	const { data, error } = await supabase
-		.from('vw_segura_metricas_funil_leads')
+		.from('vw_chart_funil_leads')
 		.select('estagio, total');
 	if (error) throw error;
-	return (data || []).map((r: any) => ({ name: (r?.estagio || 'Não informado') as string, value: Number(r.total || 0) }));
+	
+	// Ordenar pelo fluxo lógico do funil de vendas
+	const stageOrder = ['Novo Lead', 'Visita Agendada', 'Em Negociação', 'Fechamento'];
+	const stageMap = new Map(data.map((r: any) => [r.estagio, Number(r.total || 0)]));
+	
+	return stageOrder.map(stage => ({
+		name: stage,
+		value: stageMap.get(stage) || 0
+	})).filter(item => item.value > 0);
+}
+
+export async function fetchLeadsPorCorretor() {
+	const { data, error } = await supabase
+		.from('vw_chart_leads_por_corretor')
+		.select('corretor_nome, total_leads')
+		.limit(5); // Top 5 corretores
+	if (error) throw error;
+	return (data || []).map((r: any) => ({ 
+		name: r.corretor_nome || 'Sem corretor', 
+		value: Number(r.total_leads || 0) 
+	}));
+}
+
+export async function fetchLeadsCorretorEstagio() {
+	const { data, error } = await supabase
+		.from('vw_chart_leads_corretor_estagio')
+		.select('corretor_nome, estagio, total');
+	if (error) throw error;
+	
+	// Agrupar dados por corretor
+	const brokerMap = new Map<string, Record<string, number>>();
+	
+	(data || []).forEach((row: any) => {
+		const broker = row.corretor_nome || 'Sem corretor';
+		const stage = row.estagio || 'Não informado';
+		const count = Number(row.total || 0);
+		
+		if (!brokerMap.has(broker)) {
+			brokerMap.set(broker, {});
+		}
+		brokerMap.get(broker)![stage] = count;
+	});
+	
+	return brokerMap;
 }
 
 export async function fetchHeatmapAtividades() {
 	const { data, error } = await supabase
-		.from('vw_segura_metricas_mapa_calor_atividade')
+		.from('vw_chart_mapa_calor_atividade')
 		.select('dia_semana, hora, total');
 	if (error) throw error;
 	const grid: number[][] = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0));
