@@ -1461,13 +1461,28 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                       
                       {/* Address */}
                       <motion.div 
-                        className="flex items-center text-gray-400 text-sm mb-4"
+                        className="text-sm mb-4"
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.4 }}
                       >
-                        <MapPin className="h-4 w-4 mr-2 text-blue-400" />
-                        <span className="line-clamp-1">{property.address}</span>
+                        {property.address ? (
+                          <a
+                            href={`https://www.google.com/maps?q=${encodeURIComponent(property.address)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center text-gray-400 hover:text-blue-400 cursor-pointer"
+                            title="Abrir no Google Maps"
+                          >
+                            <MapPin className="h-4 w-4 mr-2 text-blue-400" />
+                            <span className="line-clamp-1">{property.address}</span>
+                          </a>
+                        ) : (
+                          <div className="flex items-center text-gray-400">
+                            <MapPin className="h-4 w-4 mr-2 text-blue-400" />
+                            <span className="line-clamp-1">{property.address}</span>
+                          </div>
+                        )}
                       </motion.div>
 
                       {/* Property Details */}
