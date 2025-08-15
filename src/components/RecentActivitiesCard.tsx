@@ -18,6 +18,58 @@ interface AuditLog {
 
 interface UserOption { id: string; name: string; role: Role }
 
+// Função para traduzir ações para português
+function formatAction(action: string): string {
+  const translations: Record<string, string> = {
+    'lead.created': 'Criou um lead',
+    'lead.updated': 'Atualizou um lead',
+    'lead.deleted': 'Excluiu um lead',
+    'lead.stage_changed': 'Alterou status do lead',
+    'property.created': 'Criou uma propriedade',
+    'property.updated': 'Atualizou uma propriedade',
+    'property.deleted': 'Excluiu uma propriedade',
+    'contract.created': 'Criou um contrato',
+    'contract.updated': 'Atualizou um contrato',
+    'contract.deleted': 'Excluiu um contrato',
+    'whatsapp.message_sent': 'Enviou mensagem WhatsApp',
+    'whatsapp.chat_created': 'Criou conversa WhatsApp',
+    'whatsapp.instance_created': 'Criou instância WhatsApp',
+    'whatsapp.instance_status_updated': 'Atualizou status da instância',
+    'whatsapp.instance_connected': 'Conectou instância WhatsApp',
+    'whatsapp.instance_disconnected': 'Desconectou instância WhatsApp',
+    'whatsapp.instance_qr_generated': 'Gerou QR Code WhatsApp',
+    'user.login': 'Fez login',
+    'user.logout': 'Fez logout',
+    'user.created': 'Criou um usuário',
+    'user.profile_updated': 'Atualizou perfil',
+    'user.deactivated': 'Desativou usuário',
+    'permissions.updated': 'Atualizou permissões',
+    'bulk_whatsapp.started': 'Iniciou disparo em massa',
+    'bulk_whatsapp.finished': 'Finalizou disparo em massa',
+    'agenda.event_created': 'Criou evento na agenda',
+    'system.test': 'Executou teste do sistema',
+  };
+  return translations[action] || action;
+}
+
+// Função para traduzir recursos para português
+function formatResource(resource: string): string {
+  const translations: Record<string, string> = {
+    'lead': 'Lead',
+    'property': 'Propriedade',
+    'contract': 'Contrato',
+    'whatsapp_message': 'Mensagem WhatsApp',
+    'whatsapp_chat': 'Chat WhatsApp',
+    'whatsapp_instance': 'Instância WhatsApp',
+    'user_profile': 'Perfil de Usuário',
+    'permission': 'Permissão',
+    'bulk_whatsapp': 'Disparo em Massa',
+    'agenda_event': 'Evento da Agenda',
+    'test_resource': 'Recurso de Teste',
+  };
+  return translations[resource] || resource;
+}
+
 export function RecentActivitiesCard() {
   const { profile } = useUserProfile();
   const [roleFilter, setRoleFilter] = useState<Role | 'all'>('all');
@@ -132,25 +184,48 @@ export function RecentActivitiesCard() {
         {/* Lista de atividades */}
         <div className="space-y-3">
           {logs.map((log) => (
-            <div key={log.id} className="p-3 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 transition-colors">
+            <div key={log.id} className="p-3 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 transition-colors cursor-pointer">
               <div className="flex items-center justify-between">
                 <div className="text-sm text-gray-300">
-                  <span className="font-medium text-white">{log.action}</span>
+                  <span className="font-medium text-white">{formatAction(log.action)}</span>
                   <span className="ml-2">em</span>
-                  <span className="ml-2 text-white">{log.resource}</span>
-                  <span className="ml-2 text-gray-400">#{log.resource_id}</span>
+                  <span className="ml-2 text-blue-400">{formatResource(log.resource)}</span>
+                  {log.resource_id && log.resource_id !== 'undefined' && (
+                    <span className="ml-2 text-gray-400">#{log.resource_id.slice(0, 8)}</span>
+                  )}
                 </div>
                 <div className="text-xs text-gray-400">
-                  {new Date(log.created_at).toLocaleString('pt-BR')}
+                  {new Date(log.created_at).toLocaleString('pt-BR', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
                 </div>
               </div>
               {log.meta && Object.keys(log.meta).length > 0 && (
-                <pre className="mt-2 text-xs text-gray-300 whitespace-pre-wrap break-all">{JSON.stringify(log.meta, null, 2)}</pre>
+                <div className="mt-2 text-xs text-gray-300">
+                  {Object.entries(log.meta).map(([key, value]) => (
+                    <div key={key} className="mb-1">
+                      <span className="text-gray-400">{key}:</span> 
+                      <span className="ml-1 text-white">{
+                        typeof value === 'object' ? JSON.stringify(value) : String(value)
+                      }</span>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           ))}
+          {loading && (
+            <div className="text-center py-6 text-gray-400">Carregando atividades...</div>
+          )}
           {!loading && logs.length === 0 && (
-            <div className="text-center py-6 text-gray-400">Sem atividades</div>
+            <div className="text-center py-6 text-gray-400">
+              <div className="mb-2">📝 Nenhuma atividade encontrada</div>
+              <div className="text-xs">As ações dos usuários aparecerão aqui automaticamente</div>
+            </div>
           )}
         </div>
 

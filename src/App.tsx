@@ -11,6 +11,7 @@ import { ContractTemplatesProvider } from "./contexts/ContractTemplatesContext";
 import { supabase } from './integrations/supabase/client';
 import { Session } from '@supabase/supabase-js';
 import { useUserProfile } from './hooks/useUserProfile';
+import { useAuthAudit } from './hooks/useAuthAudit';
 
 function AppContent() {
   const { profile, loading: profileLoading } = useUserProfile();
@@ -20,6 +21,9 @@ function AppContent() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [changing, setChanging] = useState(false);
   const [changeError, setChangeError] = useState<string | null>(null);
+  
+  // Hook para auditoria de autenticação
+  useAuthAudit();
 
   if (profileLoading) {
     return (

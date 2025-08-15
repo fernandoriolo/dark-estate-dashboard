@@ -402,11 +402,6 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
       <div className="grid grid-cols-1 gap-6">
         <RecentActivitiesCard />
       </div>
-
-      {/* Novo card: Atividades Recentes */}
-      <div className="grid grid-cols-1 gap-6">
-        <RecentActivitiesCard />
-      </div>
     </div>
   );
 }
