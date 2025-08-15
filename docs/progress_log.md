@@ -255,3 +255,35 @@ Próximos passos sugeridos:
 - Atualizada a RPC `public.list_company_users` para modo single-tenant: remove qualquer filtro por `company_id` e retorna todos os registros de `user_profiles`, mantendo filtros opcionais de `search`, `roles` e paginação (`limit_count`, `offset_count`).
 - Assinatura da função preservada para compatibilidade do frontend; parâmetro `target_company_id` é ignorado.
 - Migration adicionada: `supabase/migrations/20250813130000_list_company_users_remove_company_scope.sql`.
+
+## 2025-01-20 — Melhorias nos gráficos do dashboard
+- **Paleta de cores**: Adicionadas cores faltantes (`textPrimary`, `textSecondary`, `secondary`, `tertiary`, `background`) no `chartPalette` para compatibilidade TypeScript.
+- **Gauge (Taxa de Ocupação)**: 
+  - Redesenho completo do SVG com gradientes profissionais usando as cores do `chartPalette`
+  - Corrigido alinhamento vertical com o gráfico VGV através de flexbox e ajustes de altura
+  - Eliminados cortes nas bordas ajustando `viewBox` para `300x220` com `overflow-visible`
+  - Adicionados efeitos visuais: sombras, gradientes e hover effects
+  - Texto central melhorado com tipografia hierárquica
+- **Gráfico VGV**: Aplicada solução completa para layout e centralização:
+  - Formato ultra compacto sem "R$" (200M, 150M, 100M, 50M) para economizar espaço
+  - Gráfico centralizado com flexbox (`justify-center items-center`)
+  - Tamanho aumentado: altura de 280px → 320px, container de h-72 → h-80
+  - Margens equilibradas: left 80px, right 40px para centralização perfeita
+  - `yAxis width: 60` otimizado para máximo espaço do gráfico
+  - `tickLabelStyle` otimizado: fontSize 10px, fontWeight 500, fonte Inter
+- **Dados dos gráficos organizados**:
+  - Criadas views específicas: `vw_chart_leads_por_canal` e `vw_chart_distribuicao_tipo_imovel`
+  - Corrigido problema de `company_id` nulo na tabela `imoveisvivareal` usando fallback
+  - Atualizado `src/services/metrics.ts` para usar as novas views de dados
+  - Melhorado normalizador de tipos (`normalizePropertyType`) para traduzir tipos em inglês:
+    - Apartment → Apartamento
+    - Home/Sobrado → Casa/Sobrado  
+    - Land Lot → Terreno
+    - Building → Edifício
+    - Industrial → Industrial
+    - etc.
+- **Erros TypeScript**: Removidas propriedades incompatíveis dos tooltips e legends para eliminar erros de linting
+- **UX dos gráficos melhorada**:
+  - **Leads por Canal**: Labels do eixo Y agora aparecem completos (sem abreviação), com margem esquerda aumentada para 120px e width do yAxis de 100px
+  - **Distribuição por Tipo**: Cores muito mais diferenciadas usando nova paleta `pieChartColors` com 10 cores contrastantes, números incluídos na legenda (ex.: "Apartamento (48)"), espaçamento entre fatias aumentado
+- **Resultado**: Gráficos agora têm dados corretos, alinhamento perfeito, visual profissional, melhor legibilidade e sem erros de compilação

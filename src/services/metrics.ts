@@ -2,34 +2,95 @@ import { supabase } from "@/integrations/supabase/client";
 import { monthKey } from "@/lib/charts/formatters";
 import { normalizePropertyType } from "@/lib/charts/normalizers";
 
+export type VgvPeriod = 'todo' | 'anual' | 'mensal' | 'semanal' | 'diario';
+
 export async function fetchVgvMensalUltimos12Meses() {
+	return fetchVgvByPeriod('mensal');
+}
+
+export async function fetchVgvByPeriod(period: VgvPeriod = 'mensal') {
 	const now = new Date();
-	const start = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+	let start: Date;
+	let groupBy: string;
+	let dateFormat: (d: Date) => string;
+	let periods: number;
+
+	switch (period) {
+		case 'todo':
+			start = new Date(2020, 0, 1); // Início histórico
+			groupBy = 'year';
+			dateFormat = (d: Date) => d.getFullYear().toString();
+			periods = now.getFullYear() - 2020 + 1;
+			break;
+		case 'anual':
+			start = new Date(now.getFullYear() - 4, 0, 1); // 5 anos
+			groupBy = 'year';
+			dateFormat = (d: Date) => d.getFullYear().toString();
+			periods = 5;
+			break;
+		case 'semanal':
+			start = new Date(now.getTime() - 12 * 7 * 24 * 60 * 60 * 1000); // 12 semanas
+			groupBy = 'week';
+			dateFormat = (d: Date) => {
+				const week = Math.floor((d.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000));
+				return `S${week + 1}`;
+			};
+			periods = 12;
+			break;
+		case 'diario':
+			start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // 30 dias
+			groupBy = 'day';
+			dateFormat = (d: Date) => d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+			periods = 30;
+			break;
+		default: // mensal
+			start = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+			groupBy = 'month';
+			dateFormat = (d: Date) => monthKey(d);
+			periods = 12;
+	}
+
 	const { data, error } = await supabase
 		.from('vw_segura_metricas_vgv_mensal')
 		.select('mes, soma_vgv, total_contratos')
 		.gte('mes', start.toISOString())
 		.order('mes', { ascending: true });
+
 	if (error) throw error;
-	const byMonth = new Map<string, { vgv: number; qtd: number }>();
-	for (let i = 0; i < 12; i++) {
-		const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
-		byMonth.set(monthKey(d), { vgv: 0, qtd: 0 });
+
+	const byPeriod = new Map<string, { vgv: number; qtd: number }>();
+	
+	// Inicializar períodos
+	for (let i = 0; i < periods; i++) {
+		let d: Date;
+		if (groupBy === 'month') {
+			d = new Date(start.getFullYear(), start.getMonth() + i, 1);
+		} else if (groupBy === 'year') {
+			d = new Date(start.getFullYear() + i, 0, 1);
+		} else if (groupBy === 'week') {
+			d = new Date(start.getTime() + i * 7 * 24 * 60 * 60 * 1000);
+		} else { // day
+			d = new Date(start.getTime() + i * 24 * 60 * 60 * 1000);
+		}
+		byPeriod.set(dateFormat(d), { vgv: 0, qtd: 0 });
 	}
+
+	// Processar dados
 	(data || []).forEach((r: any) => {
 		const d = new Date(r.mes as any);
-		const k = monthKey(d);
-		const cur = byMonth.get(k);
+		const k = dateFormat(d);
+		const cur = byPeriod.get(k);
 		if (!cur) return;
 		cur.vgv += Number(r.soma_vgv || 0);
 		cur.qtd += Number(r.total_contratos || 0);
 	});
-	return Array.from(byMonth.entries()).map(([k, v]) => ({ month: k, ...v }));
+
+	return Array.from(byPeriod.entries()).map(([k, v]) => ({ month: k, ...v }));
 }
 
 export async function fetchLeadsPorCanalTop8() {
 	const { data, error } = await supabase
-		.from('vw_segura_metricas_leads_por_canal')
+		.from('vw_chart_leads_por_canal')
 		.select('canal_bucket, total');
 	if (error) throw error;
 	return (data || [])
@@ -39,7 +100,7 @@ export async function fetchLeadsPorCanalTop8() {
 
 export async function fetchDistribuicaoPorTipo() {
 	const { data, error } = await supabase
-		.from('vw_segura_metricas_distribuicao_tipo_imovel')
+		.from('vw_chart_distribuicao_tipo_imovel')
 		.select('tipo_imovel, total');
 	if (error) throw error;
 	const counts: Record<string, number> = {};
@@ -77,15 +138,25 @@ export async function fetchHeatmapAtividades() {
 }
 
 export async function fetchTaxaOcupacao() {
-	const { data, error } = await supabase
-		.from('vw_segura_metricas_taxa_ocupacao')
-		.select('taxa_ocupacao')
-		.maybeSingle();
+	const { data: distData, error } = await supabase
+		.from('vw_segura_metricas_ocupacao_disponibilidade')
+		.select('disponibilidade, total, percentual');
 	if (error) throw error;
-	const total = await supabase.from('imoveisvivareal').select('id', { count: 'exact', head: true }) as unknown as { count: number | null };
-	const disponiveis = await supabase.from('imoveisvivareal').select('id', { count: 'exact', head: true }).eq('disponibilidade', 'disponivel') as unknown as { count: number | null };
-	const t = total.count || 0; const d = disponiveis.count || 0;
-	const taxa = Number((data as any)?.taxa_ocupacao || 0);
-	const ocupacao = Math.max(0, Math.min(100, taxa * 100));
-	return { ocupacao, total: t, disponiveis: d };
+	const totalCount = (distData || []).reduce((s: number, r: any) => s + Number(r.total || 0), 0);
+	const disponiveisCount = (distData || []).find((r: any) => (r.disponibilidade || '').toLowerCase() === 'disponivel')?.total || 0;
+	const reformaCount = (distData || []).find((r: any) => (r.disponibilidade || '').toLowerCase() === 'reforma')?.total || 0;
+	const indisponiveisCount = (distData || []).find((r: any) => (r.disponibilidade || '').toLowerCase() === 'indisponivel')?.total || 0;
+	const ocupacao = totalCount > 0 ? ((Number(totalCount) - Number(disponiveisCount)) / Number(totalCount)) * 100 : 0;
+	return {
+		ocupacao,
+		total: Number(totalCount || 0),
+		disponiveis: Number(disponiveisCount || 0),
+		reforma: Number(reformaCount || 0),
+		indisponiveis: Number(indisponiveisCount || 0),
+		breakdown: (distData || []).map((r: any) => ({
+			status: (r.disponibilidade || '').toString(),
+			total: Number(r.total || 0),
+			percent: Number((r.percentual || 0) * 100)
+		}))
+	};
 }
