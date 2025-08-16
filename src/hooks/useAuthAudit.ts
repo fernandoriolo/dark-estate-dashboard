@@ -1,47 +1,49 @@
-import { useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { useEffect, useRef } from 'react';
+import { useAuthManager } from './useAuthManager';
 import { logAudit } from '@/lib/audit/logger';
 
 export function useAuthAudit() {
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event === 'SIGNED_IN' && session?.user) {
-          try {
-            await logAudit({
-              action: 'user.login',
-              resource: 'user_profile',
-              resourceId: session.user.id,
-              meta: {
-                email: session.user.email,
-                provider: session.user.app_metadata?.provider || 'email',
-                login_time: new Date().toISOString()
-              }
-            });
-          } catch (error) {
-            console.warn('Erro ao registrar login:', error);
-          }
-        }
-        
-        if (event === 'SIGNED_OUT') {
-          try {
-            // Como o usuário já foi deslogado, usar o ID do session anterior se disponível
-            const userId = session?.user?.id || 'unknown';
-            await logAudit({
-              action: 'user.logout',
-              resource: 'user_profile',
-              resourceId: userId,
-              meta: {
-                logout_time: new Date().toISOString()
-              }
-            });
-          } catch (error) {
-            console.warn('Erro ao registrar logout:', error);
-          }
-        }
-      }
-    );
+  const { session } = useAuthManager();
+  const lastSessionRef = useRef<string | null>(null);
 
-    return () => subscription.unsubscribe();
-  }, []);
+  useEffect(() => {
+    const currentUserId = session?.user?.id || null;
+    const lastUserId = lastSessionRef.current;
+
+    // Login detectado
+    if (currentUserId && currentUserId !== lastUserId) {
+      try {
+        logAudit({
+          action: 'user.login',
+          resource: 'user_profile',
+          resourceId: currentUserId,
+          meta: {
+            email: session?.user?.email,
+            provider: session?.user?.app_metadata?.provider || 'email',
+            login_time: new Date().toISOString()
+          }
+        });
+      } catch (error) {
+        console.warn('Erro ao registrar login:', error);
+      }
+    }
+
+    // Logout detectado
+    if (!currentUserId && lastUserId) {
+      try {
+        logAudit({
+          action: 'user.logout',
+          resource: 'user_profile',
+          resourceId: lastUserId,
+          meta: {
+            logout_time: new Date().toISOString()
+          }
+        });
+      } catch (error) {
+        console.warn('Erro ao registrar logout:', error);
+      }
+    }
+
+    lastSessionRef.current = currentUserId;
+  }, [session]);
 }

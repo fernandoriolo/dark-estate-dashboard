@@ -13,7 +13,7 @@ const theme = createTheme({
 }, ptBR);
 
 createRoot(document.getElementById("root")!).render(
-  // DESABILITADO StrictMode temporariamente para debug
+  // TEMPORARIAMENTE DESABILITADO StrictMode para resolver problema de recarregamento
   // <React.StrictMode>
     <ErrorBoundary>
       <SafeThemeProvider theme={theme}>

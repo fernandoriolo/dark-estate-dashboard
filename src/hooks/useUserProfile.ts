@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { User } from '@supabase/supabase-js';
+import { useAuthManager } from './useAuthManager';
 
 export interface UserProfile {
   id: string;
@@ -30,11 +31,17 @@ export interface Company {
 }
 
 export function useUserProfile() {
+  const { session, user: authUser } = useAuthManager();
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [company, setCompany] = useState<Company | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Refs para controle de estado
+  const isLoadingRef = useRef(false);
+  const lastLoadTimeRef = useRef(0);
+  const mountedRef = useRef(true);
 
   // Verificar se é gestor
   const isManager = profile?.role === 'gestor' || profile?.role === 'admin';
@@ -42,15 +49,51 @@ export function useUserProfile() {
   // Verificar se é admin
   const isAdmin = profile?.role === 'admin';
 
-  // Carregar dados do usuário
-  const loadUserData = async () => {
+  // Carregar dados do usuário com proteção contra carregamentos múltiplos
+  const loadUserData = useCallback(async (force = false) => {
+    const now = Date.now();
+    
+    // Verificar se o componente ainda está montado
+    if (!mountedRef.current) {
+      return;
+    }
+    
+    // Prevenir carregamentos múltiplos simultâneos
+    if (isLoadingRef.current && !force) {
+      return;
+    }
+    
+    // Prevenir carregamentos muito frequentes (debounce de 5 segundos)
+    if (!force && (now - lastLoadTimeRef.current) < 5000) {
+      return;
+    }
+
+    // Se já temos um perfil válido e não é um carregamento forçado, não recarregar
+    // Comentado temporariamente para resolver problema de travamento
+    // if (!force && profile && user) {
+    //   return;
+    // }
+
     try {
-      setLoading(true);
+      isLoadingRef.current = true;
+      lastLoadTimeRef.current = now;
+      
+      // Só mostrar loading se for o primeiro carregamento ou não temos perfil
+      if (force || !profile) {
+        setLoading(true);
+      }
       setError(null);
 
       // Obter usuário autenticado
       const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError) throw userError;
+      if (userError) {
+        throw userError;
+      }
+
+      // Verificar se o componente ainda está montado antes de continuar
+      if (!mountedRef.current) {
+        return;
+      }
 
       if (!user) {
         setUser(null);
@@ -68,8 +111,12 @@ export function useUserProfile() {
         .eq('id', user.id)
         .single();
 
+      // Verificar se o componente ainda está montado antes de continuar
+      if (!mountedRef.current) {
+        return;
+      }
+
       if (profileError) {
-        console.error('Erro ao buscar perfil:', profileError);
         throw profileError;
       }
 
@@ -83,18 +130,20 @@ export function useUserProfile() {
         return;
       }
 
-      setProfile(profileData);
-
-      // Não precisamos mais de dados da empresa
+      setProfile(profileData as UserProfile);
       setCompany(null);
 
     } catch (error: any) {
-      console.error('Erro ao carregar dados do usuário:', error);
-      setError(error.message);
+      if (mountedRef.current) {
+        setError(error.message);
+      }
     } finally {
-      setLoading(false);
+      isLoadingRef.current = false;
+      if (mountedRef.current) {
+        setLoading(false);
+      }
     }
-  };
+  }, []);
 
   // Atualizar perfil
   const updateProfile = async (updates: Partial<UserProfile>) => {
@@ -110,7 +159,7 @@ export function useUserProfile() {
 
       if (error) throw error;
 
-      setProfile(data);
+      setProfile(data as UserProfile);
       return data;
     } catch (error: any) {
       console.error('Erro ao atualizar perfil:', error);
@@ -141,7 +190,7 @@ export function useUserProfile() {
 
       if (error) throw error;
 
-      setProfile(data);
+      setProfile(data as UserProfile);
       return data;
     } catch (error: any) {
       console.error('Erro ao criar perfil:', error);
@@ -323,26 +372,43 @@ export function useUserProfile() {
     }
   };
 
+  // Reagir a mudanças de sessão do gerenciador centralizado
   useEffect(() => {
-    loadUserData();
-
-    // Escutar mudanças de autenticação
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT') {
-        setUser(null);
-        setProfile(null);
-        setCompany(null);
-      } else if (event === 'SIGNED_IN' && session) {
-        loadUserData();
+    if (session?.user) {
+      setUser(session.user);
+      // Só carregar perfil se não temos um ou se o usuário mudou
+      if (!profile || profile.id !== session.user.id) {
+        loadUserData(true);
       }
-    });
+    } else {
+      // Limpar estado quando não há sessão
+      setUser(null);
+      setProfile(null);
+      setCompany(null);
+      setError(null);
+      setLoading(false);
+    }
+  }, [session]);
 
-    return () => subscription.unsubscribe();
+  // Carregamento inicial
+  useEffect(() => {
+    if (authUser) {
+      loadUserData(true);
+    }
+  }, []);
+
+  // Cleanup na desmontagem
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   // Assinar mudanças no próprio perfil para desconectar imediatamente se desativado
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      return;
+    }
 
     const channel = supabase
       .channel(`user-profile-${user.id}`)
@@ -383,6 +449,6 @@ export function useUserProfile() {
     activateUser,
     deleteUser,
     createNewUser,
-    refreshData: loadUserData
+    refreshData: () => loadUserData(true)
   };
 } 
