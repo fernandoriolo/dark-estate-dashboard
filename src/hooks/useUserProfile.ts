@@ -219,6 +219,29 @@ export function useUserProfile() {
     }
   };
 
+  // Reativar usuário (apenas para admins)
+  const activateUser = async (userId: string) => {
+    try {
+      if (!isAdmin) {
+        throw new Error('Sem permissão para reativar usuários');
+      }
+
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .update({ is_active: true })
+        .eq('id', userId)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      return data;
+    } catch (error: any) {
+      console.error('Erro ao reativar usuário:', error);
+      throw error;
+    }
+  };
+
   // Criar convite para novo usuário (apenas para admins)
   const createNewUser = async (userData: {
     email: string;
@@ -324,6 +347,7 @@ export function useUserProfile() {
     getCompanyUsers,
     changeUserRole,
     deactivateUser,
+    activateUser,
     createNewUser,
     refreshData: loadUserData
   };

@@ -24,7 +24,8 @@ import {
   XCircle,
   AlertTriangle,
   MoreVertical,
-  UserX
+  UserX,
+  RefreshCw
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
@@ -62,7 +63,7 @@ export function UserManagementView() {
   useEffect(() => { fetchUsers(searchTerm, roleFilter); }, [searchTerm, roleFilter]);
 
   // TODOS OS HOOKS DEVEM VIR PRIMEIRO - NUNCA APÓS RETURNS CONDICIONAIS
-  const { profile, isManager, isAdmin, deactivateUser, createNewUser } = useUserProfile();
+  const { profile, isManager, isAdmin, deactivateUser, activateUser, createNewUser } = useUserProfile();
   const [error, setError] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -113,6 +114,7 @@ export function UserManagementView() {
     if (!selectedUser || !editForm) return;
     try {
       const updates: any = {
+        user_id: selectedUser.id,
         full_name: editForm.full_name,
         email: editForm.email,
         phone: editForm.phone,
@@ -120,12 +122,35 @@ export function UserManagementView() {
       if (isAdmin) {
         updates.role = editForm.role;
       }
-      const { error: upErr } = await supabase
-        .from('user_profiles')
-        .update(updates)
-        .eq('id', selectedUser.id);
-      if (upErr) throw upErr;
-      try { await logAudit({ action: 'user.profile_updated', resource: 'user_profile', resourceId: selectedUser.id, meta: updates }); } catch {}
+
+      // Usar Edge Function para sincronizar auth.users e user_profiles
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error('Sessão inválida para atualizar usuário');
+
+      const { data: fnData, error: fnError } = await supabase.functions.invoke('admin-update-user', {
+        body: updates,
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      if (fnError) {
+        throw new Error(fnError.message || 'Falha ao atualizar usuário');
+      }
+      if ((fnData as any)?.error) {
+        throw new Error((fnData as any).error);
+      }
+
+      try { 
+        await logAudit({ 
+          action: 'user.profile_updated', 
+          resource: 'user_profile', 
+          resourceId: selectedUser.id, 
+          meta: updates 
+        }); 
+      } catch {}
+      
       await fetchUsers(searchTerm, roleFilter);
       setShowEditModal(false);
       setSelectedUser(null);
@@ -142,6 +167,19 @@ export function UserManagementView() {
         await deactivateUser(userId);
         try { await logAudit({ action: 'user.deactivated', resource: 'user_profile', resourceId: userId, meta: null }); } catch {}
         await fetchUsers(searchTerm, roleFilter); // Recarregar a lista
+      } catch (error: any) {
+        setError(error.message);
+      }
+    }
+  };
+
+  // Reativar usuário
+  const handleActivateUser = async (userId: string) => {
+    if (window.confirm('Deseja reativar este usuário?')) {
+      try {
+        await activateUser(userId);
+        try { await logAudit({ action: 'user.activated', resource: 'user_profile', resourceId: userId, meta: null }); } catch {}
+        await fetchUsers(searchTerm, roleFilter);
       } catch (error: any) {
         setError(error.message);
       }
@@ -476,14 +514,24 @@ export function UserManagementView() {
                     <Edit className="h-4 w-4 mr-2" />
                     Editar
                   </DropdownMenuItem>
-                              {(isAdmin || isManager) && user.is_active && (
-                                <DropdownMenuItem 
-                                  onClick={() => handleDeactivateUser(user.id)}
-                                  className="text-red-400 hover:text-red-300"
-                                >
-                                  <UserX className="h-4 w-4 mr-2" />
-                                  Desativar
-                                </DropdownMenuItem>
+                              {(isAdmin || isManager) && (
+                                user.is_active ? (
+                                  <DropdownMenuItem 
+                                    onClick={() => handleDeactivateUser(user.id)}
+                                    className="text-red-400 hover:text-red-300"
+                                  >
+                                    <UserX className="h-4 w-4 mr-2" />
+                                    Desativar
+                                  </DropdownMenuItem>
+                                ) : (
+                                  <DropdownMenuItem 
+                                    onClick={() => handleActivateUser(user.id)}
+                                    className="text-emerald-400 hover:text-emerald-300"
+                                  >
+                                    <RefreshCw className="h-4 w-4 mr-2" />
+                                    Reativar
+                                  </DropdownMenuItem>
+                                )
                               )}
                             </DropdownMenuContent>
                           </DropdownMenu>
