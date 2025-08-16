@@ -472,11 +472,19 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
 
   const loadingCombined = loading || loadingImoveis;
 
-  console.log('🏠 PropertyList - Estado atual:', { 
-    propertiesCount: effectiveProperties.length, 
-    loading: loadingCombined,
-    sample: effectiveProperties.slice(0, 2),
-  });
+  // Debug log apenas quando há mudanças significativas (evita loop)
+  const prevPropertiesCount = useRef(effectiveProperties.length);
+  const prevLoading = useRef(loadingCombined);
+  
+  if (prevPropertiesCount.current !== effectiveProperties.length || prevLoading.current !== loadingCombined) {
+    console.log('🏠 PropertyList - Estado atual:', { 
+      propertiesCount: effectiveProperties.length, 
+      loading: loadingCombined,
+      sample: effectiveProperties.slice(0, 2),
+    });
+    prevPropertiesCount.current = effectiveProperties.length;
+    prevLoading.current = loadingCombined;
+  }
 
   const filteredProperties = effectiveProperties; // server-side filters
 
@@ -542,7 +550,12 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
     }
   };
 
-  console.log('🔍 Propriedades filtradas:', filteredProperties.length);
+  // Log de filtro apenas quando quantidade muda (evita spam)
+  const prevFilteredCount = useRef(filteredProperties.length);
+  if (prevFilteredCount.current !== filteredProperties.length) {
+    console.log('🔍 Propriedades filtradas:', filteredProperties.length);
+    prevFilteredCount.current = filteredProperties.length;
+  }
 
   const particleTypes = ['default', 'star', 'spark', 'glow'];
 

@@ -321,17 +321,20 @@ export const ContractTemplatesProvider: React.FC<ContractTemplatesProviderProps>
     }
   };
 
-  // Buscar templates ao montar o componente
+  // Buscar templates ao montar o componente (apenas uma vez)
   useEffect(() => {
     console.log('🚀 Inicializando ContractTemplatesProvider...');
     fetchTemplates();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Configurar atualizações em tempo real (apenas uma vez)
   useEffect(() => {
     let channel: any = null;
+    let mounted = true;
 
     const setupRealTimeUpdates = () => {
+      if (!mounted) return;
+      
       channel = supabase
         .channel('contract_templates_realtime')
         .on(
@@ -342,6 +345,7 @@ export const ContractTemplatesProvider: React.FC<ContractTemplatesProviderProps>
             table: 'contract_templates'
           },
           (payload) => {
+            if (!mounted) return;
             console.log('📡 Mudança em contract_templates:', payload);
             
             if (payload.eventType === 'INSERT') {
@@ -363,21 +367,25 @@ export const ContractTemplatesProvider: React.FC<ContractTemplatesProviderProps>
           }
         )
         .subscribe((status) => {
-          console.log('📡 Status do canal real-time:', status);
+          if (mounted) {
+            console.log('📡 Status do canal real-time:', status);
+          }
         });
     };
 
-    if (!error) {
+    if (!error && mounted) {
       setupRealTimeUpdates();
     }
 
     return () => {
+      mounted = false;
       if (channel) {
         console.log('🧹 Removendo canal real-time...');
         supabase.removeChannel(channel);
+        channel = null;
       }
     };
-  }, [error]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const contextValue: ContractTemplatesContextType = {
     templates,

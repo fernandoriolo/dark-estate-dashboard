@@ -592,11 +592,13 @@ const PlantaoView = () => {
           sat_works: dayMap['Sábado'].works, sat_start: dayMap['Sábado'].start, sat_end: dayMap['Sábado'].end,
           sun_works: dayMap['Domingo'].works, sun_start: dayMap['Domingo'].start, sun_end: dayMap['Domingo'].end,
         } as any;
-        // upsert por (calendar_id, assigned_user_id) quando houver assignation; senão por (user_id, calendar_id)
-        const onConflictKeys = effectiveAssigned ? 'calendar_id,assigned_user_id' : 'user_id,calendar_id';
+        // upsert usando unique constraint existente
         const { error } = await supabase
           .from('oncall_schedules')
-          .upsert(payload, { onConflict: onConflictKeys });
+          .upsert(payload, { 
+            onConflict: effectiveAssigned ? 'calendar_id,assigned_user_id' : 'user_id,calendar_id',
+            ignoreDuplicates: false 
+          });
         if (error) throw error;
         toast({ description: 'Escala salva no banco de dados' });
         setDirtyCalendars(prev => ({ ...prev, [calendarId]: false }));

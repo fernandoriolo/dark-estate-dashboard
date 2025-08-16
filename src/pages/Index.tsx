@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { usePageVisibility } from "../hooks/usePageVisibility";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import React from "react";
 import AddImovelModal from "@/components/AddImovelModal";
@@ -46,6 +47,7 @@ type View =
 const Index = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const isPageVisible = usePageVisibility();
   const { profile, loading: profileLoading } = useUserProfile();
   
   // Função para obter a página inicial baseada na role
@@ -155,7 +157,12 @@ const Index = () => {
     // Apenas navegar se realmente necessário
     const targetPath = `/${currentView}`;
     
-    console.log(`useEffect: currentView=${currentView}, location.pathname=${location.pathname}, targetPath=${targetPath}`);
+    console.log(`useEffect: currentView=${currentView}, location.pathname=${location.pathname}, targetPath=${targetPath}, isPageVisible=${isPageVisible}`);
+    
+    // Não executar navegação se a página não estiver visível (evita loops ao voltar para aba)
+    if (!isPageVisible) {
+      return;
+    }
     
     // Verificar se já estamos no caminho correto
     if (location.pathname === targetPath && lastNavigatedPath.current === targetPath) {
@@ -201,7 +208,7 @@ const Index = () => {
         navigate({ pathname: targetPath, search: newSearch }, { replace: true });
       }
     }
-  }, [currentView, navigate, location.pathname, location.search]);
+  }, [currentView, navigate, location.pathname, location.search, isPageVisible]);
 
 
 

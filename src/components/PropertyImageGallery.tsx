@@ -164,7 +164,7 @@ export function PropertyImageGallery({
               <div className="flex gap-2 w-max px-2 mx-auto max-w-[94%]">
                 {images.map((image, index) => (
                   <button
-                    key={image.id}
+                    key={`${image.id}-${index}`}
                     onClick={() => handleThumbnailClick(index)}
                     className={`flex-shrink-0 w-16 h-16 rounded border-2 overflow-hidden transition-all ${
                       index === safeImageIndex
