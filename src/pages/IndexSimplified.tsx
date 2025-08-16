@@ -1,8 +1,8 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { useBasicNavigation, View } from "../hooks/useBasicNavigation";
+import { useSimpleNavigation, View } from "../hooks/useSimpleNavigation";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import React from "react";
-import { AddImovelModal } from "@/components/AddImovelModal";
+import AddImovelModal from "@/components/AddImovelModal";
 import { AppSidebar } from "@/components/AppSidebar";
 import { DashboardHeader } from "@/components/DashboardHeader";
 
@@ -28,17 +28,36 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { useUserProfile } from "@/hooks/useUserProfile";
 
 const Index = () => {
-  const { currentView, changeView } = useBasicNavigation();
-  // HOOKS TEMPORARIAMENTE DESABILITADOS PARA DEBUG
-  // const { profile, loading: profileLoading } = useUserProfile();
-  // const { loading } = useImoveisVivaReal();
+  const { currentView, changeView } = useSimpleNavigation();
+  const { profile, loading: profileLoading } = useUserProfile();
+  const { loading } = useImoveisVivaReal();
   
   console.log(`🚀 Index renderizado - currentView: ${currentView}`);
   
-  // REMOVIDO: useEffect de redirecionamento que pode estar causando loops
-  // O redirecionamento será manual se necessário
+  // Redirecionamento inicial baseado na role do usuário (APENAS UMA VEZ)
+  useEffect(() => {
+    if (!profileLoading && profile) {
+      const currentPath = window.location.pathname.replace(/^\//, "");
+      
+      // Só redirecionar se estiver na raiz
+      if (!currentPath || currentPath === '') {
+        const defaultView = profile.role === 'corretor' ? 'properties' : 'dashboard';
+        changeView(defaultView as View, 'initial-redirect');
+      }
+    }
+  }, [profile, profileLoading, changeView]); // Dependências mínimas
 
-  // REMOVIDO: Event listeners globais que podem estar causando problemas
+  // Event listeners globais (simplificados)
+  useEffect(() => {
+    const handler = (e: any) => {
+      const target = e?.detail as View;
+      if (target) {
+        changeView(target, "app-navigate-event");
+      }
+    };
+    window.addEventListener("app:navigate", handler as any);
+    return () => window.removeEventListener("app:navigate", handler as any);
+  }, [changeView]);
 
   const renderContent = () => {
     console.log(`🎬 Renderizando conteúdo para: ${currentView}`);
@@ -48,14 +67,14 @@ const Index = () => {
         return (
           <DashboardContent
             properties={[]}
-            loading={false}
+            loading={loading}
             onNavigateToAgenda={() => changeView("agenda", "dashboard-button")}
           />
         );
       case "reports":
         return <ReportsView />;
       case "properties":
-        return <PropertyList properties={[]} loading={false} onAddNew={() => {}} />;
+        return <PropertyList properties={[]} loading={loading} onAddNew={() => {}} />;
       case "contracts":
         return <ContractsView />;
       case "agenda":
@@ -81,7 +100,7 @@ const Index = () => {
       case "profile":
         return <UserProfileView />;
       default:
-        return <DashboardContent properties={[]} loading={false} onNavigateToAgenda={() => changeView("agenda", "default-fallback")} />;
+        return <DashboardContent properties={[]} loading={loading} onNavigateToAgenda={() => changeView("agenda", "default-fallback")} />;
     }
   };
 
@@ -119,5 +138,5 @@ const AddImovelModalMount: React.FC = () => {
     return () => window.removeEventListener("open-add-imovel-modal", handler);
   }, []);
 
-  return <AddImovelModal isOpen={open} onClose={() => setOpen(false)} />;
+  return <AddImovelModal open={open} onOpenChange={setOpen} />;
 };

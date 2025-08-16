@@ -41,6 +41,8 @@ interface ContractTemplatesProviderProps {
 }
 
 export const ContractTemplatesProvider: React.FC<ContractTemplatesProviderProps> = ({ children }) => {
+  console.log('🎭 ContractTemplatesProvider MONTADO/RENDERIZADO');
+  
   const [templates, setTemplates] = useState<ContractTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

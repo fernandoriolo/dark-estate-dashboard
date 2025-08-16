@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense, lazy } from "react";
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,10 +38,11 @@ import {
 import { PropertyWithImages } from "@/hooks/useProperties";
 import { useImoveisVivaReal, suggestCities, suggestNeighborhoods, suggestAddresses, suggestSearch } from "@/hooks/useImoveisVivaReal";
 import { useUserProfile } from "@/hooks/useUserProfile";
-import { lazy, Suspense } from "react";
+import { PropertyImageGallery } from "@/components/PropertyImageGallery";
+
+// Lazy loaded components
 const PropertyDetailsPopup = lazy(() => import("@/components/PropertyDetailsPopup").then(m => ({ default: m.PropertyDetailsPopup })));
 const PropertyEditForm = lazy(() => import("@/components/PropertyEditForm").then(m => ({ default: m.PropertyEditForm })));
-import { PropertyImageGallery } from "@/components/PropertyImageGallery";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";

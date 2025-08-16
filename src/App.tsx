@@ -15,6 +15,8 @@ import { useAuthAudit } from './hooks/useAuthAudit';
 import { Toaster } from './components/ui/sonner';
 
 function AppContent() {
+  console.log('🎬 AppContent RENDERIZADO');
+  
   const { profile, loading: profileLoading } = useUserProfile();
   const location = useLocation();
   const navigate = useNavigate();
@@ -165,10 +167,14 @@ function App() {
   }
 
   return (
-    <Router>
-      <PersistRoute>
-        <AppContent />
-      </PersistRoute>
+    <Router 
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true
+      }}
+    >
+      {/* REMOVIDO PersistRoute temporariamente para testar se está causando conflito */}
+      <AppContent />
     </Router>
   );
 }
@@ -179,29 +185,51 @@ export default App;
 function PersistRoute({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
-  // Restaurar na primeira montagem
+  const initialMount = useState(true)[0];
+
+  // Restaurar na primeira montagem APENAS
   useEffect(() => {
+    if (!initialMount) return;
+    
     const saved = localStorage.getItem('last-route');
-    if (saved && saved !== location.pathname + location.search) {
+    const currentRoute = location.pathname + location.search;
+    
+    // Só restaurar se for diferente E válido
+    if (saved && saved !== currentRoute && saved !== '/' && !saved.includes('undefined')) {
+      console.log('🔄 Restaurando rota salva:', saved);
       navigate(saved, { replace: true });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  // Salvar sempre que a rota mudar
+  }, []); // Executar apenas uma vez na montagem
+
+  // Salvar sempre que a rota mudar (mas debounced)
   useEffect(() => {
-    localStorage.setItem('last-route', location.pathname + location.search);
+    const currentRoute = location.pathname + location.search;
+    
+    // Evitar salvar rotas inválidas
+    if (currentRoute && currentRoute !== '/' && !currentRoute.includes('undefined')) {
+      const timeoutId = setTimeout(() => {
+        localStorage.setItem('last-route', currentRoute);
+      }, 100); // Debounce para evitar spam
+      
+      return () => clearTimeout(timeoutId);
+    }
   }, [location.pathname, location.search]);
-  // Salvar ao ocultar janela/aba
+
+  // Salvar ao ocultar janela/aba (mais conservador)
   useEffect(() => {
     const handler = () => {
-      localStorage.setItem('last-route', location.pathname + location.search);
+      const currentRoute = location.pathname + location.search;
+      if (currentRoute && currentRoute !== '/' && !currentRoute.includes('undefined')) {
+        localStorage.setItem('last-route', currentRoute);
+      }
     };
-    document.addEventListener('visibilitychange', handler);
+    
+    // Apenas em beforeunload para não conflitar com visibility API
     window.addEventListener('beforeunload', handler);
     return () => {
-      document.removeEventListener('visibilitychange', handler);
       window.removeEventListener('beforeunload', handler);
     };
   }, [location.pathname, location.search]);
+  
   return <>{children}</>;
 }
