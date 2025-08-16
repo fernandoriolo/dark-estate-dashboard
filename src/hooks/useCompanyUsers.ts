@@ -22,7 +22,7 @@ export function useCompanyUsers() {
   const mapUserFromRPC = (user: any): CompanyUser => ({
     id: user.id,
     email: user.email,
-    fullName: user.full_name || user.email,
+    fullName: user.full_name || user.fullName || user.email,
     role: user.role,
     companyId: user.company_id,
     isActive: user.is_active,

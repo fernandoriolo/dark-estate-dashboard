@@ -223,3 +223,57 @@
   background: rgb(107 114 128);
   background-clip: content-box;
 }
+
+/* Correções de Z-Index para Modais e Dropdowns */
+.modal-overlay {
+  z-index: 9998 !important;
+}
+
+.modal-content {
+  z-index: 9999 !important;
+}
+
+/* Garantir que dropdowns apareçam acima dos modais */
+[data-radix-popper-content-wrapper] {
+  z-index: 10000 !important;
+}
+
+[data-radix-select-content] {
+  z-index: 10000 !important;
+}
+
+[data-radix-popover-content] {
+  z-index: 10000 !important;
+}
+
+[data-radix-command-list] {
+  z-index: 10000 !important;
+}
+
+/* Correção específica para o PopoverContent */
+[data-radix-popover-content] {
+  z-index: 10000 !important;
+  position: relative;
+}
+
+/* Correção para SelectContent */
+[data-radix-select-content] {
+  z-index: 10000 !important;
+  position: relative;
+}
+
+/* Correção para Command */
+[data-radix-command-list] {
+  z-index: 10000 !important;
+  position: relative;
+}
+
+/* Garantir que o modal tenha z-index alto */
+[data-radix-dialog-content] {
+  z-index: 9999 !important;
+}
+
+/* Correção para o backdrop do modal */
+[data-radix-dialog-overlay] {
+  z-index: 9998 !important;
+}

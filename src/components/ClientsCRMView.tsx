@@ -24,7 +24,9 @@ import {
   MessageSquare,
   AlertCircle,
   User,
-  CheckCircle
+  CheckCircle,
+  CreditCard,
+  Heart
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -325,17 +327,18 @@ export function ClientsCRMView() {
                   >
                     <Card className="bg-gray-800/50 backdrop-blur-sm border-gray-700/60 hover:bg-gray-800/70 transition-all duration-300">
                       <CardContent className="p-6">
-                        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                          {/* Client Info */}
-                          <div className="flex-1 space-y-3">
-                            <div className="flex items-center gap-3">
-                              <div className="h-12 w-12 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center">
-                                <span className="text-white font-semibold">
+                        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                          {/* Informações Principais do Cliente */}
+                          <div className="flex-1">
+                            {/* Header com Nome e Status */}
+                            <div className="flex items-start gap-3 mb-4">
+                              <div className="h-12 w-12 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center flex-shrink-0">
+                                <span className="text-white font-semibold text-sm">
                                   {lead.nome.split(' ').map(n => n[0]).join('').substring(0, 2)}
                                 </span>
                               </div>
-                              <div>
-                                <h3 className="text-lg font-semibold text-white">{lead.nome}</h3>
+                              <div className="flex-1 min-w-0">
+                                <h3 className="text-lg font-semibold text-white mb-2">{lead.nome}</h3>
                                 <div className="flex gap-2 flex-wrap">
                                   <Badge variant="outline" className={getStageColor(lead.stage)}>
                                     {lead.stage}
@@ -354,66 +357,125 @@ export function ClientsCRMView() {
                               </div>
                             </div>
                             
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
-                              {lead.email && (
-                                <div className="flex items-center gap-2 text-gray-300">
-                                  <Mail className="h-4 w-4" />
-                                  <span>{lead.email}</span>
+                            {/* Grupos de Informações lado a lado */}
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                              {/* Informações de Contato - Seção 1 */}
+                              <div className="bg-gray-900/30 p-4 rounded-lg">
+                                <h4 className="text-sm font-medium text-blue-400 mb-3 flex items-center gap-2">
+                                  <MessageSquare className="h-4 w-4" />
+                                  Informações de Contato
+                                </h4>
+                                <div className="space-y-2">
+                                  {lead.email && (
+                                    <div className="flex items-center gap-2 text-gray-300">
+                                      <Mail className="h-4 w-4 text-blue-400" />
+                                      <span className="text-sm truncate">{lead.email}</span>
+                                    </div>
+                                  )}
+                                  {lead.telefone && (
+                                    <div className="flex items-center gap-2 text-gray-300">
+                                      <Phone className="h-4 w-4 text-green-400" />
+                                      <span className="text-sm">{lead.telefone}</span>
+                                    </div>
+                                  )}
+                                  {lead.endereco && (
+                                    <div className="flex items-start gap-2 text-gray-300">
+                                      <MapPin className="h-4 w-4 text-orange-400 mt-0.5" />
+                                      <span className="text-sm text-gray-400 line-clamp-2">{lead.endereco}</span>
+                                    </div>
+                                  )}
                                 </div>
-                              )}
-                              {lead.telefone && (
-                                <div className="flex items-center gap-2 text-gray-300">
-                                  <Phone className="h-4 w-4" />
-                                  <span>{lead.telefone}</span>
-                                </div>
-                              )}
-                              {lead.endereco && (
-                                <div className="flex items-center gap-2 text-gray-300">
-                                  <MapPin className="h-4 w-4" />
-                                  <span className="truncate">{lead.endereco}</span>
-                                </div>
-                              )}
-                              {lead.interesse && (
-                                <div className="flex items-center gap-2 text-gray-300">
-                                  <Building2 className="h-4 w-4" />
-                                  <span>{lead.interesse}</span>
-                                </div>
-                              )}
-                              {(lead.valorEstimado || lead.valor) && (
-                                <div className="flex items-center gap-2 text-gray-300">
-                                  <DollarSign className="h-4 w-4" />
-                                  <span>R$ {(lead.valorEstimado || lead.valor || 0).toLocaleString('pt-BR')}</span>
-                                </div>
-                              )}
-                              <div className="flex items-center gap-2 text-gray-300">
-                                <Calendar className="h-4 w-4" />
-                                <span>Cadastro: {new Date(lead.dataContato).toLocaleDateString('pt-BR')}</span>
                               </div>
-                            </div>
 
-                            {(lead.observacoes || lead.cpf || lead.estado_civil) && (
-                              <div className="bg-gray-900/50 p-3 rounded-lg space-y-2">
-                                {lead.cpf && (
-                                  <p className="text-sm text-gray-300">
-                                    <strong>CPF:</strong> {lead.cpf}
-                                  </p>
-                                )}
-                                {lead.estado_civil && (
-                                  <p className="text-sm text-gray-300">
-                                    <strong>Estado Civil:</strong> {lead.estado_civil}
-                                  </p>
-                                )}
-                                {lead.observacoes && (
-                                  <p className="text-sm text-gray-400">
-                                    <strong>Observações:</strong> {lead.observacoes}
-                                  </p>
-                                )}
+                              {/* Informações do Negócio - Seção 2 */}
+                              <div className="bg-gray-900/30 p-4 rounded-lg">
+                                <h4 className="text-sm font-medium text-green-400 mb-3 flex items-center gap-2">
+                                  <Building2 className="h-4 w-4" />
+                                  Interesse e Valor
+                                </h4>
+                                <div className="space-y-2">
+                                  {lead.interesse && (
+                                    <div className="flex items-start gap-2 text-gray-300">
+                                      <Building2 className="h-4 w-4 text-green-400 mt-0.5" />
+                                      <span className="text-sm text-gray-400 line-clamp-2">{lead.interesse}</span>
+                                    </div>
+                                  )}
+                                  {(lead.valorEstimado || lead.valor) && (
+                                    <div className="flex items-center gap-2 text-gray-300">
+                                      <DollarSign className="h-4 w-4 text-green-400" />
+                                      <span className="text-sm font-medium">
+                                        R$ {(lead.valorEstimado || lead.valor || 0).toLocaleString('pt-BR')}
+                                      </span>
+                                    </div>
+                                  )}
+                                  <div className="flex items-center gap-2 text-gray-300">
+                                    <Calendar className="h-4 w-4 text-purple-400" />
+                                    <span className="text-sm">
+                                      {new Date(lead.dataContato).toLocaleDateString('pt-BR')}
+                                    </span>
+                                  </div>
+                                </div>
                               </div>
-                            )}
+
+                              {/* Informações Adicionais - Seção 3 */}
+                              {(lead.observacoes || lead.cpf || lead.estado_civil || lead.message) ? (
+                                <div className="bg-gray-900/30 p-4 rounded-lg">
+                                  <h4 className="text-sm font-medium text-purple-400 mb-3 flex items-center gap-2">
+                                    <FileText className="h-4 w-4" />
+                                    Informações Adicionais
+                                  </h4>
+                                  <div className="space-y-2">
+                                    {lead.cpf && (
+                                      <div className="flex items-center gap-2 text-gray-300">
+                                        <CreditCard className="h-4 w-4 text-purple-400" />
+                                        <span className="text-sm">
+                                          <strong>CPF:</strong> {lead.cpf}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {lead.estado_civil && (
+                                      <div className="flex items-center gap-2 text-gray-300">
+                                        <Heart className="h-4 w-4 text-purple-400" />
+                                        <span className="text-sm">
+                                          <strong>Estado Civil:</strong> {lead.estado_civil}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {lead.message && (
+                                      <div className="flex items-start gap-2 text-gray-300">
+                                        <MessageSquare className="h-4 w-4 text-purple-400 mt-0.5" />
+                                        <div className="text-sm">
+                                          <strong>Mensagem:</strong>
+                                          <p className="text-gray-400 mt-1 italic line-clamp-2">"{lead.message}"</p>
+                                        </div>
+                                      </div>
+                                    )}
+                                    {lead.observacoes && (
+                                      <div className="flex items-start gap-2 text-gray-300">
+                                        <FileText className="h-4 w-4 text-purple-400 mt-0.5" />
+                                        <div className="text-sm">
+                                          <strong>Observações:</strong>
+                                          <p className="text-gray-400 mt-1 line-clamp-2">{lead.observacoes}</p>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                // Placeholder vazio para manter alinhamento
+                                <div className="bg-gray-900/30 p-4 rounded-lg opacity-50">
+                                  <h4 className="text-sm font-medium text-gray-500 mb-3 flex items-center gap-2">
+                                    <FileText className="h-4 w-4" />
+                                    Sem dados adicionais
+                                  </h4>
+                                  <p className="text-xs text-gray-500">Nenhuma informação adicional disponível</p>
+                                </div>
+                              )}
+                            </div>
                           </div>
 
-                          {/* Actions */}
-                          <div className="flex items-center gap-2">
+                          {/* Ações */}
+                          <div className="flex items-center gap-2 lg:flex-col lg:items-end">
                             {[
                               { 
                                 icon: Eye, 

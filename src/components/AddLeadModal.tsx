@@ -237,8 +237,10 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
         const payload: any = { ...leadData };
         if (selectedCorretor) {
           payload.id_corretor_responsavel = selectedCorretor;
+          console.log('Editando lead com corretor:', selectedCorretor); // Debug
         } else {
           payload.id_corretor_responsavel = null;
+          console.log('Editando lead sem corretor específico'); // Debug
         }
         if (updateLeadOverride) {
           await updateLeadOverride(leadToEdit.id, payload);
@@ -251,6 +253,7 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
         const assignedUserId = selectedCorretor || (corretores.length > 0
           ? corretores[Math.floor(Math.random() * corretores.length)].id
           : undefined);
+        console.log('Criando lead com corretor:', assignedUserId); // Debug
         await createLead(leadData as KanbanLead, { assignedUserId });
         toast.success('Novo cliente adicionado com sucesso!');
       }
@@ -340,7 +343,7 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
     <AnimatePresence>
       {isOpen && (
         <Dialog open={isOpen} onOpenChange={onClose}>
-          <DialogContent className="max-w-4xl p-0 bg-transparent border-none shadow-none max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-4xl p-0 bg-transparent border-none shadow-none max-h-[90vh] overflow-y-auto modal-content">
             <motion.div
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -458,7 +461,7 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                               <SelectTrigger className="bg-gray-800/50 border-gray-700 text-white">
                                 <SelectValue placeholder="Selecione o estado civil" />
                               </SelectTrigger>
-                              <SelectContent className="bg-gray-800 border-gray-700">
+                              <SelectContent className="bg-gray-800 border-gray-700" style={{ zIndex: 10000 }}>
                                 {estadosCivis.map((estado) => (
                                   <SelectItem key={estado} value={estado} className="text-white hover:bg-gray-700">
                                     {estado}
@@ -499,7 +502,7 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                           <SelectTrigger className="bg-gray-800/50 border-gray-700 text-white">
                             <SelectValue placeholder="Como nos conheceu?" />
                           </SelectTrigger>
-                          <SelectContent className="bg-gray-800 border-gray-700">
+                          <SelectContent className="bg-gray-800 border-gray-700" style={{ zIndex: 10000 }}>
                             {leadSources.map((source) => (
                               <SelectItem key={source} value={source} className="text-white hover:bg-gray-700">
                                 {source}
@@ -515,7 +518,7 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                           <SelectTrigger className="bg-gray-800/50 border-gray-700 text-white">
                             <SelectValue placeholder="Estágio atual" />
                           </SelectTrigger>
-                          <SelectContent className="bg-gray-800 border-gray-700">
+                          <SelectContent className="bg-gray-800 border-gray-700" style={{ zIndex: 10000 }}>
                             {leadStages.map((stage) => (
                               <SelectItem key={stage} value={stage} className="text-white hover:bg-gray-700">
                                 {stage}
@@ -564,7 +567,7 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                               <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
                             </button>
                           </PopoverTrigger>
-                          <PopoverContent className="p-0 w-[--radix-popover-trigger-width] bg-white border-gray-200">
+                          <PopoverContent className="p-0 w-[--radix-popover-trigger-width] bg-white border-gray-200" style={{ zIndex: 10000 }}>
                             <Command>
                               <CommandInput placeholder="Digite o ID do imóvel..." value={listingQuery} onValueChange={setListingQuery} />
                               <CommandList>
@@ -624,7 +627,7 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                               <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
                             </button>
                           </PopoverTrigger>
-                          <PopoverContent className="p-0 w-[--radix-popover-trigger-width] bg-white border-gray-200">
+                          <PopoverContent className="p-0 w-[--radix-popover-trigger-width] bg-white border-gray-200" style={{ zIndex: 10000 }}>
                             <Command>
                               <CommandInput placeholder="Digite o nome do corretor..." value={corretorQuery} onValueChange={setCorretorQuery} />
                               <CommandList>
@@ -633,10 +636,11 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                                   {corretores.map((c) => (
                                     <CommandItem
                                       key={c.id}
-                                      value={c.full_name}
+                                      value={c.full_name || ''}
                                       onSelect={() => {
                                         setSelectedCorretor(c.id);
                                         setCorretorOpen(false);
+                                        console.log('Corretor selecionado:', c.id, c.full_name); // Debug
                                       }}
                                     >
                                       <span className="text-black font-medium">{c.full_name}</span>
@@ -650,6 +654,9 @@ export const AddLeadModal: React.FC<AddLeadModalProps> = ({
                             </Command>
                           </PopoverContent>
                         </Popover>
+                        {selectedCorretor && (
+                          <p className="text-xs text-green-400">Corretor selecionado: {corretores.find(c => c.id === selectedCorretor)?.full_name}</p>
+                        )}
                         {!selectedCorretor && (
                           <p className="text-xs text-gray-400">Deixe vazio para que o corretor seja<br />escolhido aleatoriamente.</p>
                         )}
