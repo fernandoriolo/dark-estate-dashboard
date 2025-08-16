@@ -5,10 +5,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
 import { useWhatsAppInstances } from '@/hooks/useWhatsAppInstances';
 import { useUserProfile } from '@/hooks/useUserProfile';
-import { Upload, Send, FileDown } from 'lucide-react';
+import { Upload, Send, FileDown, Settings, Zap, List, Shuffle } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 import { logAudit } from '@/lib/audit/logger';
+import { ConfigurationsView, ConfigurationForm } from '@/components/dispatch';
+import { DispatchConfiguration } from '@/lib/dispatch/types';
+import { useDispatchConfigurations } from '@/hooks/useDispatchConfigurations';
+import { resolveMessageTemplate, estimateDispatchDuration } from '@/lib/dispatch/utils';
+import { DispatchService, DispatchRow } from '@/services/dispatchService';
 
 type UploadRow = { nome: string; telefone: string; email?: string };
 
@@ -35,7 +43,9 @@ function parseCSV(content: string): UploadRow[] {
 export function DisparadorView() {
   const { profile } = useUserProfile();
   const { instances, loadChats, createChat, sendMessage, loading } = useWhatsAppInstances();
+  const { getDefaultConfiguration, getConfigurationById, getActiveConfigurations } = useDispatchConfigurations();
 
+  // Estados do envio manual
   const [selectedInstance, setSelectedInstance] = useState<string>('');
   const [fileName, setFileName] = useState<string>('');
   const [rows, setRows] = useState<UploadRow[]>([]);
@@ -44,7 +54,47 @@ export function DisparadorView() {
   const [sentCount, setSentCount] = useState<number>(0);
   const [errorLog, setErrorLog] = useState<string[]>([]);
 
+  // Estados das configurações
+  const [selectedConfigId, setSelectedConfigId] = useState<string>('');
+  const [isConfigFormOpen, setIsConfigFormOpen] = useState(false);
+  const [configToEdit, setConfigToEdit] = useState<DispatchConfiguration | null>(null);
+  const [activeTab, setActiveTab] = useState<'envio' | 'configuracoes'>('envio');
+  // Filtro por estágio do lead (CRM)
+  const [stageOptions, setStageOptions] = useState<string[]>([]);
+  const [stageFilter, setStageFilter] = useState<string>('');
+  const [loadingLeads, setLoadingLeads] = useState<boolean>(false);
+
   const canSend = useMemo(() => Boolean(selectedInstance && rows.length > 0 && message.trim().length > 0), [selectedInstance, rows, message]);
+
+  // Carregar configuração padrão ao montar o componente
+  useEffect(() => {
+    const defaultConfig = getDefaultConfiguration();
+    if (defaultConfig && !selectedConfigId) {
+      setSelectedConfigId(defaultConfig.id);
+      applyConfiguration(defaultConfig.id);
+    }
+  }, [getDefaultConfiguration, selectedConfigId]);
+
+  // Carregar estágios de leads (distintos) para filtro
+  useEffect(() => {
+    const loadStages = async () => {
+      try {
+        if (!profile?.company_id) return;
+        const { data, error } = await supabase
+          .from('leads')
+          .select('stage')
+          .eq('company_id', profile.company_id)
+          .not('stage', 'is', null);
+        if (error) throw error;
+        const unique = Array.from(new Set((data || []).map((r: any) => (r.stage as string).trim()).filter(Boolean)));
+        unique.sort();
+        setStageOptions(unique);
+      } catch (e) {
+        console.warn('Falha ao carregar estágios de leads:', e);
+      }
+    };
+    loadStages();
+  }, [profile?.company_id]);
 
   const handleDownloadTemplate = () => {
     const csv = 'nome,telefone,email\nJoão Silva,55999998888,joao@exemplo.com\nMaria Souza,55911112222,maria@exemplo.com\n';
@@ -70,71 +120,278 @@ export function DisparadorView() {
     }
   };
 
-  const resolveTemplate = (tpl: string, row: UploadRow) => tpl
-    .replace(/\{nome\}/g, row.nome || '')
-    .replace(/\{telefone\}/g, row.telefone || '')
-    .replace(/\{email\}/g, row.email || '');
+  const resolveTemplate = (tpl: string, row: UploadRow) => {
+    return resolveMessageTemplate(tpl, {
+      nome: row.nome || '',
+      telefone: row.telefone || '',
+      email: row.email || ''
+    });
+  };
+
+  // Aplicar configuração selecionada
+  const applyConfiguration = (configId: string) => {
+    if (!configId) return;
+    
+    const config = getConfigurationById(configId);
+    if (!config) return;
+
+    // Aplicar template de mensagem
+    setMessage(config.messageTemplate);
+    
+    // Filtrar instâncias baseado nos corretores da configuração
+    if (config.assignedBrokers.length > 0) {
+      const brokerInstances = instances.filter(instance => 
+        config.assignedBrokers.includes(instance.user_id)
+      );
+      
+      // Selecionar primeira instância ativa se disponível
+      const activeInstance = brokerInstances.find(i => i.status === 'connected');
+      if (activeInstance) {
+        setSelectedInstance(activeInstance.id);
+      }
+    }
+  };
+
+  // Handlers para configurações
+  const handleConfigurationSelect = (config: DispatchConfiguration) => {
+    setSelectedConfigId(config.id);
+    applyConfiguration(config.id);
+    setActiveTab('envio');
+  };
+
+  const handleCreateConfiguration = () => {
+    setConfigToEdit(null);
+    setIsConfigFormOpen(true);
+  };
+
+  const handleEditConfiguration = (config: DispatchConfiguration) => {
+    setConfigToEdit(config);
+    setIsConfigFormOpen(true);
+  };
+
+  const handleConfigurationSuccess = (config: DispatchConfiguration) => {
+    // Aplicar a configuração recém criada/editada
+    setSelectedConfigId(config.id);
+    applyConfiguration(config.id);
+    setActiveTab('envio');
+  };
+
+  // Alternar para próxima configuração ativa (roleta)
+  const spinConfiguration = () => {
+    const active = getActiveConfigurations();
+    if (!active || active.length === 0) return;
+    if (!selectedConfigId) {
+      setSelectedConfigId(active[0].id);
+      applyConfiguration(active[0].id);
+      return;
+    }
+    const currentIndex = active.findIndex(c => c.id === selectedConfigId);
+    const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % active.length : 0;
+    const next = active[nextIndex];
+    setSelectedConfigId(next.id);
+    applyConfiguration(next.id);
+  };
+
+  // Carregar leads do CRM por estágio selecionado
+  const loadLeadsByStage = async () => {
+    if (!stageFilter || !profile?.company_id) return;
+    setLoadingLeads(true);
+    setErrorLog([]);
+    try {
+      const { data, error } = await supabase
+        .from('leads')
+        .select('name, phone, email')
+        .eq('company_id', profile.company_id)
+        .eq('stage', stageFilter);
+      if (error) throw error;
+      const mapped: UploadRow[] = (data || []).map((l: any) => ({
+        nome: l.name || '',
+        telefone: l.phone || '',
+        email: l.email || ''
+      }));
+      setRows(mapped);
+      setFileName(`Leads CRM (${stageFilter})`);
+    } catch (e: any) {
+      setErrorLog(prev => [...prev, `Erro ao carregar leads do CRM: ${e?.message || e}`]);
+    } finally {
+      setLoadingLeads(false);
+    }
+  };
 
   const startSending = async () => {
     if (!canSend) return;
     setSending(true);
     setSentCount(0);
     setErrorLog([]);
+    
     try {
-      try { await logAudit({ action: 'bulk_whatsapp.started', resource: 'bulk_whatsapp', resourceId: undefined, meta: { rows: rows.length, instance_id: selectedInstance } }); } catch {}
-      // Carregar chats existentes da instância para evitar conflitos de UNIQUE(instance_id, contact_phone)
-      const existing = await loadChats(selectedInstance);
-      const phoneToChat = new Map<string, string>(existing.map(c => [c.contact_phone, c.id]));
-
-      for (const r of rows) {
-        try {
-          const phone = (r.telefone || '').replace(/\D/g, '');
-          if (!phone) { setErrorLog(prev => [...prev, `Telefone ausente para ${r.nome || r.email || 'sem nome'}`]); continue; }
-
-          let chatId = phoneToChat.get(phone) || '';
-          if (!chatId) {
-            const newChat = await createChat({ instance_id: selectedInstance, contact_phone: phone, contact_name: r.nome || undefined });
-            chatId = newChat.id;
-            phoneToChat.set(phone, chatId);
-          }
-
-          const content = resolveTemplate(message, r);
-          await sendMessage({ chat_id: chatId, instance_id: selectedInstance, contact_phone: phone, message_type: 'text', content });
-          setSentCount(prev => prev + 1);
-          // Aguardar pequeno delay para evitar gatilhos de rate limit (ajuste conforme necessário)
-          await new Promise(res => setTimeout(res, 150));
-        } catch (err: any) {
-          setErrorLog(prev => [...prev, `Erro ao enviar para ${r.telefone}: ${err?.message || err}`]);
+      // Obter configuração aplicada se houver
+      const appliedConfig = selectedConfigId ? getConfigurationById(selectedConfigId) : undefined;
+      
+      // Validar configuração se aplicada
+      if (appliedConfig) {
+        const validation = DispatchService.validateConfiguration(appliedConfig, instances);
+        if (!validation.isValid) {
+          setErrorLog(validation.errors);
+          return;
         }
       }
-      try { await logAudit({ action: 'bulk_whatsapp.finished', resource: 'bulk_whatsapp', resourceId: undefined, meta: { sent: sentCount, total: rows.length, instance_id: selectedInstance } }); } catch {}
+
+      // Preparar contexto para o serviço
+      const dispatchContext = {
+        configuration: appliedConfig,
+        instances,
+        sendMessage,
+        createChat,
+        loadChats
+      };
+
+      // Converter rows para formato do serviço
+      const dispatchRows: DispatchRow[] = rows.map(row => ({
+        nome: row.nome,
+        telefone: row.telefone,
+        email: row.email
+      }));
+
+      // Se não há configuração aplicada, usar envio simples com instância selecionada
+      if (!appliedConfig && selectedInstance) {
+        // Forçar uso da instância selecionada
+        dispatchContext.instances = instances.filter(i => i.id === selectedInstance);
+      }
+
+      // Executar envio usando o serviço
+      const result = await DispatchService.executeBulkDispatch(
+        dispatchRows,
+        dispatchContext,
+        (sent, total) => {
+          setSentCount(sent);
+        },
+        (error) => {
+          setErrorLog(prev => [...prev, error]);
+        }
+      );
+
+      // Atualizar estado final
+      setSentCount(result.totalSent);
+      if (result.errors.length > 0) {
+        setErrorLog(prev => [...prev, ...result.errors]);
+      }
+
+    } catch (error: any) {
+      console.error('Erro no envio:', error);
+      setErrorLog(prev => [...prev, `Erro geral: ${error?.message || error}`]);
     } finally {
       setSending(false);
     }
   };
 
+  const selectedConfig = selectedConfigId ? getConfigurationById(selectedConfigId) : null;
+
   return (
     <div className="space-y-6 p-6 min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950">
       <div>
-        <h1 className="text-3xl font-bold text-white mb-2">Disparador</h1>
-        <p className="text-gray-400">Envie mensagens em massa para uma lista de contatos via WhatsApp.</p>
+        <h1 className="text-3xl font-bold text-white mb-2">Disparador WhatsApp</h1>
+        <p className="text-gray-400">Envie mensagens em massa usando configurações pré-definidas ou modo manual.</p>
       </div>
 
-      <Card className="bg-gray-800/50 border-gray-700/60">
-        <CardContent className="p-6 space-y-6">
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'envio' | 'configuracoes')}>
+        <TabsList className="bg-gray-800/50 border-gray-700">
+          <TabsTrigger value="envio" className="data-[state=active]:bg-emerald-600">
+            <Zap className="w-4 h-4 mr-2" />
+            Envio
+            {selectedConfig && (
+              <Badge variant="outline" className="ml-2 bg-emerald-500/20 text-emerald-300 border-emerald-400/50">
+                {selectedConfig.name}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="configuracoes" className="data-[state=active]:bg-blue-600">
+            <Settings className="w-4 h-4 mr-2" />
+            Configurações
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="envio">
+          <Card className="bg-gray-800/50 border-gray-700/60">
+            <CardContent className="p-6 space-y-6">
+              
+              {/* Seletor de configuração */}
+              {selectedConfig && (
+                <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Settings className="w-4 h-4 text-emerald-400" />
+                      <span className="text-emerald-300 font-medium">Configuração Aplicada:</span>
+                      <Badge variant="outline" className="bg-emerald-500/20 text-emerald-300 border-emerald-400/50">
+                        {selectedConfig.name}
+                      </Badge>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setActiveTab('configuracoes')}
+                      className="text-emerald-400 hover:text-emerald-300"
+                    >
+                      <List className="w-4 h-4 mr-1" />
+                      Trocar
+                    </Button>
+                  </div>
+                  {selectedConfig.description && (
+                    <p className="text-sm text-emerald-200/80">{selectedConfig.description}</p>
+                  )}
+                </div>
+              )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="text-gray-300">Instância WhatsApp</Label>
-              <Select value={selectedInstance} onValueChange={setSelectedInstance}>
-                <SelectTrigger className="bg-gray-900/50 border-gray-700 text-gray-200">
-                  <SelectValue placeholder={loading ? 'Carregando...' : 'Selecione a instância'} />
-                </SelectTrigger>
-                <SelectContent className="bg-gray-900 text-gray-200 border-gray-700">
-                  {instances.map(i => (
-                    <SelectItem key={i.id} value={i.id}>{i.instance_name} — {i.status}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex items-center gap-2">
+                <Select value={selectedInstance} onValueChange={setSelectedInstance}>
+                  <SelectTrigger className="bg-gray-900/50 border-gray-700 text-gray-200">
+                    <SelectValue placeholder={loading ? 'Carregando...' : 'Selecione a instância'} />
+                  </SelectTrigger>
+                  <SelectContent className="bg-gray-900 text-gray-200 border-gray-700">
+                    {instances.map(i => (
+                      <SelectItem key={i.id} value={i.id}>{i.instance_name} — {i.status}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={spinConfiguration}
+                  className="border-emerald-500/50 text-emerald-300"
+                  title="Roletar configurações ativas"
+                >
+                  <Shuffle className="w-4 h-4 mr-1" />
+                  Roleta
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-gray-300">Leads do CRM por Estágio (opcional)</Label>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
+                <Select value={stageFilter} onValueChange={setStageFilter}>
+                  <SelectTrigger className="bg-gray-900/50 border-gray-700 text-gray-200">
+                    <SelectValue placeholder={stageOptions.length ? 'Selecione o estágio' : 'Carregando estágios...'} />
+                  </SelectTrigger>
+                  <SelectContent className="bg-gray-900 text-gray-200 border-gray-700 max-h-64">
+                    {stageOptions.map(s => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={loadLeadsByStage}
+                  disabled={!stageFilter || loadingLeads}
+                  className="border-emerald-500/50 text-emerald-300"
+                >
+                  {loadingLeads ? 'Carregando...' : 'Carregar leads'}
+                </Button>
+                <div className="text-xs text-gray-400">{rows.length > 0 && fileName.startsWith('Leads CRM') ? `${rows.length} leads carregados` : ''}</div>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -163,6 +420,48 @@ export function DisparadorView() {
             <Label className="text-gray-300">Mensagem (suporta variáveis {`{nome}`}, {`{telefone}`}, {`{email}`})</Label>
             <Textarea value={message} onChange={(e) => setMessage(e.target.value)} className="bg-gray-900/50 border-gray-700 text-gray-200 min-h-[120px]" />
           </div>
+
+          {/* Informações sobre envio e configuração */}
+          {rows.length > 0 && (
+            <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-blue-300">Informações do Envio:</span>
+                {selectedConfig && (
+                  <Badge variant="outline" className="bg-blue-500/20 text-blue-300 border-blue-400/50">
+                    Config: {selectedConfig.name}
+                  </Badge>
+                )}
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                <div>
+                  <span className="text-blue-200">Total:</span>
+                  <span className="ml-1 text-white font-medium">{rows.length} mensagens</span>
+                </div>
+                <div>
+                  <span className="text-blue-200">Intervalo:</span>
+                  <span className="ml-1 text-white font-medium">
+                    {selectedConfig?.intervalBetweenMessages || 150}ms
+                  </span>
+                </div>
+                <div>
+                  <span className="text-blue-200">Tempo est.:</span>
+                  <span className="ml-1 text-white font-medium">
+                    {Math.ceil(estimateDispatchDuration(
+                      rows.length, 
+                      selectedConfig?.intervalBetweenMessages || 150,
+                      selectedConfig?.assignedBrokers.length || 1
+                    ))} min
+                  </span>
+                </div>
+                <div>
+                  <span className="text-blue-200">Corretores:</span>
+                  <span className="ml-1 text-white font-medium">
+                    {selectedConfig?.assignedBrokers.length || 1}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="flex items-center gap-3">
             <Button onClick={startSending} disabled={!canSend || sending} className="bg-gradient-to-r from-blue-600 to-purple-600">
@@ -197,16 +496,35 @@ export function DisparadorView() {
             </div>
           )}
 
-          {errorLog.length > 0 && (
-            <div className="bg-red-900/20 border border-red-700/40 rounded p-3 text-sm text-red-300">
-              {errorLog.slice(0, 10).map((e, i) => (
-                <div key={i}>• {e}</div>
-              ))}
-              {errorLog.length > 10 && <div>... e mais {errorLog.length - 10} erros</div>}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              {errorLog.length > 0 && (
+                <div className="bg-red-900/20 border border-red-700/40 rounded p-3 text-sm text-red-300">
+                  {errorLog.slice(0, 10).map((e, i) => (
+                    <div key={i}>• {e}</div>
+                  ))}
+                  {errorLog.length > 10 && <div>... e mais {errorLog.length - 10} erros</div>}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="configuracoes">
+          <ConfigurationsView
+            onCreateNew={handleCreateConfiguration}
+            onEdit={handleEditConfiguration}
+            onSelect={handleConfigurationSelect}
+            selectedConfigId={selectedConfigId}
+          />
+        </TabsContent>
+      </Tabs>
+
+      {/* Modal do formulário de configuração */}
+      <ConfigurationForm
+        isOpen={isConfigFormOpen}
+        onClose={() => setIsConfigFormOpen(false)}
+        configurationToEdit={configToEdit}
+        onSuccess={handleConfigurationSuccess}
+      />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 import { useUserProfile } from './useUserProfile';
-import { logAudit } from '@/lib/audit';
+import { logAudit } from '@/lib/audit/logger';
 import {
   DispatchConfiguration,
   DispatchConfigurationRow,
@@ -26,7 +26,7 @@ export function useDispatchConfigurations() {
 
   // Carregar todas as configurações da empresa
   const loadConfigurations = useCallback(async () => {
-    if (!profile?.companyId) return;
+    if (!profile?.company_id) return;
 
     setLoading(true);
     setError(null);
@@ -35,7 +35,7 @@ export function useDispatchConfigurations() {
       const { data, error: supabaseError } = await supabase
         .from('dispatch_configurations')
         .select('*')
-        .eq('company_id', profile.companyId)
+        .eq('company_id', profile.company_id)
         .order('priority', { ascending: false })
         .order('created_at', { ascending: false });
 
@@ -53,7 +53,7 @@ export function useDispatchConfigurations() {
           action: 'dispatch_configurations.list',
           resource: 'dispatch_configurations',
           resourceId: undefined,
-          meta: { count: mappedConfigurations.length, company_id: profile.companyId }
+          meta: { count: mappedConfigurations.length, company_id: profile.company_id }
         });
       } catch (auditError) {
         console.warn('Falha no audit log:', auditError);
@@ -65,7 +65,7 @@ export function useDispatchConfigurations() {
     } finally {
       setLoading(false);
     }
-  }, [profile?.companyId]);
+  }, [profile?.company_id]);
 
   // Criar nova configuração
   const createConfiguration = useCallback(async (
@@ -96,7 +96,7 @@ export function useDispatchConfigurations() {
         name: configData.name,
         description: configData.description,
         userId: profile.id,
-        companyId: profile.companyId,
+        companyId: profile.company_id,
         assignedBrokers: configData.assignedBrokers || [],
         brokerAssignmentStrategy: configData.brokerAssignmentStrategy || 'round_robin',
         timeWindows: configData.timeWindows || createDefaultTimeWindows(),
@@ -138,12 +138,18 @@ export function useDispatchConfigurations() {
 
     } catch (err: any) {
       console.error('Erro ao criar configuração:', err);
-      setError(err.message || 'Erro ao criar configuração');
+      
+      // Tratamento específico para nome duplicado
+      if (err.code === '23505' || err.message?.includes('duplicate key')) {
+        setError(`Já existe uma configuração com o nome "${configData.name}" nesta empresa. Escolha um nome diferente.`);
+      } else {
+        setError(err.message || 'Erro ao criar configuração');
+      }
       return null;
     } finally {
       setLoading(false);
     }
-  }, [profile?.id, profile?.companyId]);
+  }, [profile?.id, profile?.company_id]);
 
   // Atualizar configuração existente
   const updateConfiguration = useCallback(async (
@@ -319,7 +325,7 @@ export function useDispatchConfigurations() {
       await supabase
         .from('dispatch_configurations')
         .update({ is_default: false })
-        .eq('company_id', profile?.companyId)
+        .eq('company_id', profile?.company_id)
         .neq('id', id);
 
       // Depois, definir a atual como padrão
@@ -345,7 +351,7 @@ export function useDispatchConfigurations() {
     } finally {
       setLoading(false);
     }
-  }, [configurations, updateConfiguration, profile?.companyId]);
+  }, [configurations, updateConfiguration, profile?.company_id]);
 
   // Validar configuração completa
   const validateConfiguration = useCallback((config: Partial<DispatchConfiguration>): ConfigurationValidation => {
@@ -425,10 +431,10 @@ export function useDispatchConfigurations() {
 
   // Carregar configurações quando o componente monta
   useEffect(() => {
-    if (profile?.companyId) {
+    if (profile?.company_id) {
       loadConfigurations();
     }
-  }, [profile?.companyId, loadConfigurations]);
+  }, [profile?.company_id, loadConfigurations]);
 
   return {
     // Estado

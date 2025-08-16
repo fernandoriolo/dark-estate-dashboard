@@ -150,6 +150,7 @@ export function MessageTemplateEditor({
             {templatePresets.map((preset, index) => (
               <Button
                 key={index}
+                type="button"
                 variant="outline"
                 size="sm"
                 onClick={() => handlePresetSelect(preset.template)}
@@ -174,6 +175,7 @@ export function MessageTemplateEditor({
             <Button
               variant="ghost"
               size="sm"
+              type="button"
               onClick={handleReset}
               disabled={disabled}
               className="text-gray-400 hover:text-white h-auto p-1"
@@ -187,6 +189,7 @@ export function MessageTemplateEditor({
                 key={variable.key}
                 variant="outline"
                 size="sm"
+                type="button"
                 onClick={() => handleInsertVariable(variable.key)}
                 disabled={disabled}
                 className="text-xs text-gray-300 border-gray-600 hover:bg-gray-800"
@@ -261,6 +264,7 @@ export function MessageTemplateEditor({
                 <Button
                   variant="ghost"
                   size="sm"
+                  type="button"
                   onClick={() => setIsPreviewVisible(!isPreviewVisible)}
                   className="text-gray-400 hover:text-white h-auto p-1"
                 >
@@ -270,6 +274,7 @@ export function MessageTemplateEditor({
                   <Button
                     variant="ghost"
                     size="sm"
+                    type="button"
                     onClick={handleCopyPreview}
                     className="text-gray-400 hover:text-white h-auto p-1"
                     title="Copiar preview"

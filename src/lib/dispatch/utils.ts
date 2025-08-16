@@ -1,4 +1,4 @@
-import { DispatchConfiguration, DispatchConfigurationRow, TimeWindows, TimeWindow } from './types';
+import { DispatchConfiguration, DispatchConfigurationRow, TimeWindows, TimeWindow, TemplateVariables } from './types';
 
 /**
  * Converte dados do banco (snake_case) para formato do frontend (camelCase)

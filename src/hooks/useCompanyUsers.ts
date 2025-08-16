@@ -35,8 +35,8 @@ export function useCompanyUsers() {
     roles?: string[],
     includeInactive = false
   ) => {
-    if (!isManager) {
-      setError('Sem permissão para ver usuários');
+    if (!profile?.company_id) {
+      setError('Perfil ou empresa não encontrados');
       return;
     }
 
@@ -69,7 +69,7 @@ export function useCompanyUsers() {
     } finally {
       setLoading(false);
     }
-  }, [isManager]);
+  }, [profile?.company_id]);
 
   // Carregar apenas corretores
   const loadBrokers = useCallback(async (search?: string, includeInactive = false) => {
@@ -109,10 +109,44 @@ export function useCompanyUsers() {
 
   // Carregar usuários quando o componente monta
   useEffect(() => {
-    if (profile && isManager) {
-      loadUsers();
-    }
-  }, [profile, isManager, loadUsers]);
+    const fetchUsers = async () => {
+      if (!profile?.company_id) {
+        setError('Perfil ou empresa não encontrados');
+        return;
+      }
+
+      if (!isManager) {
+        setError('Sem permissão para ver usuários');
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const { data, error: supabaseError } = await supabase.rpc('list_company_users', {
+          target_company_id: null,
+          search: null,
+          roles: null,
+          limit_count: 100,
+          offset_count: 0,
+        });
+
+        if (supabaseError) throw supabaseError;
+
+        const mappedUsers = (data || []).map(mapUserFromRPC).filter(user => user.isActive);
+        setUsers(mappedUsers);
+
+      } catch (err: any) {
+        console.error('Erro ao carregar usuários:', err);
+        setError(err.message || 'Erro ao carregar usuários');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUsers();
+  }, [profile?.company_id, isManager]);
 
   return {
     // Estado

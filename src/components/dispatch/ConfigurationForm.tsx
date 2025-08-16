@@ -32,7 +32,7 @@ import {
   estimateDispatchDuration 
 } from '@/lib/dispatch/utils';
 import { useDispatchConfigurations } from '@/hooks/useDispatchConfigurations';
-import { BrokerSelector } from './BrokerSelector';
+import { BrokerSelectorSimple } from './BrokerSelectorSimple';
 import { TimeWindowEditor } from './TimeWindowEditor';
 import { MessageTemplateEditor } from './MessageTemplateEditor';
 
@@ -87,7 +87,8 @@ export function ConfigurationForm({
     createConfiguration,
     updateConfiguration,
     validateConfiguration,
-    loading
+    loading,
+    error: hookError
   } = useDispatchConfigurations();
 
   const [formData, setFormData] = useState<FormData>(defaultFormData);
@@ -122,21 +123,34 @@ export function ConfigurationForm({
     }
   }, [isOpen, configurationToEdit]);
 
-  // Validar formulário em tempo real
+  // Mostrar erros do hook
   useEffect(() => {
-    const validation = validateConfiguration(formData);
-    setErrors(validation.errors);
-    setWarnings(validation.warnings);
-  }, [formData, validateConfiguration]);
+    if (hookError) {
+      setErrors([hookError]);
+    }
+  }, [hookError]);
+
+  // Validar apenas no submit para evitar loops infinitos
 
   const handleInputChange = (field: keyof FormData, value: any) => {
+    console.log('handleInputChange:', field, value);
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleBrokerSelectionChange = (brokerIds: string[]) => {
+    console.log('handleBrokerSelectionChange:', brokerIds);
+    setFormData(prev => ({ ...prev, assignedBrokers: brokerIds }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (errors.length > 0) {
+    // Validar antes de submeter
+    const validation = validateConfiguration(formData);
+    setErrors(validation.errors);
+    setWarnings(validation.warnings);
+    
+    if (validation.errors.length > 0) {
       return;
     }
 
@@ -159,6 +173,9 @@ export function ConfigurationForm({
       if (result) {
         onSuccess?.(result);
         onClose();
+      } else {
+        // Se result é null, o erro já foi definido no hook
+        // Não precisamos fazer nada aqui
       }
 
     } catch (error: any) {
@@ -280,9 +297,9 @@ export function ConfigurationForm({
               
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 <div className="lg:col-span-2">
-                  <BrokerSelector
+                  <BrokerSelectorSimple
                     selectedBrokerIds={formData.assignedBrokers}
-                    onSelectionChange={(brokerIds) => handleInputChange('assignedBrokers', brokerIds)}
+                    onSelectionChange={handleBrokerSelectionChange}
                     disabled={saving}
                   />
                 </div>
