@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { logAudit } from '@/lib/audit/logger';
 
 export interface ImovelVivaReal {
   id: number;
@@ -163,6 +164,25 @@ export function useImoveisVivaReal(initial?: {
         .single();
 
       if (insertError) throw insertError;
+
+      // Log de auditoria
+      try {
+        await logAudit({
+          action: 'property.created',
+          resource: 'imovel_vivareal',
+          resourceId: data.id?.toString(),
+          meta: {
+            listing_id: data.listing_id,
+            tipo_imovel: data.tipo_imovel,
+            cidade: data.cidade,
+            bairro: data.bairro,
+            preco: data.preco
+          }
+        });
+      } catch (auditError) {
+        console.warn('Erro no log de auditoria:', auditError);
+      }
+
       await refetch();
       return data as ImovelVivaReal;
     } catch (err) {
@@ -181,6 +201,30 @@ export function useImoveisVivaReal(initial?: {
         .single();
 
       if (updateError) throw updateError;
+
+      // Log de auditoria
+      try {
+        const action = updates.disponibilidade ? 'property.availability_changed' : 'property.updated';
+        await logAudit({
+          action,
+          resource: 'imovel_vivareal',
+          resourceId: id.toString(),
+          meta: {
+            updated_fields: Object.keys(updates),
+            listing_id: data.listing_id,
+            tipo_imovel: data.tipo_imovel,
+            cidade: data.cidade,
+            bairro: data.bairro,
+            ...(updates.disponibilidade && {
+              new_availability: updates.disponibilidade,
+              availability_note: updates.disponibilidade_observacao
+            })
+          }
+        });
+      } catch (auditError) {
+        console.warn('Erro no log de auditoria:', auditError);
+      }
+
       await refetch();
       return data as ImovelVivaReal;
     } catch (err) {
@@ -191,12 +235,38 @@ export function useImoveisVivaReal(initial?: {
 
   const deleteImovel = async (id: number) => {
     try {
+      // Buscar dados do imóvel antes de deletar para o log
+      const { data: imovelData } = await supabase
+        .from('imoveisvivareal')
+        .select('listing_id, tipo_imovel, cidade, bairro, preco')
+        .eq('id', id)
+        .single();
+
       const { error: deleteError } = await supabase
         .from('imoveisvivareal')
         .delete()
         .eq('id', id);
 
       if (deleteError) throw deleteError;
+
+      // Log de auditoria
+      try {
+        await logAudit({
+          action: 'property.deleted',
+          resource: 'imovel_vivareal',
+          resourceId: id.toString(),
+          meta: {
+            listing_id: imovelData?.listing_id,
+            tipo_imovel: imovelData?.tipo_imovel,
+            cidade: imovelData?.cidade,
+            bairro: imovelData?.bairro,
+            preco: imovelData?.preco
+          }
+        });
+      } catch (auditError) {
+        console.warn('Erro no log de auditoria:', auditError);
+      }
+
       setImoveis(prev => prev.filter(i => i.id !== id));
       return true;
     } catch (err) {

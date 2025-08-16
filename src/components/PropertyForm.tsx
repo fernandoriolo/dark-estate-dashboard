@@ -6,6 +6,7 @@ import { ArrowLeft, Building2, X, Sparkles, Home, User, FileImage } from "lucide
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Tables } from "@/integrations/supabase/types";
+import { logAudit } from "@/lib/audit/logger";
 import { PropertyFormFields } from "./PropertyFormFields";
 import { PropertyImageManager } from "./PropertyImageManager";
 
@@ -292,11 +293,45 @@ export function PropertyForm({ isOpen, onSubmit, onCancel }: PropertyFormProps) 
 
       console.log('✅ Propriedade inserida com sucesso:', property);
 
+      // Log de auditoria
+      try {
+        await logAudit({
+          action: 'property.created',
+          resource: 'property',
+          resourceId: property.id,
+          meta: {
+            title: property.title,
+            type: property.type,
+            property_purpose: property.property_purpose,
+            price: property.price,
+            city: property.city,
+            address: property.address
+          }
+        });
+      } catch (auditError) {
+        console.warn('Erro no log de auditoria:', auditError);
+      }
+
       // Upload images if any
       if (imageFiles.length > 0) {
         console.log('📤 Iniciando upload de imagens...');
         await uploadImages(property.id);
         console.log('✅ Upload de imagens concluído');
+
+        // Log de auditoria para upload de imagens
+        try {
+          await logAudit({
+            action: 'property.images_uploaded',
+            resource: 'property',
+            resourceId: property.id,
+            meta: {
+              images_count: imageFiles.length,
+              property_title: property.title
+            }
+          });
+        } catch (auditError) {
+          console.warn('Erro no log de auditoria para imagens:', auditError);
+        }
       }
 
       console.log('🎉 Processo concluído com sucesso');

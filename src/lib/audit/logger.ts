@@ -9,6 +9,11 @@ export type AuditAction =
   | 'property.created'
   | 'property.updated'
   | 'property.deleted'
+  | 'property.images_uploaded'
+  | 'property.images_removed'
+  | 'property.availability_changed'
+  | 'property.xml_imported'
+  | 'property.viewed'
   | 'contract.created'
   | 'contract.updated'
   | 'contract.deleted'
@@ -24,6 +29,8 @@ export type AuditAction =
   | 'user.created'
   | 'user.profile_updated'
   | 'user.deactivated'
+  | 'user.activated'
+  | 'user.deleted'
   | 'permissions.updated'
   | 'bulk_whatsapp.started'
   | 'bulk_whatsapp.finished'
@@ -42,22 +49,48 @@ export async function logAudit(
   params: { action: AuditAction; resource: string; resourceId?: string | null; meta?: AuditMeta }
 ) {
   try {
+    // Obter dados do usuário autenticado
     const { data: { user } } = await supabase.auth.getUser();
-    const claims = (supabase as any)?.auth?.session()?.user?.app_metadata || {};
-    const actorId = user?.id || null;
-    const companyId = (claims?.company_id as string | undefined) || null;
+    if (!user?.id) {
+      console.warn('logAudit: Usuário não autenticado, ignorando log');
+      return;
+    }
 
+    // Tentar obter company_id do perfil do usuário
+    let companyId: string | null = null;
+    try {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('company_id')
+        .eq('id', user.id)
+        .single();
+      companyId = profile?.company_id || null;
+    } catch (profileError) {
+      console.warn('logAudit: Erro ao obter company_id do perfil:', profileError);
+    }
+
+    // Inserir o log de auditoria
     const { error } = await supabase.from('audit_logs').insert({
-      actor_id: actorId,
-      company_id: companyId ? companyId : null,
+      actor_id: user.id,
+      company_id: companyId,
       action: params.action,
       resource: params.resource,
       resource_id: params.resourceId || null,
       meta: params.meta || null,
     });
-    if (error) console.warn('Falha ao registrar audit log:', error.message);
+
+    if (error) {
+      console.warn('logAudit: Falha ao registrar audit log:', error.message, {
+        action: params.action,
+        resource: params.resource,
+        user_id: user.id,
+        company_id: companyId
+      });
+    } else {
+      console.log('✅ logAudit: Log registrado com sucesso:', params.action);
+    }
   } catch (e) {
-    console.warn('Erro inesperado ao registrar audit log:', (e as any)?.message || e);
+    console.warn('logAudit: Erro inesperado ao registrar audit log:', (e as any)?.message || e);
   }
 }
 

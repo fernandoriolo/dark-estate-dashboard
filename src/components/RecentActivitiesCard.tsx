@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useUserProfile } from "@/hooks/useUserProfile";
+import { logAudit } from "@/lib/audit/logger";
+import { TestTube } from "lucide-react";
 
 type Role = 'admin' | 'gestor' | 'corretor';
 
@@ -25,9 +28,14 @@ function formatAction(action: string): string {
     'lead.updated': 'Atualizou um lead',
     'lead.deleted': 'Excluiu um lead',
     'lead.stage_changed': 'Alterou status do lead',
-    'property.created': 'Criou uma propriedade',
-    'property.updated': 'Atualizou uma propriedade',
-    'property.deleted': 'Excluiu uma propriedade',
+    'property.created': 'Cadastrou um novo imóvel',
+    'property.updated': 'Editou informações de um imóvel',
+    'property.deleted': 'Removeu um imóvel do sistema',
+    'property.images_uploaded': 'Adicionou fotos ao imóvel',
+    'property.images_removed': 'Removeu fotos do imóvel',
+    'property.availability_changed': 'Alterou disponibilidade do imóvel',
+    'property.xml_imported': 'Importou imóveis via XML VivaReal',
+    'property.viewed': 'Visualizou detalhes do imóvel',
     'contract.created': 'Criou um contrato',
     'contract.updated': 'Atualizou um contrato',
     'contract.deleted': 'Excluiu um contrato',
@@ -43,6 +51,8 @@ function formatAction(action: string): string {
     'user.created': 'Criou um usuário',
     'user.profile_updated': 'Atualizou perfil',
     'user.deactivated': 'Desativou usuário',
+    'user.activated': 'Reativou usuário',
+    'user.deleted': 'Deletou usuário permanentemente',
     'permissions.updated': 'Atualizou permissões',
     'bulk_whatsapp.started': 'Iniciou disparo em massa',
     'bulk_whatsapp.finished': 'Finalizou disparo em massa',
@@ -81,6 +91,26 @@ export function RecentActivitiesCard() {
   const [loading, setLoading] = useState(false);
 
   const canSeeAll = profile?.role === 'admin' || profile?.role === 'gestor';
+
+  // Função para testar o sistema de logs
+  const testAuditLog = async () => {
+    try {
+      await logAudit({
+        action: 'system.test',
+        resource: 'test_resource',
+        resourceId: `test-${Date.now()}`,
+        meta: {
+          test_time: new Date().toISOString(),
+          user_role: profile?.role,
+          test_source: 'manual_dashboard_test'
+        }
+      });
+      // Recarregar logs para mostrar o novo log
+      loadLogs();
+    } catch (error) {
+      console.error('Erro ao testar audit log:', error);
+    }
+  };
 
   const loadUsers = async () => {
     if (!canSeeAll) return;
@@ -149,7 +179,20 @@ export function RecentActivitiesCard() {
   return (
     <Card className="bg-gray-800/50 border-gray-700/50 backdrop-blur-sm">
       <CardHeader>
-        <CardTitle className="text-white">Atividades Recentes</CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-white">Atividades Recentes</CardTitle>
+          {(profile?.role === 'admin' || profile?.role === 'gestor') && (
+            <Button
+              onClick={testAuditLog}
+              size="sm"
+              variant="outline"
+              className="border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-white"
+            >
+              <TestTube className="h-4 w-4 mr-2" />
+              Testar Log
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         {/* Filtros */}
@@ -183,41 +226,75 @@ export function RecentActivitiesCard() {
 
         {/* Lista de atividades */}
         <div className="space-y-3">
-          {logs.map((log) => (
-            <div key={log.id} className="p-3 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 transition-colors cursor-pointer">
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-gray-300">
-                  <span className="font-medium text-white">{formatAction(log.action)}</span>
-                  <span className="ml-2">em</span>
-                  <span className="ml-2 text-blue-400">{formatResource(log.resource)}</span>
-                  {log.resource_id && log.resource_id !== 'undefined' && (
-                    <span className="ml-2 text-gray-400">#{log.resource_id.slice(0, 8)}</span>
-                  )}
-                </div>
-                <div className="text-xs text-gray-400">
-                  {new Date(log.created_at).toLocaleString('pt-BR', {
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}
-                </div>
-              </div>
-              {log.meta && Object.keys(log.meta).length > 0 && (
-                <div className="mt-2 text-xs text-gray-300">
-                  {Object.entries(log.meta).map(([key, value]) => (
-                    <div key={key} className="mb-1">
-                      <span className="text-gray-400">{key}:</span> 
-                      <span className="ml-1 text-white">{
-                        typeof value === 'object' ? JSON.stringify(value) : String(value)
-                      }</span>
+          {logs.map((log) => {
+            const formatLogDescription = (log: AuditLog) => {
+              const meta = log.meta || {};
+              
+              // Formatação específica para propriedades
+              if (log.action.startsWith('property.')) {
+                if (log.action === 'property.created') {
+                  return `${meta.title || 'Novo imóvel'} - ${meta.type || ''} em ${meta.city || 'cidade não informada'}`;
+                }
+                if (log.action === 'property.updated') {
+                  return `${meta.title || `ID #${log.resource_id?.slice(0, 8)}`} - ${meta.updated_fields?.join(', ') || 'dados atualizados'}`;
+                }
+                if (log.action === 'property.deleted') {
+                  return `${meta.title || meta.listing_id || `ID #${log.resource_id?.slice(0, 8)}`} em ${meta.cidade || 'localização não informada'}`;
+                }
+                if (log.action === 'property.availability_changed') {
+                  return `${meta.title || meta.listing_id || `ID #${log.resource_id?.slice(0, 8)}`} → ${meta.new_availability || 'nova disponibilidade'}`;
+                }
+                if (log.action === 'property.images_uploaded') {
+                  return `${meta.property_title || `ID #${log.resource_id?.slice(0, 8)}`} - ${meta.images_count || 0} foto(s)`;
+                }
+              }
+              
+              // Formatação específica para usuários
+              if (log.action.startsWith('user.')) {
+                if (log.action === 'user.created') {
+                  return `${meta.full_name || meta.email || 'Novo usuário'} - ${meta.role || 'função não informada'}`;
+                }
+                if (log.action === 'user.profile_updated') {
+                  return `${meta.full_name || meta.email || `ID #${log.resource_id?.slice(0, 8)}`} - dados do perfil`;
+                }
+                if (log.action === 'user.deleted') {
+                  return `${meta.deleted_user || `ID #${log.resource_id?.slice(0, 8)}`} - remoção permanente`;
+                }
+              }
+              
+              // Formatação padrão
+              return log.resource_id && log.resource_id !== 'undefined' 
+                ? `ID #${log.resource_id.slice(0, 8)}` 
+                : 'ação realizada';
+            };
+
+            return (
+              <div key={log.id} className="p-3 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 transition-colors cursor-pointer">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-gray-300 flex-1">
+                    <span className="font-medium text-white">{formatAction(log.action)}</span>
+                    <div className="text-xs text-blue-400 mt-1">
+                      {formatLogDescription(log)}
                     </div>
-                  ))}
+                  </div>
+                  <div className="text-xs text-gray-400 ml-3">
+                    {new Date(log.created_at).toLocaleString('pt-BR', {
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </div>
                 </div>
-              )}
-            </div>
-          ))}
+                {log.meta?.availability_note && (
+                  <div className="mt-2 text-xs text-amber-400 bg-amber-400/10 rounded px-2 py-1">
+                    💬 {log.meta.availability_note}
+                  </div>
+                )}
+              </div>
+            );
+          })}
           {loading && (
             <div className="text-center py-6 text-gray-400">Carregando atividades...</div>
           )}

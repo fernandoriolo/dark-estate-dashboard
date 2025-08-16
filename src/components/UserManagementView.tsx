@@ -33,6 +33,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { useUserProfile, UserProfile } from '@/hooks/useUserProfile';
 import { supabase } from '@/integrations/supabase/client';
 import { logAudit } from '@/lib/audit/logger';
+import { toast } from 'sonner';
 
 export function UserManagementView() {
   const [users, setUsers] = useState<any[]>([]);
@@ -63,7 +64,7 @@ export function UserManagementView() {
   useEffect(() => { fetchUsers(searchTerm, roleFilter); }, [searchTerm, roleFilter]);
 
   // TODOS OS HOOKS DEVEM VIR PRIMEIRO - NUNCA APÓS RETURNS CONDICIONAIS
-  const { profile, isManager, isAdmin, deactivateUser, activateUser, createNewUser } = useUserProfile();
+  const { profile, isManager, isAdmin, deactivateUser, activateUser, deleteUser, createNewUser } = useUserProfile();
   const [error, setError] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -112,6 +113,9 @@ export function UserManagementView() {
   // Salvar edição do usuário
   const handleSaveUserEdit = async () => {
     if (!selectedUser || !editForm) return;
+    
+    const loadingToast = toast.loading('Salvando alterações do usuário...');
+    
     try {
       const updates: any = {
         user_id: selectedUser.id,
@@ -152,10 +156,21 @@ export function UserManagementView() {
       } catch {}
       
       await fetchUsers(searchTerm, roleFilter);
+      
+      toast.dismiss(loadingToast);
+      toast.success('✅ Usuário atualizado com sucesso!', {
+        description: `${editForm.full_name} foi atualizado e sincronizado.`
+      });
+      
       setShowEditModal(false);
       setSelectedUser(null);
       setEditForm(null);
+      setError(null); // Limpar erro anterior
     } catch (e: any) {
+      toast.dismiss(loadingToast);
+      toast.error('❌ Erro ao atualizar usuário', {
+        description: e.message || 'Erro ao salvar alterações'
+      });
       setError(e.message || 'Erro ao salvar alterações');
     }
   };
@@ -163,11 +178,24 @@ export function UserManagementView() {
   // Desativar usuário
   const handleDeactivateUser = async (userId: string) => {
     if (window.confirm('Tem certeza que deseja desativar este usuário?')) {
+      const loadingToast = toast.loading('Desativando usuário...');
+      
       try {
         await deactivateUser(userId);
         try { await logAudit({ action: 'user.deactivated', resource: 'user_profile', resourceId: userId, meta: null }); } catch {}
-        await fetchUsers(searchTerm, roleFilter); // Recarregar a lista
+        await fetchUsers(searchTerm, roleFilter);
+        
+        toast.dismiss(loadingToast);
+        toast.success('✅ Usuário desativado com sucesso!', {
+          description: 'O usuário foi desativado e não poderá mais acessar o sistema.'
+        });
+        
+        setError(null);
       } catch (error: any) {
+        toast.dismiss(loadingToast);
+        toast.error('❌ Erro ao desativar usuário', {
+          description: error.message || 'Falha na operação'
+        });
         setError(error.message);
       }
     }
@@ -176,11 +204,61 @@ export function UserManagementView() {
   // Reativar usuário
   const handleActivateUser = async (userId: string) => {
     if (window.confirm('Deseja reativar este usuário?')) {
+      const loadingToast = toast.loading('Reativando usuário...');
+      
       try {
         await activateUser(userId);
         try { await logAudit({ action: 'user.activated', resource: 'user_profile', resourceId: userId, meta: null }); } catch {}
         await fetchUsers(searchTerm, roleFilter);
+        
+        toast.dismiss(loadingToast);
+        toast.success('✅ Usuário reativado com sucesso!', {
+          description: 'O usuário foi reativado e pode acessar o sistema novamente.'
+        });
+        
+        setError(null);
       } catch (error: any) {
+        toast.dismiss(loadingToast);
+        toast.error('❌ Erro ao reativar usuário', {
+          description: error.message || 'Falha na operação'
+        });
+        setError(error.message);
+      }
+    }
+  };
+
+  // Deletar usuário completamente (apenas inativos)
+  const handleDeleteUser = async (userId: string, userName: string) => {
+    const confirmMessage = `⚠️ ATENÇÃO: Esta ação é irreversível!\n\nVocê está prestes a DELETAR PERMANENTEMENTE o usuário "${userName}".\n\n✓ O usuário será removido de ambas as tabelas (user_profiles e auth.users)\n✓ Todos os leads vinculados a ele serão desvinculados\n✓ Esta operação NÃO pode ser desfeita\n\nTem certeza que deseja prosseguir?`;
+    
+    if (window.confirm(confirmMessage)) {
+      const loadingToast = toast.loading('Deletando usuário permanentemente...');
+      
+      try {
+        const result = await deleteUser(userId);
+        try { 
+          await logAudit({ 
+            action: 'user.deleted', 
+            resource: 'user_profile', 
+            resourceId: userId, 
+            meta: { deleted_user: userName, leads_unlinked: true } 
+          }); 
+        } catch {}
+        
+        await fetchUsers(searchTerm, roleFilter);
+        
+        toast.dismiss(loadingToast);
+        toast.success('✅ Usuário deletado permanentemente!', {
+          description: `${userName} foi removido do sistema e leads foram desvinculados.`,
+          duration: 6000
+        });
+        
+        setError(null);
+      } catch (error: any) {
+        toast.dismiss(loadingToast);
+        toast.error('❌ Erro ao deletar usuário', {
+          description: error.message || 'Falha na operação de exclusão'
+        });
         setError(error.message);
       }
     }
@@ -192,20 +270,35 @@ export function UserManagementView() {
     
     // Validações básicas
     if (!createForm.email.trim() || !createForm.full_name.trim()) {
+      toast.error('❌ Campos obrigatórios', {
+        description: 'Email e nome são obrigatórios'
+      });
       setError('Email, senha e nome são obrigatórios');
       return;
     }
 
     if (createForm.password.length < 6) {
+      toast.error('❌ Senha muito curta', {
+        description: 'Senha deve ter pelo menos 6 caracteres'
+      });
       setError('Senha deve ter pelo menos 6 caracteres');
       return;
     }
 
     setCreateLoading(true);
+    const loadingToast = toast.loading('Criando novo usuário...');
+    
     try {
       await createNewUser(createForm);
       try { await logAudit({ action: 'user.created', resource: 'user_profile', resourceId: undefined, meta: { email: createForm.email, role: createForm.role } }); } catch {}
-      await fetchUsers(searchTerm, roleFilter); // Recarregar a lista
+      await fetchUsers(searchTerm, roleFilter);
+      
+      toast.dismiss(loadingToast);
+      toast.success('✅ Usuário criado com sucesso!', {
+        description: `${createForm.full_name} foi criado e pode fazer login.`,
+        duration: 5000
+      });
+      
       setShowCreateModal(false);
       
       // Resetar formulário
@@ -219,8 +312,11 @@ export function UserManagementView() {
       });
       
       setError(null);
-      alert(`Usuário ${createForm.full_name} criado com sucesso!\nEmail: ${createForm.email}\nSenha temporária: ${createForm.password}\nO usuário deve trocar a senha no primeiro acesso.`);
     } catch (error: any) {
+      toast.dismiss(loadingToast);
+      toast.error('❌ Erro ao criar usuário', {
+        description: error.message || 'Falha na criação do usuário'
+      });
       setError(error.message);
     } finally {
       setCreateLoading(false);
@@ -524,13 +620,24 @@ export function UserManagementView() {
                                     Desativar
                                   </DropdownMenuItem>
                                 ) : (
-                                  <DropdownMenuItem 
-                                    onClick={() => handleActivateUser(user.id)}
-                                    className="text-emerald-400 hover:text-emerald-300"
-                                  >
-                                    <RefreshCw className="h-4 w-4 mr-2" />
-                                    Reativar
-                                  </DropdownMenuItem>
+                                  <>
+                                    <DropdownMenuItem 
+                                      onClick={() => handleActivateUser(user.id)}
+                                      className="text-emerald-400 hover:text-emerald-300"
+                                    >
+                                      <RefreshCw className="h-4 w-4 mr-2" />
+                                      Reativar
+                                    </DropdownMenuItem>
+                                    {isAdmin && (
+                                      <DropdownMenuItem 
+                                        onClick={() => handleDeleteUser(user.id, user.full_name)}
+                                        className="text-red-600 hover:text-red-500"
+                                      >
+                                        <Trash2 className="h-4 w-4 mr-2" />
+                                        Deletar Permanentemente
+                                      </DropdownMenuItem>
+                                    )}
+                                  </>
                                 )
                               )}
                             </DropdownMenuContent>

@@ -242,6 +242,39 @@ export function useUserProfile() {
     }
   };
 
+  // Deletar usuário completamente (apenas para admins, apenas se inativo)
+  const deleteUser = async (userId: string) => {
+    try {
+      if (!isAdmin) {
+        throw new Error('Sem permissão para deletar usuários');
+      }
+
+      // Usar Edge Function para deletar completamente
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error('Sessão inválida para deletar usuário');
+
+      const { data: fnData, error: fnError } = await supabase.functions.invoke('admin-delete-user', {
+        body: { user_id: userId },
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      if (fnError) {
+        throw new Error(fnError.message || 'Falha ao deletar usuário');
+      }
+      if ((fnData as any)?.error) {
+        throw new Error((fnData as any).error);
+      }
+
+      return fnData;
+    } catch (error: any) {
+      console.error('Erro ao deletar usuário:', error);
+      throw error;
+    }
+  };
+
   // Criar convite para novo usuário (apenas para admins)
   const createNewUser = async (userData: {
     email: string;
@@ -348,6 +381,7 @@ export function useUserProfile() {
     changeUserRole,
     deactivateUser,
     activateUser,
+    deleteUser,
     createNewUser,
     refreshData: loadUserData
   };
