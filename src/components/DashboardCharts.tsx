@@ -43,6 +43,9 @@ export const DashboardCharts: React.FC = () => {
 	const [selectedBrokerForHeat, setSelectedBrokerForHeat] = React.useState<string>('');
 	const [availableBrokers, setAvailableBrokers] = React.useState<{id: string, name: string}[]>([]);
 
+	// Estados para filtro de tempo no gráfico temporal
+	const [timeRange, setTimeRange] = React.useState<'total' | 'year' | 'month' | 'week' | 'day'>('total');
+
 	// Effect para atualizar VGV quando período muda
 	React.useEffect(() => {
 		fetchVgvByPeriod(vgvPeriod).then(setVgv).catch(() => setVgv([]));
@@ -397,27 +400,27 @@ export const DashboardCharts: React.FC = () => {
 				<CardContent>
 										<div className="grid grid-cols-2 gap-4 h-72">
 						{/* Gráfico de barras por canal */}
-						<div className="flex flex-col">
+						<div className="flex flex-col xl:items-end">
 							<h4 className="text-sm font-medium text-gray-300 mb-2">Por Canal</h4>
 							<div className="flex-1" style={{ overflow: 'visible' }}>
-						<ChartContainer
-							xAxis={[{ 
-								scaleType: 'linear', 
-								position: 'bottom', 
-								valueFormatter: (v: number) => `${Number(v||0).toLocaleString('pt-BR')}`,
-										tickLabelStyle: { fill: chartPalette.textSecondary, fontSize: '0.7rem' }
-							}]}
-							yAxis={[{ 
-								scaleType: 'band', 
-								position: 'left', 
-								data: canal.map(c => c.name),
-										tickLabelStyle: { 
-											fill: chartPalette.textPrimary, 
-											fontSize: '0.75rem', 
-											fontWeight: 500,
-											fontFamily: 'Inter, system-ui, sans-serif'
-										},
-										width: 70
+								<ChartContainer
+									xAxis={[{ 
+										scaleType: 'linear', 
+										position: 'bottom', 
+										valueFormatter: (v: number) => `${Number(v||0).toLocaleString('pt-BR')}`,
+												tickLabelStyle: { fill: chartPalette.textSecondary, fontSize: '0.7rem' }
+									}]}
+									yAxis={[{ 
+										scaleType: 'band', 
+										position: 'left', 
+										data: canal.map(c => c.name),
+												tickLabelStyle: { 
+													fill: chartPalette.textPrimary, 
+													fontSize: '0.75rem', 
+													fontWeight: 500,
+													fontFamily: 'Inter, system-ui, sans-serif'
+												},
+												width: 70
 									}]}
 									series={canal.map((c, i) => ({ 
 										type: 'bar' as const, 
@@ -430,8 +433,8 @@ export const DashboardCharts: React.FC = () => {
 									}))}
 									height={240}
 									margin={{
-										left: 60,   // Reduzido para alinhar à esquerda
-										right: 10,  
+										left: 20,
+										right: 40,
 										top: 10,
 										bottom: 30
 									}}
@@ -446,7 +449,22 @@ export const DashboardCharts: React.FC = () => {
 
 						{/* Gráfico temporal de leads */}
 						<div className="flex flex-col">
-							<h4 className="text-sm font-medium text-gray-300 mb-2">Por Tempo (6 meses)</h4>
+							<div className="flex items-center justify-between mb-2">
+								<h4 className="text-sm font-medium text-gray-300">Por Tempo</h4>
+								<div className="flex items-center gap-2 text-xs">
+									<select
+										value={timeRange}
+										onChange={(e) => setTimeRange(e.target.value as any)}
+										className="bg-gray-900/60 border border-gray-700 text-gray-200 rounded px-2 py-1"
+									>
+										<option value="total">Total</option>
+										<option value="year">Ano</option>
+										<option value="month">Mês</option>
+										<option value="week">Semanas</option>
+										<option value="day">Dias</option>
+									</select>
+								</div>
+							</div>
 							<div className="flex-1" style={{ overflow: 'visible' }}>
 								<ChartContainer
 									xAxis={[{ 
@@ -465,8 +483,8 @@ export const DashboardCharts: React.FC = () => {
 										valueFormatter: (v: number) => `${Number(v||0)}`,
 										tickLabelStyle: { fill: chartPalette.textSecondary, fontSize: '0.7rem' },
 										min: 0
-							}]}
-							series={[{ 
+									}]}
+									series={[{ 
 										type: 'line', 
 										id: 'tempo', 
 										data: tempoData.map(l => l.count),
@@ -477,26 +495,26 @@ export const DashboardCharts: React.FC = () => {
 									}]}
 									height={240}
 									margin={{
-										left: 35,   // Reduzido para alinhar à esquerda
-										right: 10,  
+										left: 35,
+										right: 10,
 										top: 10,
 										bottom: 30
 									}}
 								>
 									{/* Gradiente para área */}
-							<defs>
+									<defs>
 										<linearGradient id="tempo-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
 											<stop offset="0%" stopColor={chartPalette.accent} stopOpacity={0.6} />
 											<stop offset="100%" stopColor={chartPalette.accent} stopOpacity={0.1} />
-								</linearGradient>
-							</defs>
-							
-							<ChartsGrid vertical style={gridStyle} />
+										</linearGradient>
+									</defs>
+									
+									<ChartsGrid vertical style={gridStyle} />
 									<LinePlot />
 									<AreaPlot />
-							<ChartsAxis />
+									<ChartsAxis />
 									<ChartsTooltip />
-						</ChartContainer>
+								</ChartContainer>
 							</div>
 						</div>
 					</div>
@@ -594,7 +612,7 @@ export const DashboardCharts: React.FC = () => {
 						{/* Gráfico de corretores por leads */}
 						<div className="flex-1 flex flex-col">
 							<div className="flex items-center justify-between mb-2">
-								<h5 className="text-sm font-semibold text-gray-300">Corretores por Leads</h5>
+								<h5 className="text-base font-semibold text-white">Corretores por Leads</h5>
 								<button 
 									onClick={() => setShowBrokerSelection(!showBrokerSelection)}
 									className="text-xs text-blue-400 hover:text-blue-300 transition-colors px-2 py-1 rounded hover:bg-blue-900/20"
