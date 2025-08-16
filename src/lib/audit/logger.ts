@@ -28,6 +28,10 @@ export type AuditAction =
   | 'bulk_whatsapp.started'
   | 'bulk_whatsapp.finished'
   | 'agenda.event_created'
+  | 'dispatch_configurations.list'
+  | 'dispatch_configurations.create'
+  | 'dispatch_configurations.update'
+  | 'dispatch_configurations.delete'
   | 'system.test';
 
 export interface AuditMeta {
