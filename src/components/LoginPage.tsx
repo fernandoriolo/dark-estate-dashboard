@@ -307,6 +307,20 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
       if (error) throw error;
 
       if (data.user) {
+        // Verificar se o usuário está ativo no perfil antes de prosseguir
+        const { data: profile, error: profileError } = await supabase
+          .from('user_profiles')
+          .select('is_active')
+          .eq('id', data.user.id)
+          .single();
+
+        // Se não existir perfil ou estiver inativo, impedir acesso
+        if (profileError || !profile || profile.is_active === false) {
+          await supabase.auth.signOut();
+          setError('Seu acesso está desativado. Entre em contato com o administrador.');
+          return;
+        }
+
         onLoginSuccess();
       }
     } catch (error: any) {

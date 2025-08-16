@@ -73,6 +73,16 @@ export function useUserProfile() {
         throw profileError;
       }
 
+      // Se o perfil não existir ou estiver inativo, desconectar e bloquear
+      if (!profileData || profileData.is_active === false) {
+        await supabase.auth.signOut();
+        setUser(null);
+        setProfile(null);
+        setCompany(null);
+        setError('Seu acesso está desativado.');
+        return;
+      }
+
       setProfile(profileData);
 
       // Não precisamos mais de dados da empresa
@@ -273,6 +283,33 @@ export function useUserProfile() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Assinar mudanças no próprio perfil para desconectar imediatamente se desativado
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel(`user-profile-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'user_profiles', filter: `id=eq.${user.id}` },
+        async (payload) => {
+          const nextIsActive = (payload.new as any)?.is_active;
+          if (nextIsActive === false) {
+            await supabase.auth.signOut();
+            setUser(null);
+            setProfile(null);
+            setCompany(null);
+            setError('Seu acesso foi desativado.');
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
 
   return {
     user,
