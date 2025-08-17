@@ -395,14 +395,14 @@ export const DashboardCharts: React.FC = () => {
 
 			<Card className="bg-gray-800/50 border-gray-700/50 xl:col-span-8">
 				<CardHeader>
-					<CardTitle className="text-white font-semibold">Conversão de Leads</CardTitle>
+					<CardTitle className="text-white font-semibold">Entrada de Leads</CardTitle>
 				</CardHeader>
 				<CardContent>
-										<div className="grid grid-cols-2 gap-4 h-72">
+					<div className="grid grid-cols-2 gap-8 h-72">
 						{/* Gráfico de barras por canal */}
-						<div className="flex flex-col xl:items-end">
-							<h4 className="text-sm font-medium text-gray-300 mb-2">Por Canal</h4>
-							<div className="flex-1" style={{ overflow: 'visible' }}>
+						<div className="flex flex-col">
+							<h4 className="text-base font-semibold text-gray-300 mb-4 text-center">Por Canal</h4>
+							<div className="flex-1 flex items-center justify-center" style={{ overflow: 'visible' }}>
 								<ChartContainer
 									xAxis={[{ 
 										scaleType: 'linear', 
@@ -449,8 +449,8 @@ export const DashboardCharts: React.FC = () => {
 
 						{/* Gráfico temporal de leads */}
 						<div className="flex flex-col">
-							<div className="flex items-center justify-between mb-2">
-								<h4 className="text-sm font-medium text-gray-300">Por Tempo</h4>
+							<div className="flex items-center justify-between mb-4">
+								<h4 className="text-base font-semibold text-gray-300">Por Tempo</h4>
 								<div className="flex items-center gap-2 text-xs">
 									<select
 										value={timeRange}
@@ -465,7 +465,7 @@ export const DashboardCharts: React.FC = () => {
 									</select>
 								</div>
 							</div>
-							<div className="flex-1" style={{ overflow: 'visible' }}>
+							<div className="flex-1 flex items-center justify-center" style={{ overflow: 'visible' }}>
 								<ChartContainer
 									xAxis={[{ 
 										scaleType: 'band', 
@@ -548,7 +548,10 @@ export const DashboardCharts: React.FC = () => {
 
 			<Card className="bg-gray-800/50 border-gray-700/50 xl:col-span-6">
 				<CardHeader>
-					<CardTitle className="text-white font-semibold">Funil de estágios</CardTitle>
+					<div className="space-y-2">
+						<CardTitle className="text-white font-semibold">Funil de estágios</CardTitle>
+						<CardTitle className="text-white font-semibold text-lg">Corretores por Leads</CardTitle>
+					</div>
 				</CardHeader>
 				<CardContent>
 					<div className="h-[48rem] flex flex-col">
@@ -611,8 +614,7 @@ export const DashboardCharts: React.FC = () => {
 						
 						{/* Gráfico de corretores por leads */}
 						<div className="flex-1 flex flex-col">
-							<div className="flex items-center justify-between mb-3">
-								<h5 className="text-lg font-semibold text-white">Corretores por Leads</h5>
+							<div className="flex items-center justify-end mb-3">
 								<button 
 									onClick={() => setShowBrokerSelection(!showBrokerSelection)}
 									className="text-sm text-blue-400 hover:text-blue-300 transition-colors px-3 py-1.5 rounded hover:bg-blue-900/20"
