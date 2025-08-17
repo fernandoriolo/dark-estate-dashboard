@@ -551,9 +551,9 @@ export const DashboardCharts: React.FC = () => {
 					<CardTitle className="text-white font-semibold">Funil de estágios</CardTitle>
 				</CardHeader>
 				<CardContent>
-					<div className="h-96 flex flex-col">
+					<div className="h-[48rem] flex flex-col">
 						{/* Gráfico de curvas vertical do funil */}
-						<div className="h-40 mb-4">
+						<div className="h-80 mb-8">
 						<ChartContainer
 							xAxis={[{ 
 								scaleType: 'band', 
@@ -561,7 +561,7 @@ export const DashboardCharts: React.FC = () => {
 								data: funil.map(f => f.name),
 									tickLabelStyle: { 
 										fill: chartPalette.textPrimary, 
-										fontSize: '0.75rem', 
+										fontSize: '0.875rem', 
 										fontWeight: 500 
 									}
 							}]}
@@ -572,7 +572,7 @@ export const DashboardCharts: React.FC = () => {
 								valueFormatter: numberValueFormatter,
 									tickLabelStyle: { 
 										fill: chartPalette.textSecondary, 
-										fontSize: '0.7rem' 
+										fontSize: '0.8rem' 
 									},
 									min: 0
 							}]}
@@ -585,12 +585,12 @@ export const DashboardCharts: React.FC = () => {
 									curve: 'catmullRom' as any,
 									area: true as any
 								}]}
-								height={160}
+								height={320}
 								margin={{
-									left: 40,
-									right: 20,
-									top: 10,
-									bottom: 40
+									left: 50,
+									right: 30,
+									top: 20,
+									bottom: 60
 								}}
 							>
 								{/* Gradiente para área do funil */}
@@ -611,11 +611,11 @@ export const DashboardCharts: React.FC = () => {
 						
 						{/* Gráfico de corretores por leads */}
 						<div className="flex-1 flex flex-col">
-							<div className="flex items-center justify-between mb-2">
-								<h5 className="text-base font-semibold text-white">Corretores por Leads</h5>
+							<div className="flex items-center justify-between mb-3">
+								<h5 className="text-lg font-semibold text-white">Corretores por Leads</h5>
 								<button 
 									onClick={() => setShowBrokerSelection(!showBrokerSelection)}
-									className="text-xs text-blue-400 hover:text-blue-300 transition-colors px-2 py-1 rounded hover:bg-blue-900/20"
+									className="text-sm text-blue-400 hover:text-blue-300 transition-colors px-3 py-1.5 rounded hover:bg-blue-900/20"
 								>
 									{showBrokerSelection ? '✕' : '⚙️'} {showBrokerSelection ? 'Fechar' : 'Filtrar'}
 								</button>
@@ -624,11 +624,11 @@ export const DashboardCharts: React.FC = () => {
 							<div className="flex-1 flex">
 								{/* Painel de seleção lateral (quando ativo) */}
 								{showBrokerSelection && (
-									<div className="w-40 mr-3 p-2 bg-gray-800/60 rounded border border-gray-600/30 flex flex-col">
-										<div className="text-xs text-gray-400 mb-2 font-medium">Corretores:</div>
-										<div className="flex-1 overflow-y-auto space-y-1">
+									<div className="w-48 mr-4 p-3 bg-gray-800/60 rounded border border-gray-600/30 flex flex-col">
+										<div className="text-sm text-gray-400 mb-3 font-medium">Corretores:</div>
+										<div className="flex-1 overflow-y-auto space-y-2">
 											{brokers.map(broker => (
-												<label key={broker.name} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-700/40 p-1.5 rounded transition-colors">
+												<label key={broker.name} className="flex items-center gap-3 text-sm cursor-pointer hover:bg-gray-700/40 p-2 rounded transition-colors">
 													<input
 														type="checkbox"
 														checked={selectedBrokers.has(broker.name)}
@@ -641,11 +641,11 @@ export const DashboardCharts: React.FC = () => {
 															}
 															setSelectedBrokers(newSelected);
 														}}
-														className="w-3 h-3 accent-blue-500"
+														className="w-4 h-4 accent-blue-500"
 													/>
 													<span className="text-gray-300 truncate leading-tight" title={broker.name}>
-														{broker.name.length > 12 ? broker.name.substring(0, 12) + '...' : broker.name}
-														<span className="text-gray-500 ml-1">({broker.value})</span>
+														{broker.name.length > 15 ? broker.name.substring(0, 15) + '...' : broker.name}
+														<span className="text-gray-500 ml-2">({broker.value})</span>
 													</span>
 												</label>
 											))}
@@ -653,7 +653,7 @@ export const DashboardCharts: React.FC = () => {
 										{selectedBrokers.size > 0 && (
 											<button 
 												onClick={() => setSelectedBrokers(new Set())}
-												className="mt-2 text-xs text-red-400 hover:text-red-300 transition-colors py-1 text-center"
+												className="mt-3 text-sm text-red-400 hover:text-red-300 transition-colors py-2 text-center"
 											>
 												Limpar ({selectedBrokers.size})
 											</button>
@@ -671,7 +671,7 @@ export const DashboardCharts: React.FC = () => {
 												data: brokersChartData.map(d => d.name),
 												tickLabelStyle: { 
 													fill: chartPalette.textPrimary, 
-													fontSize: '0.7rem', 
+													fontSize: '0.8rem', 
 													fontWeight: 500 
 												}
 											}]}
@@ -682,7 +682,7 @@ export const DashboardCharts: React.FC = () => {
 												valueFormatter: numberValueFormatter,
 												tickLabelStyle: { 
 													fill: chartPalette.textSecondary, 
-													fontSize: '0.7rem' 
+													fontSize: '0.8rem' 
 												},
 												min: 0
 											}]}
@@ -693,12 +693,12 @@ export const DashboardCharts: React.FC = () => {
 												color: item.isUnassigned ? '#ef4444' : chartPalette.secondary,
 												label: item.tooltip // Usar tooltip como label da série
 											}))}
-											height={showBrokerSelection ? 140 : 160}
+											height={showBrokerSelection ? 280 : 320}
 											margin={{
-												left: 50,
-												right: 20,
-												top: 20,
-												bottom: 40
+												left: 60,
+												right: 30,
+												top: 30,
+												bottom: 60
 											}}
 										>
 											<ChartsGrid horizontal style={gridStyle} />
@@ -713,8 +713,8 @@ export const DashboardCharts: React.FC = () => {
 									)}
 									
 									{/* Legenda explicativa */}
-									<div className="mt-1 pt-2 border-t border-gray-700/50">
-										<div className="text-center text-xs text-gray-400">
+									<div className="mt-3 pt-3 border-t border-gray-700/50">
+										<div className="text-center text-sm text-gray-400">
 											{selectedBrokers.size === 0 
 												? `Eixo X: Quantidade de corretores • Eixo Y: Leads por grupo • Vermelho: Não atribuídos`
 												: `Comparativo: ${selectedBrokers.size} corretor${selectedBrokers.size !== 1 ? 'es' : ''} selecionado${selectedBrokers.size !== 1 ? 's' : ''}`
@@ -734,11 +734,11 @@ export const DashboardCharts: React.FC = () => {
 						<CardTitle className="text-white font-semibold">Conversas dos corretores por hora × dia</CardTitle>
 						{/* Filtro por corretor */}
 						<div className="flex items-center gap-2">
-							<span className="text-xs text-gray-400">Corretor:</span>
+							<span className="text-sm text-gray-400">Corretor:</span>
 							<select
 								value={selectedBrokerForHeat}
 								onChange={(e) => setSelectedBrokerForHeat(e.target.value)}
-								className="bg-gray-700 text-white text-xs border border-gray-600 rounded px-2 py-1 min-w-[120px]"
+								className="bg-gray-700 text-white text-sm border border-gray-600 rounded px-3 py-1.5 min-w-[140px]"
 							>
 								<option value="">Todos</option>
 								{availableBrokers.map(broker => (
@@ -751,13 +751,13 @@ export const DashboardCharts: React.FC = () => {
 					</div>
 				</CardHeader>
 				<CardContent>
-					<div className="h-96 flex flex-col">
+					<div className="h-[48rem] flex flex-col">
 						{/* Header com dias e horas mais detalhado */}
-						<div className="flex mb-3">
-							<div className="w-12"></div> {/* Espaço para labels de hora */}
-							<div className="grid grid-cols-7 gap-1 flex-1">
+						<div className="flex mb-4">
+							<div className="w-16"></div> {/* Espaço para labels de hora */}
+							<div className="grid grid-cols-7 gap-2 flex-1">
 							{['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((day, i) => (
-									<div key={i} className="text-center text-xs font-semibold text-gray-300 py-1">
+									<div key={i} className="text-center text-sm font-semibold text-gray-300 py-2">
 									{day}
 								</div>
 							))}
@@ -767,14 +767,14 @@ export const DashboardCharts: React.FC = () => {
 						{/* Heatmap grid com labels de hora */}
 						<div className="flex-1 overflow-y-auto">
 							{Array.from({ length: 24 }, (_, hour) => (
-								<div key={hour} className="flex items-center mb-1">
+								<div key={hour} className="flex items-center mb-2">
 									{/* Label da hora */}
-									<div className="w-12 text-xs text-gray-400 text-right pr-2">
+									<div className="w-16 text-sm text-gray-400 text-right pr-3">
 										{String(hour).padStart(2, '0')}h
 									</div>
 									
 									{/* Células do heatmap para cada dia nesta hora */}
-						<div className="grid grid-cols-7 gap-1 flex-1">
+						<div className="grid grid-cols-7 gap-2 flex-1">
 										{heat.map((dayData, dayIndex) => {
 											const value = dayData[hour] || 0;
 											const intensity = heatMax > 0 ? value / heatMax : 0;
@@ -806,7 +806,7 @@ export const DashboardCharts: React.FC = () => {
 											<div 
 													key={`${dayIndex}-${hour}`}
 													title={`${['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][dayIndex]} às ${String(hour).padStart(2, '0')}h: ${value} conversa${value !== 1 ? 's' : ''}`}
-													className="h-4 w-full rounded-sm transition-all duration-300 hover:scale-125 hover:shadow-lg cursor-pointer border"
+													className="h-6 w-full rounded-md transition-all duration-300 hover:scale-125 hover:shadow-lg cursor-pointer border"
 													style={{ 
 														backgroundColor: bgColor,
 														borderColor: value > 0 ? 'rgba(255,255,255,0.1)' : 'rgba(107,114,128,0.2)'
@@ -820,26 +820,26 @@ export const DashboardCharts: React.FC = () => {
 						</div>
 						
 						{/* Legenda e estatísticas */}
-						<div className="mt-3 pt-3 border-t border-gray-700">
+						<div className="mt-4 pt-4 border-t border-gray-700">
 							<div className="flex items-center justify-between">
 								{/* Legenda de cores com índice */}
-								<div className="flex items-center gap-2 text-xs text-gray-400">
+								<div className="flex items-center gap-3 text-sm text-gray-400">
 									<span>Intensidade:</span>
-							<div className="flex items-center gap-1">
-										<div className="w-3 h-3 rounded-sm bg-gray-700" title="0 conversas" />
-										<div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(59, 130, 246, 0.6)' }} title="Baixa (1-20%)" />
-										<div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(6, 182, 212, 0.7)' }} title="Moderada (21-40%)" />
-										<div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(34, 197, 94, 0.8)' }} title="Média (41-60%)" />
-										<div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(251, 146, 60, 0.8)' }} title="Alta (61-80%)" />
-										<div className="w-3 h-3 rounded-sm" style={{ backgroundColor: 'rgba(239, 68, 68, 0.9)' }} title="Máxima (81-100%)" />
+							<div className="flex items-center gap-2">
+										<div className="w-4 h-4 rounded-md bg-gray-700" title="0 conversas" />
+										<div className="w-4 h-4 rounded-md" style={{ backgroundColor: 'rgba(59, 130, 246, 0.6)' }} title="Baixa (1-20%)" />
+										<div className="w-4 h-4 rounded-md" style={{ backgroundColor: 'rgba(6, 182, 212, 0.7)' }} title="Moderada (21-40%)" />
+										<div className="w-4 h-4 rounded-md" style={{ backgroundColor: 'rgba(34, 197, 94, 0.8)' }} title="Média (41-60%)" />
+										<div className="w-4 h-4 rounded-md" style={{ backgroundColor: 'rgba(251, 146, 60, 0.8)' }} title="Alta (61-80%)" />
+										<div className="w-4 h-4 rounded-md" style={{ backgroundColor: 'rgba(239, 68, 68, 0.9)' }} title="Máxima (81-100%)" />
 									</div>
 								</div>
 								
 								{/* Estatísticas */}
-								<div className="text-xs text-gray-400">
+								<div className="text-sm text-gray-400">
 									Pico: {heatMax} conversa{heatMax !== 1 ? 's' : ''}
 									{selectedBrokerForHeat && (
-										<div className="mt-1">
+										<div className="mt-2">
 											Filtro: {availableBrokers.find(b => b.id === selectedBrokerForHeat)?.name || 'Corretor'}
 										</div>
 									)}
