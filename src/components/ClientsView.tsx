@@ -60,6 +60,10 @@ import { useKanbanLeads } from '@/hooks/useKanbanLeads';
 import { KanbanLead, LeadStage } from '@/types/kanban';
 import { AddLeadModal } from '@/components/AddLeadModal';
 import { LeadViewModal } from '@/components/LeadViewModal';
+import { useUserProfile } from '@/hooks/useUserProfile';
+import { supabase } from '@/integrations/supabase/client';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ChevronDown } from 'lucide-react';
 
 // Componente simplificado para partículas (otimizado)
 const FloatingParticle = ({ delay = 0 }) => (
@@ -522,6 +526,11 @@ export function ClientsView() {
   const [viewLeadId, setViewLeadId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const hScrollRef = useRef<HTMLDivElement | null>(null);
+  
+  // Estados para filtro de corretores
+  const [availableBrokers, setAvailableBrokers] = useState<{id: string, full_name: string}[]>([]);
+  const [selectedBrokers, setSelectedBrokers] = useState<Set<string>>(new Set());
+  const [showBrokerFilter, setShowBrokerFilter] = useState(false);
 
   // Usar o hook do kanban em vez de dados mock
   const { 
@@ -532,6 +541,9 @@ export function ClientsView() {
     totalLeads, 
     stageStats 
   } = useKanbanLeads();
+  
+  // Hook do perfil do usuário
+  const { profile, isManager } = useUserProfile();
   const totalFechamento = leads
     .filter(l => l.stage === 'Fechamento')
     .reduce((sum, l) => sum + (l.valorEstimado || l.valor || 0), 0);
@@ -549,16 +561,95 @@ export function ClientsView() {
     const particleArray = Array.from({ length: 8 }, (_, i) => i);
     setParticles(particleArray);
   }, []);
+  
+  // Carregar corretores disponíveis
+  useEffect(() => {
+    const fetchBrokers = async () => {
+      console.log('🔍 AUDITORIA - ClientsView: Iniciando busca de corretores...');
+      
+      try {
+        // Usar a função RPC list_company_users para respeitar as políticas RLS
+        const { data, error } = await supabase.rpc('list_company_users', {
+          target_company_id: profile?.company_id || null,
+          search: null,
+          roles: ['corretor'],
+          limit_count: 100,
+          offset_count: 0,
+        });
+        
+        console.log('📊 AUDITORIA - Query RPC result:', { data, error });
+        
+        if (error) {
+          console.error('❌ AUDITORIA - Erro na query RPC:', error);
+          throw error;
+        }
+        
+        // Filtrar apenas corretores ativos
+        const activeBrokers = (data || []).filter((user: any) => 
+          user.role === 'corretor' && user.is_active === true
+        );
+        
+        console.log('✅ AUDITORIA - Corretores encontrados:', activeBrokers?.length || 0, activeBrokers);
+        setAvailableBrokers(activeBrokers);
+      } catch (err) {
+        console.error('❌ AUDITORIA - Erro ao carregar corretores:', err);
+        // Em caso de erro, tentar consulta direta como fallback apenas se for admin
+        if (profile?.role === 'admin') {
+          try {
+            console.log('🔄 AUDITORIA - Tentando fallback para admin...');
+            const { data: fallbackData, error: fallbackError } = await supabase
+              .from('user_profiles')
+              .select('id, full_name, role, is_active')
+              .eq('role', 'corretor')
+              .eq('is_active', true)
+              .order('full_name');
+            
+            if (!fallbackError && fallbackData) {
+              console.log('✅ AUDITORIA - Fallback admin bem-sucedido:', fallbackData?.length || 0);
+              setAvailableBrokers(fallbackData || []);
+            }
+          } catch (fallbackErr) {
+            console.error('❌ AUDITORIA - Fallback admin falhou:', fallbackErr);
+          }
+        }
+      }
+    };
+    
+    // Só buscar corretores se o perfil estiver carregado e for gestor/admin
+    if (profile && (profile.role === 'gestor' || profile.role === 'admin')) {
+      fetchBrokers();
+    } else if (profile) {
+      console.log('ℹ️ AUDITORIA - Usuário não tem permissão para ver corretores:', profile.role);
+      setAvailableBrokers([]);
+    }
+  }, [profile]);
 
+  // Função para lidar com toggle do corretor
+  const handleBrokerToggle = (brokerId: string) => {
+    const newSelected = new Set(selectedBrokers);
+    if (newSelected.has(brokerId)) {
+      newSelected.delete(brokerId);
+    } else {
+      newSelected.add(brokerId);
+    }
+    setSelectedBrokers(newSelected);
+  };
+  
   const filteredLeads = leads.filter(lead => {
     if (!lead) return false;
     
     const searchLower = searchTerm.toLowerCase();
-    return (
+    const matchesSearch = (
       (lead.nome || '').toLowerCase().includes(searchLower) ||
       (lead.email || '').toLowerCase().includes(searchLower) ||
       (lead.interesse || '').toLowerCase().includes(searchLower)
     );
+    
+    // Filtro por corretor
+    const matchesBroker = selectedBrokers.size === 0 || 
+      (lead.corretor?.id && selectedBrokers.has(lead.corretor.id));
+    
+    return matchesSearch && matchesBroker;
   });
 
   const getLeadsByStage = (stageTitle: string) => {
@@ -642,6 +733,21 @@ export function ClientsView() {
     };
   }, [leads]);
 
+  // Fechar dropdown de corretores ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      if (!target.closest('[data-broker-filter]')) {
+        setShowBrokerFilter(false);
+      }
+    };
+
+    if (showBrokerFilter) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showBrokerFilter]);
+
   // Mostrar loading enquanto carrega
   if (loading) {
     return (
@@ -706,21 +812,89 @@ export function ClientsView() {
                 <p className="text-gray-400">Gerencie seus leads através do funil de vendas</p>
               </div>
               
-              <motion.div
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <Button 
-                  className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg"
-                  onClick={() => {
-                    setLeadToEdit(null);
-                    setIsAddLeadModalOpen(true);
-                  }}
+              <div className="flex items-center gap-3">
+                {/* Filtro de Corretores */}
+                {(() => {
+                  console.log('🎯 AUDITORIA - Condição do filtro:', { 
+                    availableBrokersLength: availableBrokers.length,
+                    availableBrokers: availableBrokers,
+                    shouldShow: availableBrokers.length > 0
+                  });
+                  return availableBrokers.length > 0;
+                })() && (
+                  <div className="relative" data-broker-filter>
+                    <Button
+                      variant="outline"
+                      className="bg-gray-800/50 border-gray-600 text-white hover:bg-gray-700/50 min-w-[180px] justify-between"
+                      onClick={() => setShowBrokerFilter(!showBrokerFilter)}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Filter className="h-4 w-4" />
+                        <span className="text-sm">
+                          {selectedBrokers.size === 0 
+                            ? 'Todos os Corretores' 
+                            : `${selectedBrokers.size} selecionado${selectedBrokers.size > 1 ? 's' : ''}`
+                          }
+                        </span>
+                      </div>
+                      <ChevronDown className={`h-4 w-4 transition-transform ${showBrokerFilter ? 'rotate-180' : ''}`} />
+                    </Button>
+                    
+                    {showBrokerFilter && (
+                      <div className="absolute top-full mt-2 right-0 z-50 w-64 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-h-64 overflow-y-auto">
+                        <div className="p-3 space-y-2">
+                          <div className="flex items-center justify-between pb-2 border-b border-gray-700">
+                            <span className="text-sm font-medium text-white">Filtrar por Corretor</span>
+                            {selectedBrokers.size > 0 && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-xs text-gray-400 hover:text-white h-6 px-2"
+                                onClick={() => setSelectedBrokers(new Set())}
+                              >
+                                Limpar
+                              </Button>
+                            )}
+                          </div>
+                          
+                          {availableBrokers.map((broker) => (
+                            <div key={broker.id} className="flex items-center space-x-2">
+                              <Checkbox
+                                id={`broker-${broker.id}`}
+                                checked={selectedBrokers.has(broker.id)}
+                                onCheckedChange={() => handleBrokerToggle(broker.id)}
+                                className="border-gray-600 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                              />
+                              <label
+                                htmlFor={`broker-${broker.id}`}
+                                className="text-sm text-gray-300 hover:text-white cursor-pointer flex-1"
+                              >
+                                {broker.full_name}
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <motion.div
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
                 >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Novo Lead
-                </Button>
-              </motion.div>
+                  <Button 
+                    className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg"
+                    onClick={() => {
+                      setLeadToEdit(null);
+                      setIsAddLeadModalOpen(true);
+                    }}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Novo Lead
+                  </Button>
+                </motion.div>
+              </div>
             </motion.div>
 
             {/* Stats Cards */}
