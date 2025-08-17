@@ -548,25 +548,33 @@ export const DashboardCharts: React.FC = () => {
 
 			<Card className="bg-gray-800/50 border-gray-700/50 xl:col-span-6">
 				<CardHeader>
-					<div className="space-y-2">
-						<CardTitle className="text-white font-semibold">Funil de estágios</CardTitle>
-						<CardTitle className="text-white font-semibold text-lg">Corretores por Leads</CardTitle>
-					</div>
+					<CardTitle className="text-white font-semibold">Funis e Corretores</CardTitle>
 				</CardHeader>
 				<CardContent>
 					<div className="h-[48rem] flex flex-col">
 						{/* Gráfico de curvas vertical do funil */}
 						<div className="h-80 mb-8">
+							<h4 className="text-lg font-semibold text-gray-300 mb-4">Funil de Estágios</h4>
+							{/* Debug: mostrar dados do funil */}
+							{process.env.NODE_ENV === 'development' && (
+								<div className="text-xs text-gray-500 mb-2">
+									Debug: {funil.map(f => f.name).join(', ')}
+								</div>
+							)}
 						<ChartContainer
-							xAxis={[{ 
-								scaleType: 'band', 
-								position: 'bottom', 
+							xAxis={[{
+								scaleType: 'band',
+								position: 'bottom',
 								data: funil.map(f => f.name),
-									tickLabelStyle: { 
-										fill: chartPalette.textPrimary, 
-										fontSize: '0.875rem', 
-										fontWeight: 500 
-									}
+								tickLabelStyle: {
+									fill: '#ffffff',
+									fontSize: 12,
+									fontWeight: 600,
+									fontFamily: 'Inter, system-ui, sans-serif',
+									textAnchor: 'middle'
+								},
+								tickLabelInterval: 0,
+								tickRotation: -45
 							}]}
 							yAxis={[{ 
 								scaleType: 'linear', 
@@ -590,10 +598,10 @@ export const DashboardCharts: React.FC = () => {
 								}]}
 								height={320}
 								margin={{
-									left: 50,
-									right: 30,
-									top: 20,
-									bottom: 60
+									left: 60,
+									right: 40,
+									top: 30,
+									bottom: 100
 								}}
 							>
 								{/* Gradiente para área do funil */}
@@ -607,14 +615,16 @@ export const DashboardCharts: React.FC = () => {
 							<ChartsGrid vertical style={gridStyle} />
 								<LinePlot />
 								<AreaPlot />
-							<ChartsAxis />
+							<ChartsAxis position="bottom" />
+							<ChartsAxis position="left" />
 								<ChartsTooltip />
 						</ChartContainer>
 						</div>
 						
 						{/* Gráfico de corretores por leads */}
 						<div className="flex-1 flex flex-col">
-							<div className="flex items-center justify-end mb-3">
+							<div className="flex items-center justify-between mb-3">
+								<h4 className="text-lg font-semibold text-gray-300">Corretores por Leads</h4>
 								<button 
 									onClick={() => setShowBrokerSelection(!showBrokerSelection)}
 									className="text-sm text-blue-400 hover:text-blue-300 transition-colors px-3 py-1.5 rounded hover:bg-blue-900/20"

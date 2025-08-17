@@ -74,7 +74,7 @@ const Index = () => {
       case "reports":
         return <ReportsView />;
       case "properties":
-        return <PropertyList properties={[]} loading={loading} onAddNew={() => {}} />;
+        return <PropertyList properties={[]} loading={loading} onAddNew={() => window.dispatchEvent(new Event("open-add-imovel-modal"))} />;
       case "contracts":
         return <ContractsView />;
       case "agenda":
