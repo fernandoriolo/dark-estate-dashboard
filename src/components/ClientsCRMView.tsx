@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { 
   Users, 
   Plus, 
@@ -26,7 +27,10 @@ import {
   User,
   CheckCircle,
   CreditCard,
-  Heart
+  Heart,
+  ChevronDown,
+  ChevronUp,
+  X
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -35,6 +39,7 @@ import { AddLeadModal } from '@/components/AddLeadModal';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
+import { useRef } from 'react';
 
 // Função para determinar cor do status baseado no stage
 const getStageColor = (stage: string) => {
@@ -81,7 +86,10 @@ export function ClientsCRMView() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedLead, setSelectedLead] = useState(null);
   const [brokerFilter, setBrokerFilter] = useState<string>('all');
+  const [selectedBrokers, setSelectedBrokers] = useState<Set<string>>(new Set());
+  const [showBrokerFilter, setShowBrokerFilter] = useState<boolean>(false);
   const [brokers, setBrokers] = useState<Array<{ id: string; full_name: string }>>([]);
+  const brokerFilterRef = useRef<HTMLDivElement>(null);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const pageSize = 10;
   
@@ -91,6 +99,7 @@ export function ClientsCRMView() {
   // Verificar se o usuário pode ver informações de todos os corretores
   const { profile, getCompanyUsers } = useUserProfile();
   const canSeeAllBrokers = profile?.role === 'gestor' || profile?.role === 'admin';
+  
 
   React.useEffect(() => {
     let cancelled = false;
@@ -109,6 +118,23 @@ export function ClientsCRMView() {
     return () => { cancelled = true; };
   }, [canSeeAllBrokers, getCompanyUsers]);
 
+  // Effect para fechar filtro ao clicar fora
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (brokerFilterRef.current && !brokerFilterRef.current.contains(event.target as Node)) {
+        setShowBrokerFilter(false);
+      }
+    };
+
+    if (showBrokerFilter) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showBrokerFilter]);
+
   const filteredLeads = leads.filter(lead => {
     const matchesSearch = lead.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          (lead.email && lead.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -121,7 +147,10 @@ export function ClientsCRMView() {
                       (selectedTab === 'fechados' && lead.stage === 'Fechado') ||
                       (selectedTab === 'perdidos' && ['Perdido', 'Desistiu'].includes(lead.stage));
 
-    const matchesBroker = !canSeeAllBrokers || brokerFilter === 'all' || lead.id_corretor_responsavel === brokerFilter;
+    const matchesBroker = !canSeeAllBrokers || 
+                      selectedBrokers.size === 0 || 
+                      (lead.id_corretor_responsavel && selectedBrokers.has(lead.id_corretor_responsavel)) ||
+                      (selectedBrokers.has('unassigned') && !lead.id_corretor_responsavel);
 
     return matchesSearch && matchesTab && matchesBroker;
   });
@@ -134,7 +163,27 @@ export function ClientsCRMView() {
 
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedTab, brokerFilter]);
+  }, [searchTerm, selectedTab, selectedBrokers]);
+
+  // Funções para gerenciar filtro de corretores
+  const handleBrokerToggle = (brokerId: string) => {
+    const newSelected = new Set(selectedBrokers);
+    if (newSelected.has(brokerId)) {
+      newSelected.delete(brokerId);
+    } else {
+      newSelected.add(brokerId);
+    }
+    setSelectedBrokers(newSelected);
+  };
+
+  const clearBrokerFilter = () => {
+    setSelectedBrokers(new Set());
+  };
+
+  const selectAllBrokers = () => {
+    const allBrokerIds = new Set([...brokers.map(b => b.id), 'unassigned']);
+    setSelectedBrokers(allBrokerIds);
+  };
 
   const stats = {
     total: leads.length,
@@ -208,21 +257,112 @@ export function ClientsCRMView() {
           transition={{ delay: 0.4, duration: 0.8 }}
         >
           {canSeeAllBrokers && (
-            <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4 text-blue-400" />
-              <Select value={brokerFilter} onValueChange={setBrokerFilter}>
-                <SelectTrigger className="w-56 bg-gray-900/50 border-blue-600/50 text-blue-400">
-                  <SelectValue placeholder="Filtrar por corretor" />
-                </SelectTrigger>
-                <SelectContent className="bg-gray-900 text-gray-200 border-gray-700">
-                  <SelectItem value="all">Todos os corretores</SelectItem>
-                  {brokers.map(b => (
-                    <SelectItem key={b.id} value={b.id}>{b.full_name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div ref={brokerFilterRef} className="relative">
+              <Button
+                variant="outline"
+                onClick={() => setShowBrokerFilter(!showBrokerFilter)}
+                className="flex items-center gap-2 bg-gray-900/50 border-blue-600/50 text-blue-400 hover:bg-gray-800"
+              >
+                <Filter className="h-4 w-4" />
+                Filtrar Corretores 
+                {selectedBrokers.size > 0 && (
+                  <Badge variant="secondary" className="ml-1 bg-blue-600 text-white">
+                    {selectedBrokers.size}
+                  </Badge>
+                )}
+                {showBrokerFilter ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </Button>
+
+              {showBrokerFilter && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="absolute top-full left-0 mt-2 w-80 bg-gray-900 border border-gray-700 rounded-lg shadow-lg z-50 p-4"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-medium text-white">Filtrar por Corretor</h4>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowBrokerFilter(false)}
+                      className="h-6 w-6 p-0 text-gray-400 hover:text-white"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  <div className="flex gap-2 mb-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={selectAllBrokers}
+                      className="text-xs bg-gray-800 border-gray-600 text-gray-300 hover:bg-gray-700"
+                    >
+                      Todos
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={clearBrokerFilter}
+                      className="text-xs bg-gray-800 border-gray-600 text-gray-300 hover:bg-gray-700"
+                    >
+                      Limpar
+                    </Button>
+                  </div>
+
+                  <div className="max-h-60 overflow-y-auto space-y-2">
+                    {/* Opção para leads sem corretor */}
+                    <div className="flex items-center space-x-2 p-2 hover:bg-gray-800 rounded">
+                      <Checkbox
+                        id="unassigned"
+                        checked={selectedBrokers.has('unassigned')}
+                        onCheckedChange={() => handleBrokerToggle('unassigned')}
+                      />
+                      <label
+                        htmlFor="unassigned"
+                        className="text-sm text-gray-300 cursor-pointer flex-1"
+                      >
+                        <div className="flex items-center gap-2">
+                          <User className="h-4 w-4 text-gray-500" />
+                          Sem corretor atribuído
+                        </div>
+                      </label>
+                    </div>
+
+                    {/* Lista de corretores */}
+                    {brokers.map(broker => (
+                      <div key={broker.id} className="flex items-center space-x-2 p-2 hover:bg-gray-800 rounded">
+                        <Checkbox
+                          id={broker.id}
+                          checked={selectedBrokers.has(broker.id)}
+                          onCheckedChange={() => handleBrokerToggle(broker.id)}
+                        />
+                        <label
+                          htmlFor={broker.id}
+                          className="text-sm text-gray-300 cursor-pointer flex-1"
+                        >
+                          <div className="flex items-center gap-2">
+                            <User className="h-4 w-4 text-amber-400" />
+                            {broker.full_name}
+                          </div>
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+
+                  {selectedBrokers.size > 0 && (
+                    <div className="mt-3 pt-3 border-t border-gray-700">
+                      <p className="text-xs text-gray-400">
+                        {selectedBrokers.size} corretor{selectedBrokers.size !== 1 ? 'es' : ''} selecionado{selectedBrokers.size !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                  )}
+                </motion.div>
+              )}
             </div>
           )}
+
+
           <Button 
             className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
             onClick={() => setShowAddModal(true)}

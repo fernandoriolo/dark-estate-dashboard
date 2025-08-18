@@ -645,9 +645,11 @@ export function ClientsView() {
       (lead.interesse || '').toLowerCase().includes(searchLower)
     );
     
-    // Filtro por corretor
+    // Filtro por corretor - usar id_corretor_responsavel do lead
     const matchesBroker = selectedBrokers.size === 0 || 
-      (lead.corretor?.id && selectedBrokers.has(lead.corretor.id));
+      (lead.id_corretor_responsavel && selectedBrokers.has(lead.id_corretor_responsavel)) ||
+      (!lead.id_corretor_responsavel && selectedBrokers.has('unassigned'));
+    
     
     return matchesSearch && matchesBroker;
   });
@@ -814,14 +816,7 @@ export function ClientsView() {
               
               <div className="flex items-center gap-3">
                 {/* Filtro de Corretores */}
-                {(() => {
-                  console.log('🎯 AUDITORIA - Condição do filtro:', { 
-                    availableBrokersLength: availableBrokers.length,
-                    availableBrokers: availableBrokers,
-                    shouldShow: availableBrokers.length > 0
-                  });
-                  return availableBrokers.length > 0;
-                })() && (
+                {availableBrokers.length > 0 && (
                   <div className="relative" data-broker-filter>
                     <Button
                       variant="outline"
@@ -833,7 +828,9 @@ export function ClientsView() {
                         <span className="text-sm">
                           {selectedBrokers.size === 0 
                             ? 'Todos os Corretores' 
-                            : `${selectedBrokers.size} selecionado${selectedBrokers.size > 1 ? 's' : ''}`
+                            : selectedBrokers.size === 1 && selectedBrokers.has('unassigned')
+                              ? 'Sem corretor'
+                              : `${selectedBrokers.size} filtro${selectedBrokers.size > 1 ? 's' : ''}`
                           }
                         </span>
                       </div>
@@ -856,6 +853,28 @@ export function ClientsView() {
                               </Button>
                             )}
                           </div>
+                          
+                          {/* Opção para leads sem corretor */}
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id="unassigned"
+                              checked={selectedBrokers.has('unassigned')}
+                              onCheckedChange={() => handleBrokerToggle('unassigned')}
+                              className="border-gray-600 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                            />
+                            <label
+                              htmlFor="unassigned"
+                              className="text-sm text-gray-300 hover:text-white cursor-pointer flex-1"
+                            >
+                              🚫 Sem corretor atribuído
+                            </label>
+                          </div>
+                          
+                          {availableBrokers.length > 0 && (
+                            <div className="border-t border-gray-700 pt-2 mt-2">
+                              <span className="text-xs text-gray-500 uppercase tracking-wide">Corretores</span>
+                            </div>
+                          )}
                           
                           {availableBrokers.map((broker) => (
                             <div key={broker.id} className="flex items-center space-x-2">

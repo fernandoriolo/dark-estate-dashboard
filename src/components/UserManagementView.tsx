@@ -107,7 +107,10 @@ export function UserManagementView() {
     
     const matchesRole = roleFilter === "all" || user.role === roleFilter;
 
-    return matchesSearch && matchesRole;
+    // Restrição: Gestores não podem visualizar usuários Admin
+    const canViewUser = isAdmin || user.role !== 'admin';
+
+    return matchesSearch && matchesRole && canViewUser;
   });
 
   // Salvar edição do usuário
@@ -453,21 +456,23 @@ export function UserManagementView() {
           </CardContent>
         </Card>
 
-        <Card className="bg-gray-800/50 border-gray-700">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-yellow-500/20 rounded-lg">
-                <Crown className="h-5 w-5 text-yellow-400" />
+        {isAdmin && (
+          <Card className="bg-gray-800/50 border-gray-700">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-yellow-500/20 rounded-lg">
+                  <Crown className="h-5 w-5 text-yellow-400" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-white">
+                    {users.filter(u => u.role === 'admin').length}
+                  </p>
+                  <p className="text-sm text-gray-400">Administradores</p>
+                </div>
               </div>
-              <div>
-                <p className="text-2xl font-bold text-white">
-                  {users.filter(u => u.role === 'admin').length}
-                </p>
-                <p className="text-sm text-gray-400">Administradores</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Filtros */}
@@ -492,7 +497,7 @@ export function UserManagementView() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos</SelectItem>
-                <SelectItem value="admin">Administradores</SelectItem>
+                {isAdmin && <SelectItem value="admin">Administradores</SelectItem>}
                 <SelectItem value="gestor">Gestores</SelectItem>
                 <SelectItem value="corretor">Corretores</SelectItem>
               </SelectContent>
@@ -801,7 +806,7 @@ export function UserManagementView() {
                 <SelectContent>
                   <SelectItem value="corretor">Corretor</SelectItem>
                   <SelectItem value="gestor">Gestor</SelectItem>
-                  <SelectItem value="admin">Administrador</SelectItem>
+                  {isAdmin && <SelectItem value="admin">Administrador</SelectItem>}
                 </SelectContent>
               </Select>
             </div>
