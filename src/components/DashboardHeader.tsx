@@ -3,8 +3,9 @@ import { Bell, Search, Settings, LogOut, User as UserIcon, Image as ImageIcon, M
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useUserProfile } from "@/hooks/useUserProfile";
+import { useNotifications } from "@/hooks/useNotifications";
 import { useContext, createContext } from "react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input as TextInput } from "@/components/ui/input";
@@ -14,15 +15,26 @@ import { useNavigate } from "react-router-dom";
 export function DashboardHeader() {
   const navigate = useNavigate();
   const { profile, updateProfile } = useUserProfile();
+  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const avatarLetter = (profile?.full_name?.charAt(0) || profile?.email?.charAt(0) || 'U').toUpperCase();
 
   const [openProfile, setOpenProfile] = useState(false);
   const [openEmail, setOpenEmail] = useState(false);
   const [openPassword, setOpenPassword] = useState(false);
+  const [openNotifications, setOpenNotifications] = useState(false);
 
   const [fullName, setFullName] = useState(profile?.full_name || "");
   const [phone, setPhone] = useState(profile?.phone || "");
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || "");
+
+  // Sincronizar estados locais com o perfil atualizado
+  useEffect(() => {
+    if (profile) {
+      setFullName(profile.full_name || "");
+      setPhone(profile.phone || "");
+      setAvatarUrl(profile.avatar_url || "");
+    }
+  }, [profile]);
 
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -50,11 +62,7 @@ export function DashboardHeader() {
     e.preventDefault();
     e.stopPropagation();
     console.log('Navegando para perfil do usuário...');
-    
-    // Disparar evento para mudar a view
-    window.dispatchEvent(new CustomEvent('app:navigate', {
-      detail: 'profile'
-    }));
+    navigate('/profile');
   };
   return (
     <header className="border-b border-gray-800/50 bg-gray-900/95 backdrop-blur-sm px-6 py-4 sticky top-0 z-40">
@@ -74,11 +82,18 @@ export function DashboardHeader() {
           <Button variant="ghost" size="icon" className="text-gray-400 hover:text-white hover:bg-gray-800/50 transition-colors">
             <Settings className="h-5 w-5" />
           </Button>
-          <Button variant="ghost" size="icon" className="text-gray-400 hover:text-white hover:bg-gray-800/50 transition-colors relative">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="text-gray-400 hover:text-white hover:bg-gray-800/50 transition-colors relative"
+            onClick={() => setOpenNotifications(true)}
+          >
             <Bell className="h-5 w-5" />
-            <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full text-xs flex items-center justify-center">
-              <span className="text-white text-[10px]">3</span>
-            </span>
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full text-xs flex items-center justify-center">
+                <span className="text-white text-[10px]">{unreadCount}</span>
+              </span>
+            )}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -160,6 +175,72 @@ export function DashboardHeader() {
             <div className="flex justify-end">
               <Button onClick={changePassword} className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">Salvar</Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Notificações */}
+      <Dialog open={openNotifications} onOpenChange={setOpenNotifications}>
+        <DialogContent className="bg-gray-900 border-gray-700 max-w-md max-h-[80vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Bell className="h-5 w-5" />
+                Notificações
+              </span>
+              {unreadCount > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={markAllAsRead}
+                  className="text-blue-400 hover:text-blue-300"
+                >
+                  Marcar todas como lidas
+                </Button>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="max-h-96 overflow-y-auto space-y-3">
+            {notifications.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">
+                <Bell className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                <p>Nenhuma notificação</p>
+              </div>
+            ) : (
+              notifications.map((notification) => (
+                <div
+                  key={notification.id}
+                  className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                    notification.is_read
+                      ? 'bg-gray-800 border-gray-700'
+                      : 'bg-blue-900/20 border-blue-700'
+                  }`}
+                  onClick={() => {
+                    if (!notification.is_read) {
+                      markAsRead(notification.id);
+                    }
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1">
+                      <h4 className="font-medium text-white text-sm mb-1">
+                        {notification.title}
+                      </h4>
+                      <p className="text-gray-400 text-sm leading-relaxed">
+                        {notification.message}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-2">
+                        {new Date(notification.created_at).toLocaleString('pt-BR')}
+                      </p>
+                    </div>
+                    {!notification.is_read && (
+                      <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 mt-1" />
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </DialogContent>
       </Dialog>

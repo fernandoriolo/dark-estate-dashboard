@@ -19,12 +19,17 @@ import {
   Users,
   Check,
   Clock,
-  RotateCcw
+  RotateCcw,
+  UserPlus
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useUserProfile } from "@/hooks/useUserProfile";
+import { useWhatsAppInstances } from "@/hooks/useWhatsAppInstances";
+import { supabase } from "@/integrations/supabase/client";
 
 interface WhatsAppInstance {
   id: string;
@@ -42,19 +47,36 @@ interface WhatsAppInstance {
   chatCount?: number;
   battery?: number;
   deviceModel?: string;
+  user_profile?: {
+    full_name: string;
+    email: string;
+    role: string;
+  };
 }
 
 export function ConnectionsView() {
   // URLs dos webhooks através do proxy
   const WEBHOOK_BASE_URL = '/api/webhook';
+  const { profile, isManager } = useUserProfile();
+  const { 
+    instances, 
+    loading, 
+    createInstance, 
+    refreshInstances,
+    canCreateInstances,
+    loadAvailableUsersForAssignment  // Nova função centralizada
+  } = useWhatsAppInstances();
   
-  const [instances, setInstances] = useState<WhatsAppInstance[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Estados locais para o modal
   const [showAddModal, setShowAddModal] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
   const [selectedInstance, setSelectedInstance] = useState<WhatsAppInstance | null>(null);
   const [newInstanceName, setNewInstanceName] = useState("");
   const [newInstanceNumber, setNewInstanceNumber] = useState("");
+  const [selectedUserId, setSelectedUserId] = useState<string>("");
+  const [availableUsers, setAvailableUsers] = useState<Array<{id: string, full_name: string, email: string, role: string}>>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [creatingInstance, setCreatingInstance] = useState(false);
   const [qrCodeImage, setQrCodeImage] = useState<string | null>(null);
   const [generatingQr, setGeneratingQr] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -238,9 +260,6 @@ export function ConnectionsView() {
     }
   };
 
-  useEffect(() => {
-    fetchInstances();
-  }, []);
 
   // Timer do QR Code (15 segundos)
   useEffect(() => {
@@ -272,10 +291,10 @@ export function ConnectionsView() {
     if (showQrModal && selectedInstance && !qrExpired) {
       // Verificar status a cada 2 segundos
       intervalId = setInterval(async () => {
-        const updatedInstances = await checkInstancesStatus();
+        refreshInstances();
         
         // Procurar a instância selecionada na lista atualizada
-        const currentInstance = updatedInstances.find(inst => inst.id === selectedInstance.id);
+        const currentInstance = instances.find(inst => inst.id === selectedInstance.id);
         
         if (currentInstance && currentInstance.status === 'connected') {
           console.log('✅ Instância conectada com sucesso:', currentInstance.name);
@@ -372,7 +391,7 @@ export function ConnectionsView() {
   };
 
   const handleRefreshInstances = () => {
-    fetchInstances();
+    refreshInstances();
   };
 
   const handleShowQrCode = (instance: WhatsAppInstance) => {
@@ -444,7 +463,7 @@ export function ConnectionsView() {
       }
       
       // Atualizar lista de instâncias para verificar mudança de status
-      fetchInstances();
+      refreshInstances();
       
     } catch (error) {
       console.error('❌ Erro ao gerar QR Code:', error);
@@ -488,7 +507,7 @@ export function ConnectionsView() {
       setInstanceToDelete(null);
       
       // Atualizar lista de instâncias
-      fetchInstances();
+      refreshInstances();
       
     } catch (error) {
       console.error('❌ Erro ao deletar instância:', error);
@@ -716,54 +735,75 @@ export function ConnectionsView() {
     }
   };
 
+  // Carregar usuários disponíveis usando a função centralizada do hook
+  const loadAvailableUsers = async () => {
+    if (!isManager) {
+      console.log('❌ Usuário não é gestor, interrompendo carregamento');
+      return;
+    }
+    
+    try {
+      setLoadingUsers(true);
+      console.log('🔄 Carregando usuários disponíveis via hook centralizado...');
+      
+      // Usar a função centralizada do hook que consulta diretamente a tabela whatsapp_instances
+      const availableUsersData = await loadAvailableUsersForAssignment();
+      
+      console.log('✅ Usuários disponíveis carregados:', {
+        count: availableUsersData.length,
+        users: availableUsersData.map(u => `${u.full_name} (${u.role})`)
+      });
+      
+      setAvailableUsers(availableUsersData);
+    } catch (error) {
+      console.error('❌ Erro ao carregar usuários disponíveis:', error);
+      setAvailableUsers([]);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
   const handleAddInstance = async () => {
     if (!newInstanceName.trim() || !newInstanceNumber.trim()) return;
+    
+    // Para gestores, verificar se selecionou um usuário
+    if (isManager && !selectedUserId) {
+      alert('Por favor, selecione para qual usuário esta instância será atribuída.');
+      return;
+    }
+    
+    // Verificar se há usuários disponíveis
+    if (isManager && availableUsers.length === 0) {
+      alert('Não há usuários disponíveis. Todos os usuários já possuem instâncias conectadas.');
+      return;
+    }
 
     try {
-      // Gerar session ID no formato UUID
-      const generateSessionId = () => {
-        const chars = '0123456789ABCDEF';
-        let result = '';
-        for (let i = 0; i < 32; i++) {
-          result += chars[Math.floor(Math.random() * 16)];
-        }
-        return `${result.substring(0, 8)}-${result.substring(8, 12)}-${result.substring(12, 16)}-${result.substring(16, 20)}-${result.substring(20, 32)}`;
-      };
+      setCreatingInstance(true);
+      const targetUserId = isManager ? selectedUserId : profile?.id;
       
-      const sessionId = generateSessionId();
-      
-      console.log('➕ Criando nova instância:', newInstanceName, 'Número:', newInstanceNumber, 'Session ID:', sessionId);
-      
-      const response = await fetch(`${WEBHOOK_BASE_URL}/criar-instancia`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: newInstanceName,
-          number: newInstanceNumber,
-          sessionId: sessionId,
-          webhookUrl: `https://webhooklabz.n8nlabz.com.br/webhook/${newInstanceName.toLowerCase().replace(/\s+/g, '-')}`
-        }),
+      await createInstance({
+        instance_name: newInstanceName,
+        phone_number: newInstanceNumber,
+        assigned_user_id: targetUserId
       });
 
-      if (!response.ok) {
-        throw new Error(`Erro HTTP: ${response.status}`);
-      }
-
-      const result = await response.json();
-      console.log('✅ Instância criada:', result);
-
+      // Limpar form
       setNewInstanceName("");
       setNewInstanceNumber("");
+      setSelectedUserId("");
       setShowAddModal(false);
       
-      // Atualizar lista de instâncias
-      fetchInstances();
+      // Recarregar lista de usuários disponíveis para o próximo uso
+      if (isManager) {
+        loadAvailableUsers();
+      }
       
     } catch (error) {
       console.error('❌ Erro ao criar instância:', error);
       alert('Erro ao criar instância. Tente novamente.');
+    } finally {
+      setCreatingInstance(false);
     }
   };
 
@@ -849,13 +889,20 @@ export function ConnectionsView() {
               <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
               Atualizar
             </Button>
-            <Button
-              onClick={() => setShowAddModal(true)}
-              className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white shadow-lg hover:shadow-xl transition-all duration-200"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Nova Instância
-            </Button>
+            {canCreateInstances && (
+              <Button
+                onClick={() => {
+                  setShowAddModal(true);
+                  if (isManager) {
+                    loadAvailableUsers();
+                  }
+                }}
+                className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white shadow-lg hover:shadow-xl transition-all duration-200"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Nova Instância
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -921,6 +968,15 @@ export function ConnectionsView() {
                       </h3>
                       {instance.profileName && (
                         <p className="text-gray-400 text-sm truncate">Instância: {instance.name}</p>
+                      )}
+                      {/* Mostrar informações do usuário proprietário (para gestores) */}
+                      {isManager && (
+                        <div className="flex items-center gap-1 mt-1">
+                          <UserPlus className="h-3 w-3 text-blue-400" />
+                          <span className="text-xs text-blue-400 truncate">
+                            {instance.user_profile?.full_name || 'Sem usuário atribuído'}
+                          </span>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1080,6 +1136,46 @@ export function ConnectionsView() {
                 Coloque no formato DDI+DDD+NUMERO ex: 5519994419319
               </p>
             </div>
+            
+            {/* Campo de seleção de usuário (apenas para gestores) */}
+            {isManager && (
+              <div>
+                <Label htmlFor="assignedUser" className="text-gray-300">Atribuir para Usuário</Label>
+                <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                  <SelectTrigger className="bg-gray-700 border-gray-600 text-white mt-1">
+                    <SelectValue placeholder="Selecione um usuário" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-gray-700 border-gray-600">
+                    {loadingUsers ? (
+                      <SelectItem value="loading" disabled className="text-gray-400">
+                        Carregando usuários...
+                      </SelectItem>
+                    ) : availableUsers.length === 0 ? (
+                      <SelectItem value="no-users" disabled className="text-gray-400">
+                        Todos os usuários já possuem instâncias conectadas
+                      </SelectItem>
+                    ) : (
+                      availableUsers.map((user) => (
+                        <SelectItem key={user.id} value={user.id} className="text-white hover:bg-gray-600">
+                          <div className="flex items-center gap-2">
+                            <UserPlus className="h-4 w-4 text-green-400" />
+                            <div>
+                              <div className="font-medium">{user.full_name}</div>
+                              <div className="text-xs text-gray-400">
+                                {user.role} • {user.email} • Sem instância conectada
+                              </div>
+                            </div>
+                          </div>
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-400 mt-1">
+                  Apenas usuários sem instâncias conectadas são exibidos.
+                </p>
+              </div>
+            )}
             <div className="flex justify-end gap-3 pt-4">
               <Button
                 variant="outline"
@@ -1087,6 +1183,7 @@ export function ConnectionsView() {
                   setShowAddModal(false);
                   setNewInstanceName("");
                   setNewInstanceNumber("");
+                  setSelectedUserId("");
                 }}
                 className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600"
               >
@@ -1094,10 +1191,22 @@ export function ConnectionsView() {
               </Button>
               <Button
                 onClick={handleAddInstance}
-                disabled={!newInstanceName.trim() || !newInstanceNumber.trim()}
+                disabled={
+                  creatingInstance ||
+                  !newInstanceName.trim() || 
+                  !newInstanceNumber.trim() || 
+                  (isManager && (!selectedUserId || availableUsers.length === 0))
+                }
                 className="bg-green-600 hover:bg-green-700 text-white"
               >
-                Criar Instância
+                {creatingInstance ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Criando...
+                  </>
+                ) : (
+                  'Criar Instância'
+                )}
               </Button>
             </div>
           </div>

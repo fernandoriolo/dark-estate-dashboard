@@ -44,16 +44,19 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Separator } from "./ui/separator";
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useWhatsAppInstances, WhatsAppInstance } from '@/hooks/useWhatsAppInstances';
+import { useNotifications } from '@/hooks/useNotifications';
 import { Switch } from "./ui/switch";
 import { Textarea } from "./ui/textarea";
 
 export function ConnectionsViewSimplified() {
   const { profile, isManager } = useUserProfile();
+  const { createConnectionRequest } = useNotifications();
   const {
     instances,
     loading,
     error,
     createInstance,
+    requestConnection,  // Nova função integrada
     updateInstanceStatus,
     deleteInstance,
     generateQrCode,
@@ -83,6 +86,11 @@ export function ConnectionsViewSimplified() {
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [generatingQr, setGeneratingQr] = useState(false);
   const [showSystemAlert, setShowSystemAlert] = useState(false);
+  
+  // Estados para solicitação ao gestor
+  const [showRequestModal, setShowRequestModal] = useState(false);
+  const [requestMessage, setRequestMessage] = useState("");
+  const [requestingConnection, setRequestingConnection] = useState(false);
   
   // Novos estados para funcionalidades completas
   const [qrTimer, setQrTimer] = useState(15);
@@ -378,6 +386,38 @@ export function ConnectionsViewSimplified() {
       alert('Erro ao salvar configurações. Tente novamente.');
     } finally {
       setSavingConfig(false);
+    }
+  };
+
+  // Solicitar conexão ao gestor (novo método integrado)
+  const handleRequestConnection = async () => {
+    try {
+      setRequestingConnection(true);
+      
+      // Validar nome da instância
+      if (!newInstanceName.trim()) {
+        alert('Por favor, informe o nome da instância');
+        return;
+      }
+      
+      // Usar o novo método integrado que cria a instância + notifica automaticamente
+      await requestConnection({
+        instance_name: newInstanceName.trim(),
+        phone_number: newInstancePhone.trim() || undefined,
+        message: requestMessage || undefined
+      });
+      
+      setShowRequestModal(false);
+      setNewInstanceName("");
+      setNewInstancePhone("");
+      setRequestMessage("");
+      
+      alert('Solicitação criada com sucesso! Os gestores foram notificados automaticamente.');
+    } catch (error: any) {
+      console.error('Erro ao solicitar conexão:', error);
+      alert(error.message || 'Erro ao enviar solicitação. Tente novamente.');
+    } finally {
+      setRequestingConnection(false);
     }
   };
 
@@ -690,8 +730,8 @@ export function ConnectionsViewSimplified() {
                   <p className="text-gray-500 mb-2">Apenas gestores podem criar conexões</p>
                   <Button 
                     variant="outline"
-                    disabled
-                    className="border-gray-600 text-gray-400 cursor-not-allowed"
+                    onClick={() => setShowRequestModal(true)}
+                    className="border-blue-600 text-blue-400 hover:bg-blue-600/10"
                   >
                     <Plus className="mr-2 h-4 w-4" />
                     Solicitar ao Gestor
@@ -1092,6 +1132,92 @@ export function ConnectionsViewSimplified() {
               {savingConfig ? 'Salvando...' : 'Salvar Configurações'}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Solicitar Conexão */}
+      <Dialog open={showRequestModal} onOpenChange={setShowRequestModal}>
+        <DialogContent className="bg-gray-900 border-gray-700 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <MessageCircle className="h-5 w-5 text-blue-400" />
+              Solicitar Conexão WhatsApp
+            </DialogTitle>
+            <DialogDescription className="text-gray-400">
+              Sua solicitação será enviada para todos os gestores da empresa.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="instance-name" className="text-gray-300">
+                Nome da Instância *
+              </Label>
+              <Input
+                id="instance-name"
+                placeholder="Ex: Meu WhatsApp Business"
+                value={newInstanceName}
+                onChange={(e) => setNewInstanceName(e.target.value)}
+                className="bg-gray-800 border-gray-600 text-white placeholder:text-gray-400 mt-2"
+                required
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="instance-phone" className="text-gray-300">
+                Número do WhatsApp (opcional)
+              </Label>
+              <Input
+                id="instance-phone"
+                placeholder="Ex: +55 11 99999-9999"
+                value={newInstancePhone}
+                onChange={(e) => setNewInstancePhone(e.target.value)}
+                className="bg-gray-800 border-gray-600 text-white placeholder:text-gray-400 mt-2"
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="request-message" className="text-gray-300">
+                Mensagem (opcional)
+              </Label>
+              <Textarea
+                id="request-message"
+                placeholder="Descreva o motivo da sua solicitação..."
+                value={requestMessage}
+                onChange={(e) => setRequestMessage(e.target.value)}
+                className="bg-gray-800 border-gray-600 text-white placeholder:text-gray-400 mt-2"
+                rows={3}
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setShowRequestModal(false)}
+              className="border-gray-600 text-gray-300 hover:bg-gray-800"
+              disabled={requestingConnection}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleRequestConnection}
+              disabled={requestingConnection}
+              className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white"
+            >
+              {requestingConnection ? (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                <>
+                  <MessageCircle className="mr-2 h-4 w-4" />
+                  Enviar Solicitação
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

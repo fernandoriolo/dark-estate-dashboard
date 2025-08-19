@@ -21,8 +21,19 @@ export interface WhatsAppInstance {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  // Novos campos para sistema de solicitações
+  request_status?: 'requested' | 'approved' | 'active' | 'inactive';
+  requested_by?: string;
+  requested_at?: string;
+  request_message?: string;
   // Dados do usuário (para gestores verem todas as instâncias)
   user_profile?: {
+    full_name: string;
+    email: string;
+    role: string;
+  };
+  // Dados do solicitante
+  requester_profile?: {
     full_name: string;
     email: string;
     role: string;
@@ -86,7 +97,8 @@ export function useWhatsAppInstances() {
         .from('whatsapp_instances')
         .select(`
           *,
-          user_profile:user_profiles(full_name, email, role)
+          user_profile:user_profiles!whatsapp_instances_user_id_fkey(full_name, email, role),
+          requester_profile:user_profiles!whatsapp_instances_requested_by_fkey(full_name, email, role)
         `);
 
       // Se for corretor, buscar apenas suas instâncias
@@ -364,7 +376,8 @@ export function useWhatsAppInstances() {
         })
         .select(`
           *,
-          user_profile:user_profiles(full_name, email, role)
+          user_profile:user_profiles!whatsapp_instances_user_id_fkey(full_name, email, role),
+          requester_profile:user_profiles!whatsapp_instances_requested_by_fkey(full_name, email, role)
         `)
         .single();
 
@@ -429,7 +442,8 @@ export function useWhatsAppInstances() {
         .eq('id', instanceId)
         .select(`
           *,
-          user_profile:user_profiles(full_name, email, role)
+          user_profile:user_profiles!whatsapp_instances_user_id_fkey(full_name, email, role),
+          requester_profile:user_profiles!whatsapp_instances_requested_by_fkey(full_name, email, role)
         `)
         .single();
 
@@ -826,27 +840,207 @@ export function useWhatsAppInstances() {
     return instances.filter(instance => instance.user_id === userId);
   };
 
-  // Buscar todos os usuários (para gestores atribuírem instâncias)
-  const loadAllUsers = async () => {
+  // Buscar usuários DISPONÍVEIS para atribuição (sem instâncias vinculadas)
+  // Esta função é a fonte única de verdade para o dropdown "Atribuir Para"
+  const loadAvailableUsersForAssignment = async () => {
     try {
       if (!isManager) {
-        console.warn('Apenas gestores podem carregar lista de usuários');
+        console.warn('Apenas gestores podem carregar lista de usuários disponíveis');
         return [];
       }
 
-      const { data, error } = await supabase
+      console.log('🔄 loadAvailableUsersForAssignment: Iniciando busca de usuários disponíveis');
+
+      // Passo 1: Buscar usuários com instâncias ativas
+      const { data: usersWithInstances, error: instancesError } = await supabase
+        .from('whatsapp_instances')
+        .select('user_id')
+        .eq('company_id', profile?.company_id)
+        .eq('is_active', true)
+        .not('user_id', 'is', null);
+
+      if (instancesError) {
+        console.error('❌ Erro ao buscar instâncias:', instancesError);
+        throw instancesError;
+      }
+
+      // Extrair IDs dos usuários que já têm instâncias
+      const userIdsWithInstances = (usersWithInstances || [])
+        .map(instance => instance.user_id)
+        .filter(Boolean);
+
+      console.log('🔍 DEBUG: Usuários com instâncias:', userIdsWithInstances);
+
+      // Passo 2: Buscar usuários disponíveis (sem instâncias)
+      let query = supabase
         .from('user_profiles')
         .select('id, full_name, email, role')
-        .order('role', { ascending: false }) // Admin, Gestor, Corretor
+        .eq('company_id', profile?.company_id)  // Mesma empresa
+        .eq('is_active', true)                  // Usuários ativos
+        .in('role', ['corretor', 'gestor'])     // Excluir ADMIN
+        .neq('id', profile?.id);                // Excluir usuário atual
+
+      // Se há usuários com instâncias, excluí-los
+      if (userIdsWithInstances.length > 0) {
+        query = query.not('id', 'in', `(${userIdsWithInstances.map(id => `"${id}"`).join(',')})`);
+      }
+
+      const { data: availableUsers, error } = await query
+        .order('role', { ascending: false })
         .order('full_name', { ascending: true });
+
+      if (error) {
+        console.error('❌ Erro ao buscar usuários disponíveis:', error);
+        throw error;
+      }
+
+      console.log('✅ Usuários disponíveis encontrados:', {
+        count: availableUsers?.length || 0,
+        users: availableUsers?.map(u => `${u.full_name} (${u.role})`) || []
+      });
+
+      return availableUsers || [];
+    } catch (error: any) {
+      console.error('❌ Erro ao carregar usuários disponíveis:', error);
+      return [];
+    }
+  };
+
+  // Solicitar conexão criando instância pendente (novo fluxo integrado)
+  const requestConnection = async (instanceData: {
+    instance_name: string;
+    phone_number?: string;
+    message?: string;
+  }) => {
+    try {
+      if (!profile?.id || !profile?.company_id) {
+        throw new Error('Perfil do usuário não encontrado');
+      }
+
+      console.log('🔄 Criando solicitação de conexão integrada...');
+
+      // Verificar se usuário já tem instância ou solicitação pendente
+      const { data: existingInstances, error: checkError } = await supabase
+        .from('whatsapp_instances')
+        .select('id, request_status, status')
+        .eq('requested_by', profile.id)
+        .or('request_status.eq.requested,status.in.(connected,qr_code,connecting)');
+
+      if (checkError) throw checkError;
+
+      if (existingInstances && existingInstances.length > 0) {
+        const pending = existingInstances.find(i => i.request_status === 'requested');
+        const active = existingInstances.find(i => ['connected', 'qr_code', 'connecting'].includes(i.status));
+        
+        if (pending) {
+          throw new Error('Você já possui uma solicitação pendente');
+        }
+        if (active) {
+          throw new Error('Você já possui uma instância ativa');
+        }
+      }
+
+      // Criar instância com status 'requested' - isso vai disparar o trigger automaticamente
+      const { data: newInstance, error: createError } = await supabase
+        .from('whatsapp_instances')
+        .insert({
+          user_id: profile.id,  // Será a instância final do usuário
+          company_id: profile.company_id,
+          instance_name: instanceData.instance_name,
+          phone_number: instanceData.phone_number,
+          request_status: 'requested',  // Status de solicitação
+          status: 'disconnected',       // Status técnico inicial
+          requested_by: profile.id,
+          requested_at: new Date().toISOString(),
+          request_message: instanceData.message || `Solicitação de ${profile.full_name}`,
+          webhook_url: `https://webhooklabz.n8nlabz.com.br/webhook/${instanceData.instance_name}`,
+          is_active: true
+        })
+        .select(`
+          *,
+          user_profile:user_profiles!whatsapp_instances_user_id_fkey(full_name, email, role),
+          requester_profile:user_profiles!whatsapp_instances_requested_by_fkey(full_name, email, role)
+        `)
+        .single();
+
+      if (createError) throw createError;
+
+      console.log('✅ Solicitação criada:', newInstance);
+      console.log('📬 Trigger automático irá notificar gestores');
+
+      // Atualizar lista local
+      setInstances(prev => [newInstance, ...prev]);
+
+      return newInstance;
+    } catch (error: any) {
+      console.error('❌ Erro ao criar solicitação integrada:', error);
+      throw error;
+    }
+  };
+
+  // Aprovar solicitação (para gestores)
+  const approveConnectionRequest = async (instanceId: string) => {
+    try {
+      if (!isManager) throw new Error('Apenas gestores podem aprovar solicitações');
+
+      const { data: instance, error } = await supabase
+        .from('whatsapp_instances')
+        .update({
+          request_status: 'approved',
+          status: 'qr_code',  // Pronto para gerar QR
+        })
+        .eq('id', instanceId)
+        .select(`
+          *,
+          user_profile:user_profiles!whatsapp_instances_user_id_fkey(full_name, email, role),
+          requester_profile:user_profiles!whatsapp_instances_requested_by_fkey(full_name, email, role)
+        `)
+        .single();
 
       if (error) throw error;
 
-      return data || [];
+      // Criar notificação para o solicitante
+      const { error: notifyError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: instance.requested_by,
+          company_id: instance.company_id,
+          type: 'connection_approved',
+          title: 'Solicitação Aprovada! 🎉',
+          message: `Sua solicitação de conexão "${instance.instance_name}" foi aprovada! Você pode gerar o QR code agora.`,
+          data: {
+            instance_id: instanceId,
+            instance_name: instance.instance_name,
+            approved_by: profile?.id,
+            approved_by_name: profile?.full_name
+          }
+        });
+
+      if (notifyError) {
+        console.error('Erro ao notificar aprovação:', notifyError);
+      }
+
+      // Atualizar lista local
+      setInstances(prev => 
+        prev.map(inst => inst.id === instanceId ? instance : inst)
+      );
+
+      return instance;
     } catch (error: any) {
-      console.error('Erro ao carregar usuários:', error);
-      return [];
+      console.error('Erro ao aprovar solicitação:', error);
+      throw error;
     }
+  };
+
+  // Obter solicitações pendentes (para gestores)
+  const getPendingRequests = () => {
+    return instances.filter(inst => inst.request_status === 'requested');
+  };
+
+  // Manter função original para compatibilidade (deprecated)
+  const loadAllUsers = async () => {
+    console.warn('🚨 loadAllUsers está deprecated, use loadAvailableUsersForAssignment');
+    return loadAvailableUsersForAssignment();
   };
 
   // Obter estatísticas das instâncias
@@ -957,6 +1151,10 @@ export function useWhatsAppInstances() {
     getInstancesByUser,
     getInstanceStats,
     loadAllUsers,
+    loadAvailableUsersForAssignment,  // Nova função centralizada
+    requestConnection,                // Nova função integrada de solicitação
+    approveConnectionRequest,         // Aprovação de solicitação
+    getPendingRequests,              // Obter solicitações pendentes
     refreshInstances: loadInstances,
     canCreateInstances: isManager, // Helper para saber se pode criar instâncias
     connectInstance,

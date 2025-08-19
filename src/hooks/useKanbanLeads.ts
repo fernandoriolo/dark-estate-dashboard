@@ -25,8 +25,19 @@ export function useKanbanLeads() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return 'corretor';
 
-      // Buscar no auth.users ao invés de user_profiles
-      const role = 'corretor'; // Por enquanto definir como corretor
+      // Buscar role real do user_profiles
+      const { data: profileData, error } = await supabase
+        .from('user_profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      if (error) {
+        console.error('Erro ao buscar role do usuário:', error);
+        return 'corretor';
+      }
+
+      const role = profileData?.role || 'corretor';
       setUserRole(role);
       return role;
     } catch (error) {
