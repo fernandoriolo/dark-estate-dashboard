@@ -7,9 +7,11 @@ import { Plus, Calendar } from "lucide-react";
 import { useProperties } from "@/hooks/useProperties";
 import { logAudit } from "@/lib/audit/logger";
 import { useClients } from "@/hooks/useClients";
+import { supabase } from "@/integrations/supabase/client";
+import { useUserProfile } from "@/hooks/useUserProfile";
 
 interface AgendaEvent {
-  id: number;
+  id: number | string;
   date: Date;
   client: string;
   property: string;
@@ -77,15 +79,326 @@ export function AgendaView() {
   // Buscar propriedades e clientes existentes
   const { properties } = useProperties();
   const { clients } = useClients();
+  const { getCompanyUsers } = useUserProfile();
+  
+  // Função para salvar evento nas notas do cliente (fallback)
+  const saveEventToClientNotes = async (eventInfo: {
+    eventId: string;
+    summary: string;
+    description: string;
+    startTime: string;
+    location: string;
+    clientId: string;
+    clientName: string;
+    corretorName: string;
+    eventType: string;
+  }) => {
+    try {
+      const eventDate = new Date(eventInfo.startTime);
+      const eventNote = `
+[EVENTO AGENDADO] ${eventInfo.eventType} - ${eventInfo.summary}
+📅 Data: ${eventDate.toISOString()}
+📍 Local: ${eventInfo.location}
+👤 Corretor: ${eventInfo.corretorName}
+📝 Descrição: ${eventInfo.description}
+🆔 ID: ${eventInfo.eventId}
+⏰ Criado em: ${new Date().toISOString()}
+`;
+      
+      const { data: client, error: fetchError } = await supabase
+        .from('leads')
+        .select('notes')
+        .eq('id', eventInfo.clientId)
+        .single();
+      
+      if (fetchError) {
+        console.error('❌ Erro ao buscar cliente para fallback:', fetchError);
+        return;
+      }
+      
+      const currentNotes = client?.notes || '';
+      const updatedNotes = currentNotes + '\n\n' + eventNote;
+      
+      const { error: updateError } = await supabase
+        .from('leads')
+        .update({ notes: updatedNotes })
+        .eq('id', eventInfo.clientId);
+      
+      if (updateError) {
+        console.error('❌ Erro ao salvar evento nas notas:', updateError);
+      } else {
+        console.log('✅ Evento salvo nas notas do cliente como fallback');
+      }
+    } catch (error) {
+      console.error('❌ Erro no fallback para notas:', error);
+    }
+  };
+
+  // Função para salvar evento na tabela oncall_events
+  const saveEventToDatabase = async (eventData: {
+    event_id: string;
+    summary: string;
+    description: string;
+    start_time: string;
+    end_time: string;
+    location: string;
+    attendee_email: string;
+    attendee_name: string;
+    property_id: string;
+    property_title: string;
+    client_id: string;
+    client_name: string;
+    corretor_name: string;
+    event_type: string;
+    status: string;
+  }) => {
+    try {
+      // Buscar o user_id e company_id do usuário atual
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('Usuário não autenticado');
+      }
+
+      // Buscar o profile do usuário para obter company_id
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('company_id')
+        .eq('id', user.id)
+        .single();
+
+      if (!profile) {
+        throw new Error('Profile do usuário não encontrado');
+      }
+
+      // Encontrar o assigned_user_id baseado no corretor_name
+      let assignedUserId = null;
+      if (eventData.corretor_name && eventData.corretor_name !== 'Não informado') {
+        try {
+          const { data: corretorProfile, error: corretorError } = await supabase
+            .from('user_profiles')
+            .select('id')
+            .eq('company_id', profile.company_id)
+            .ilike('full_name', `%${eventData.corretor_name}%`)
+            .maybeSingle();
+          
+          if (corretorError) {
+            console.warn('❌ Erro ao buscar corretor:', corretorError.message);
+          } else if (corretorProfile) {
+            assignedUserId = corretorProfile.id;
+            console.log('✅ Corretor encontrado:', corretorProfile.id);
+          } else {
+            console.warn('⚠️ Corretor não encontrado:', eventData.corretor_name);
+          }
+        } catch (error) {
+          console.warn('❌ Erro na busca do corretor:', error);
+        }
+      }
+
+      // A tabela oncall_events já foi criada na migration anterior
+      console.log('✅ Procedendo com inserção na tabela oncall_events...');
+
+      const insertData = {
+        title: eventData.summary,
+        description: eventData.description,
+        starts_at: eventData.start_time,
+        ends_at: eventData.end_time,
+        client_name: eventData.client_name,
+        client_email: eventData.attendee_email,
+        property_id: eventData.property_id,
+        property_title: eventData.property_title,
+        address: eventData.location,
+        type: eventData.event_type,
+        status: eventData.status,
+        google_event_id: eventData.event_id.startsWith('local_') ? null : eventData.event_id,
+        webhook_source: eventData.event_id.startsWith('local_') ? 'local' : 'google',
+        company_id: profile.company_id,
+        user_id: user.id,
+        assigned_user_id: assignedUserId
+      };
+
+      console.log('📤 Dados para inserção na oncall_events:', insertData);
+
+      // Salvar evento na tabela oncall_events
+      const { data, error } = await supabase
+        .from('oncall_events')
+        .insert(insertData)
+        .select();
+      
+      if (error) {
+        console.error('❌ Erro ao salvar na tabela oncall_events:', error);
+        console.log('⚠️ Tentando fallback para notas do cliente...');
+        
+        // Fallback: salvar nas notas do cliente
+        await saveEventToClientNotes({
+          eventId: eventData.event_id,
+          summary: eventData.summary,
+          description: eventData.description,
+          startTime: eventData.start_time,
+          location: eventData.location,
+          clientId: eventData.client_id,
+          clientName: eventData.client_name,
+          corretorName: eventData.corretor_name,
+          eventType: eventData.event_type
+        });
+        
+        return { id: eventData.event_id, fallback: true };
+      }
+      
+      console.log('✅ Evento salvo na tabela oncall_events:', data?.[0]);
+      return data?.[0];
+      
+    } catch (error) {
+      console.error('❌ Erro ao salvar evento no banco:', error);
+      throw error;
+    }
+  };
+  
+  // Função otimizada para carregar eventos da tabela oncall_events
+  const loadOncallEvents = async (startDate: Date, endDate: Date): Promise<AgendaEvent[]> => {
+    try {
+      console.log('📥 Carregando eventos da tabela oncall_events...');
+      
+      const { data: events, error } = await supabase
+        .from('oncall_events')
+        .select(`
+          id,
+          title,
+          description,
+          starts_at,
+          ends_at,
+          client_name,
+          client_email,
+          property_title,
+          address,
+          type,
+          status,
+          assigned_user_id,
+          google_event_id,
+          webhook_source
+        `)
+        .gte('starts_at', startDate.toISOString())
+        .lte('starts_at', endDate.toISOString())
+        .order('starts_at', { ascending: true });
+        
+      if (error) {
+        console.error('❌ Erro ao carregar eventos da oncall_events:', error);
+        return [];
+      }
+      
+      // Buscar nomes dos corretores separadamente se necessário
+      const oncallEvents: AgendaEvent[] = [];
+      
+      if (events && events.length > 0) {
+        for (const event of events) {
+          let corretorNome = 'Corretor não informado';
+          
+          // Se tem assigned_user_id, buscar o nome
+          if (event.assigned_user_id) {
+            try {
+              const { data: userProfile } = await supabase
+                .from('user_profiles')
+                .select('full_name')
+                .eq('id', event.assigned_user_id)
+                .single();
+              
+              if (userProfile?.full_name) {
+                corretorNome = userProfile.full_name;
+              }
+            } catch (err) {
+              console.log('⚠️ Erro ao buscar nome do corretor:', err);
+            }
+          }
+          
+          oncallEvents.push({
+            id: event.id,
+            date: new Date(event.starts_at),
+            client: event.client_name || 'Cliente não informado',
+            property: event.property_title || event.title,
+            address: event.address || 'Local não informado',
+            type: event.type || 'Evento',
+            status: event.status || 'Aguardando confirmação',
+            corretor: corretorNome
+          });
+        }
+      }
+      
+      console.log(`✅ ${oncallEvents.length} eventos carregados da tabela oncall_events`);
+      return oncallEvents;
+    } catch (error) {
+      console.error('❌ Erro ao carregar eventos da oncall_events:', error);
+      return [];
+    }
+  };
+
+  // Função para carregar eventos salvos localmente (das notas dos clientes) - mantida para compatibilidade
+  const loadLocalEvents = async (): Promise<AgendaEvent[]> => {
+    try {
+      const { data: leads, error } = await supabase
+        .from('leads')
+        .select('id, name, notes')
+        .not('notes', 'is', null)
+        .ilike('notes', '%[EVENTO AGENDADO]%');
+        
+      if (error) {
+        console.error('Erro ao carregar eventos locais:', error);
+        return [];
+      }
+      
+      const localEvents: AgendaEvent[] = [];
+      
+      leads?.forEach(lead => {
+        if (!lead.notes) return;
+        
+        // Extrair eventos das notas usando regex
+        const eventMatches = lead.notes.match(/\[EVENTO AGENDADO\].*?🆔 ID: ([^\\n]+)/gs);
+        
+        eventMatches?.forEach(match => {
+          try {
+            const idMatch = match.match(/🆔 ID: ([^\\n]+)/);
+            const typeMatch = match.match(/\[EVENTO AGENDADO\] ([^-]+) -/);
+            const summaryMatch = match.match(/- ([^\\n]+)/);
+            const dateMatch = match.match(/📅 Data: ([^\\n]+)/);
+            const locationMatch = match.match(/📍 Local: ([^\\n]+)/);
+            const corretorMatch = match.match(/👤 Corretor: ([^\\n]+)/);
+            
+            if (idMatch && dateMatch) {
+              const eventDate = new Date(dateMatch[1]);
+              
+              // Só incluir eventos futuros ou recentes (últimos 7 dias)
+              const weekAgo = new Date();
+              weekAgo.setDate(weekAgo.getDate() - 7);
+              
+              if (eventDate >= weekAgo) {
+                localEvents.push({
+                  id: idMatch[1],
+                  date: eventDate,
+                  client: lead.name,
+                  property: summaryMatch?.[1] || 'Imóvel não informado',
+                  address: locationMatch?.[1] || 'Local não informado',
+                  type: typeMatch?.[1]?.trim() || 'Evento',
+                  status: 'confirmada',
+                  corretor: corretorMatch?.[1] || 'Corretor não informado'
+                });
+              }
+            }
+          } catch (parseError) {
+            console.error('Erro ao fazer parse do evento:', parseError);
+          }
+        });
+      });
+      
+      console.log(`📋 ${localEvents.length} eventos locais carregados das notas dos clientes`);
+      return localEvents;
+    } catch (error) {
+      console.error('Erro ao carregar eventos locais:', error);
+      return [];
+    }
+  };
 
   const fetchAgendaEvents = async (date: Date, isAutoUpdate = false) => {
     try {
-      console.log('🔄 INICIANDO CHAMADA DO WEBHOOK PARA MÊS COMPLETO');
-      console.log('📅 Mês de referência:', date.toLocaleDateString('pt-BR'));
-      console.log('🔄 Tipo de atualização:', isAutoUpdate ? 'Automática (5s)' : 'Manual');
-      
-      // Só mostra loading para atualizações manuais
       if (!isAutoUpdate) {
+        console.log('🔄 Carregando eventos para:', date.toLocaleDateString('pt-BR'));
         setLoading(true);
       }
       setError(null);
@@ -116,13 +429,9 @@ export function AgendaView() {
         agenda: selectedAgenda // Adicionar agenda selecionada
       };
 
-      console.log('📤 ENVIANDO REQUISIÇÃO PARA WEBHOOK (MÊS COMPLETO)');
-      console.log('🌐 URL:', 'https://webhooklabz.n8nlabz.com.br/webhook/ver-agenda');
-      console.log('📝 Method: POST');
-      console.log('📅 Período:', requestBody.periodo);
-      console.log('🕐 Data inicial:', requestBody.data_inicial);
-      console.log('🕑 Data final:', requestBody.data_final);
-      console.log('📋 Body completo:', JSON.stringify(requestBody, null, 2));
+      if (!isAutoUpdate) {
+        console.log('📤 Buscando eventos via webhook para:', requestBody.periodo);
+      }
       
       const response = await fetch('https://webhooklabz.n8nlabz.com.br/webhook/ver-agenda', {
         method: 'POST',
@@ -132,17 +441,18 @@ export function AgendaView() {
         body: JSON.stringify(requestBody)
       });
       
-      console.log('📡 RESPOSTA RECEBIDA');
-      console.log('✅ Status:', response.status);
-      console.log('✅ Status Text:', response.statusText);
+      if (!isAutoUpdate) {
+        console.log('📡 Status resposta:', response.status);
+      }
 
       if (!response.ok) {
         throw new Error(`Erro na API: ${response.status} - ${response.statusText}`);
       }
 
       const data = await response.json();
-      console.log('✅ DADOS DA AGENDA RECEBIDOS:');
-      console.log('📊 Resposta completa:', JSON.stringify(data, null, 2));
+      if (!isAutoUpdate) {
+        console.log('✅ Dados da agenda recebidos:', Array.isArray(data) ? data.length : 'formato não reconhecido');
+      }
 
       // Processar os dados recebidos do Google Calendar
       let processedEvents: AgendaEvent[] = [];
@@ -151,20 +461,20 @@ export function AgendaView() {
       const cleanData = Array.isArray(data) ? data.filter(event => {
         // Verificar se é um objeto vazio {}
         if (!event || typeof event !== 'object') {
-          console.log('🧹 Removido: objeto nulo ou não é objeto');
+          // Objeto nulo removido
           return false;
         }
         
         // Verificar se tem propriedades
         const keys = Object.keys(event);
         if (keys.length === 0) {
-          console.log('🧹 Removido: objeto vazio {}');
+          // Objeto vazio removido
           return false;
         }
         
         // Verificar se tem dados essenciais do Google Calendar
         if (!event.summary && !event.start && !event.id) {
-          console.log('🧹 Removido: evento sem dados essenciais do Google Calendar');
+          // Evento sem dados essenciais removido
           return false;
         }
         
@@ -172,9 +482,9 @@ export function AgendaView() {
       }) : [];
       
       if (Array.isArray(cleanData) && cleanData.length > 0) {
-        console.log(`📋 Processando ${cleanData.length} eventos válidos do Google Calendar...`);
+        if (!isAutoUpdate) console.log(`📋 Processando ${cleanData.length} eventos válidos`);
         processedEvents = cleanData.map((event: any, index: number) => {
-          console.log('🔍 Processando evento bruto:', JSON.stringify(event, null, 2));
+          // Processando evento...
           
           // 1. Extrair horário (usar start.dateTime)
           const startDateTime = event.start?.dateTime || event.start?.date;
@@ -279,25 +589,12 @@ export function AgendaView() {
             corretor: corretor
           };
           
-          console.log('✅ Evento processado:', {
-            horario: eventDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-            cliente: clientName,
-            summary: summary,
-            description: description,
-            status: attendeeStatus,
-            location: location,
-            corretor: corretor,
-            creator_displayName: event.creator?.displayName,
-            creator_email: event.creator?.email,
-            organizer_displayName: event.organizer?.displayName,
-            organizer_email: event.organizer?.email,
-            processedEvent
-          });
+          // Evento processado com sucesso
           
           return processedEvent;
         });
       } else if (data.events && Array.isArray(data.events)) {
-        console.log('📋 Processando eventos dentro de data.events...');
+        if (!isAutoUpdate) console.log('📋 Processando eventos (formato alternativo)...');
         processedEvents = data.events.map((event: any, index: number) => {
           const summary = event.summary || 'Evento sem título';
           const startDateTime = event.start?.dateTime || event.start?.date;
@@ -335,39 +632,97 @@ export function AgendaView() {
       const validEvents = processedEvents.filter(event => {
         // Verificar se tem dados essenciais
         if (!event.id || !event.date || !event.client || !event.property) {
-          console.log('🧹 Removido evento inválido:', event);
+          // Evento inválido removido
           return false;
         }
         
         // Verificar se os campos não são strings vazias
         if (typeof event.client === 'string' && event.client.trim() === '') {
-          console.log('🧹 Removido evento com cliente vazio:', event);
+          // Evento com cliente vazio removido
           return false;
         }
         
         if (typeof event.property === 'string' && event.property.trim() === '') {
-          console.log('🧹 Removido evento com propriedade vazia:', event);
+          // Evento com propriedade vazia removido
           return false;
         }
         
         // Verificar se a data é válida
         if (!(event.date instanceof Date) || isNaN(event.date.getTime())) {
-          console.log('🧹 Removido evento com data inválida:', event);
+          // Evento com data inválida removido
           return false;
         }
         
         return true;
       });
 
-      if (validEvents.length > 0) {
-        console.log(`🔄 ATUALIZANDO AGENDA com ${validEvents.length} eventos válidos do Google Calendar`);
-        console.log(`🧹 Removidos ${processedEvents.length - validEvents.length} eventos inválidos`);
-        setEvents(validEvents);
+      // SINCRONIZAÇÃO INTELIGENTE: Combinar eventos das diferentes fontes
+      const oncallEvents = await loadOncallEvents(dataInicial, dataFinal);
+      const localEvents = await loadLocalEvents();
+      
+      // Começar com eventos do Google Calendar
+      const allEvents = [...validEvents];
+      
+      // Adicionar eventos da tabela oncall_events que não são duplicatas
+      oncallEvents.forEach(oncallEvent => {
+        const isDuplicate = validEvents.some(gcalEvent => {
+          // Verificação mais rigorosa de duplicatas
+          if (gcalEvent.id === oncallEvent.id) return true;
+          
+          // Se evento local tem google_event_id, verificar se coincide
+          const oncallEventFull = oncallEvents.find(e => e.id === oncallEvent.id);
+          if (oncallEventFull && (oncallEventFull as any).google_event_id === gcalEvent.id) return true;
+          
+          // Verificação por similaridade (cliente + data próxima)
+          const timeDiff = Math.abs(gcalEvent.date.getTime() - oncallEvent.date.getTime());
+          const clientMatch = gcalEvent.client.toLowerCase().includes(oncallEvent.client.toLowerCase()) ||
+                             oncallEvent.client.toLowerCase().includes(gcalEvent.client.toLowerCase());
+          
+          return clientMatch && timeDiff < 60000; // 1 minuto de tolerância
+        });
+        
+        if (!isDuplicate) {
+          // Marcar origem do evento
+          allEvents.push({
+            ...oncallEvent,
+            corretor: oncallEvent.corretor + ' 📋' // Indicador de evento local
+          });
+        }
+      });
+      
+      // Adicionar eventos das notas (somente se não existem nas outras fontes)
+      localEvents.forEach(localEvent => {
+        const isDuplicate = allEvents.some(existingEvent => {
+          if (existingEvent.id === localEvent.id) return true;
+          
+          const timeDiff = Math.abs(existingEvent.date.getTime() - localEvent.date.getTime());
+          const clientMatch = existingEvent.client.toLowerCase().includes(localEvent.client.toLowerCase()) ||
+                             localEvent.client.toLowerCase().includes(existingEvent.client.toLowerCase());
+          
+          return clientMatch && timeDiff < 60000;
+        });
+        
+        if (!isDuplicate) {
+          // Marcar como evento de compatibilidade
+          allEvents.push({
+            ...localEvent,
+            corretor: localEvent.corretor + ' 📝' // Indicador de evento das notas
+          });
+        }
+      });
+      
+      if (allEvents.length > 0) {
+        if (!isAutoUpdate) {
+          console.log(`✅ Total de eventos carregados: ${allEvents.length}`);
+          console.log(`  - Google Calendar: ${validEvents.length}`);
+          console.log(`  - Locais: ${allEvents.length - validEvents.length}`);
+        }
+        setEvents(allEvents);
         setIsConnected(true);
         setLastUpdate(new Date());
-        console.log('✅ SUCESSO - Eventos válidos do Google Calendar carregados na agenda!');
+        if (!isAutoUpdate) console.log('✅ Agenda atualizada com sucesso');
       } else {
-        console.log('📭 Nenhum evento válido encontrado - limpando agenda');
+        if (!isAutoUpdate) console.log('📭 Nenhum evento encontrado');
         setEvents([]); // Limpar agenda se não há eventos válidos
         setIsConnected(true);
         setLastUpdate(new Date());
@@ -394,33 +749,34 @@ export function AgendaView() {
     fetchAgendaEvents(currentMonth);
   }, [currentMonth, selectedAgenda]); // Executa quando currentMonth ou selectedAgenda mudar
 
-  // UseEffect para atualização automática a cada 5 segundos enquanto estiver na agenda
-  useEffect(() => {
-    console.log('🔄 INICIANDO ATUALIZAÇÃO AUTOMÁTICA DA AGENDA (a cada 5 segundos)');
-    
-    // Limpar intervalo anterior se existir
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
-    
-    // Configurar novo intervalo para atualizar a cada 5 segundos
-    intervalRef.current = setInterval(() => {
-      console.log('⏰ ATUALIZAÇÃO AUTOMÁTICA: Executando webhook da agenda...');
-      console.log('📅 Mês atual:', `${currentMonth.getMonth() + 1}/${currentMonth.getFullYear()}`);
-      
-      // Chamar o webhook para o mês atual como atualização automática (sem loading)
-      fetchAgendaEvents(currentMonth, true);
-    }, 5000); // 5 segundos
+  // TEMPORARIAMENTE DESABILITADO: UseEffect para atualização automática
+  // Estava causando loop infinito e esgotamento de recursos
+  // useEffect(() => {
+  //   console.log('🔄 INICIANDO ATUALIZAÇÃO AUTOMÁTICA DA AGENDA (a cada 5 segundos)');
+  //   
+  //   // Limpar intervalo anterior se existir
+  //   if (intervalRef.current) {
+  //     clearInterval(intervalRef.current);
+  //   }
+  //   
+  //   // Configurar novo intervalo para atualizar a cada 5 segundos
+  //   intervalRef.current = setInterval(() => {
+  //     console.log('⏰ ATUALIZAÇÃO AUTOMÁTICA: Executando webhook da agenda...');
+  //     console.log('📅 Mês atual:', `${currentMonth.getMonth() + 1}/${currentMonth.getFullYear()}`);
+  //     
+  //     // Chamar o webhook para o mês atual como atualização automática (sem loading)
+  //     fetchAgendaEvents(currentMonth, true);
+  //   }, 5000); // 5 segundos
 
-    // Cleanup quando o componente for desmontado ou currentMonth mudar
-    return () => {
-      console.log('🛑 PARANDO ATUALIZAÇÃO AUTOMÁTICA DA AGENDA');
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
-      }, [currentMonth, selectedAgenda]); // Restart interval quando o mês ou agenda mudar
+  //   // Cleanup quando o componente for desmontado ou currentMonth mudar
+  //   return () => {
+  //     console.log('🛑 PARANDO ATUALIZAÇÃO AUTOMÁTICA DA AGENDA');
+  //     if (intervalRef.current) {
+  //       clearInterval(intervalRef.current);
+  //       intervalRef.current = null;
+  //     }
+  //   };
+  // }, [currentMonth, selectedAgenda]); // Restart interval quando o mês ou agenda mudar
 
   const handleDateChange = (date: Date) => {
     console.log('📅 Data selecionada no calendário:', date.toLocaleDateString('pt-BR'));
@@ -454,15 +810,136 @@ export function AgendaView() {
     time: string;
     type: string;
     corretor: string;
+    listingId?: string;
   }) => {
+    // Declarar variáveis fora do try para serem acessíveis no catch
+    let property = null;
+    let propertyTitle = '';
+    let propertyAddress = '';
+    let client = null;
+    
     try {
       console.log('📝 Criando novo evento:', eventData);
+      console.log('📊 Properties disponíveis no momento:', properties?.length || 0);
+      console.log('📊 Clients disponíveis no momento:', clients?.length || 0);
       
       // Encontrar dados do imóvel e cliente selecionados
-      const property = properties.find(p => p.id === eventData.propertyId);
-      const client = clients.find(c => c.id === eventData.clientId);
+      // Priorizar listingId se disponível, senão usar propertyId
+      if (eventData.listingId) {
+        // Buscar imóvel via Viva Real - tentar como string e como número
+        try {
+          let imovelVivaReal = null;
+          let errorVivaReal = null;
+          
+          // Primeira tentativa: como string
+          const resultString = await supabase
+            .from('imoveisvivareal')
+            .select('listing_id, tipo_imovel, descricao, endereco, cidade')
+            .eq('listing_id', String(eventData.listingId))
+            .single();
+            
+          if (resultString.data) {
+            imovelVivaReal = resultString.data;
+          } else {
+            // Segunda tentativa: como número (se for válido)
+            const numericId = Number(eventData.listingId);
+            if (!isNaN(numericId)) {
+              const resultNumber = await supabase
+                .from('imoveisvivareal')
+                .select('listing_id, tipo_imovel, descricao, endereco, cidade')
+                .eq('listing_id', numericId)
+                .single();
+              imovelVivaReal = resultNumber.data;
+              errorVivaReal = resultNumber.error;
+            } else {
+              errorVivaReal = resultString.error;
+            }
+          }
+            
+          console.log('📊 Resultado busca Viva Real - data:', imovelVivaReal, 'error:', errorVivaReal);
+            
+          if (imovelVivaReal) {
+            propertyTitle = `${imovelVivaReal.tipo_imovel || 'Imóvel'} (ID: ${imovelVivaReal.listing_id})`;
+            propertyAddress = imovelVivaReal.endereco || imovelVivaReal.cidade || 'Endereço a definir';
+            console.log('✅ Imóvel encontrado no Viva Real:', propertyTitle);
+          }
+        } catch (err) {
+          console.log('❌ Erro ao buscar imóvel Viva Real:', err);
+        }
+      }
       
-      if (!property || !client) {
+      // Fallback para properties tradicionais se listingId não funcionou
+      if (!propertyTitle && eventData.propertyId) {
+        console.log('🔍 Fallback: Tentando buscar property tradicional com ID:', eventData.propertyId);
+        property = properties.find(p => p.id === eventData.propertyId);
+        if (property) {
+          propertyTitle = property.title;
+          propertyAddress = property.address;
+        } else {
+          // Se não encontrou na tabela properties, tentar o propertyId na tabela imoveisvivareal
+          console.log('🔍 Tentando usar propertyId na tabela imoveisvivareal...');
+          try {
+            let imovelVivaRealFallback = null;
+            
+            // Primeira tentativa: como string
+            const resultString = await supabase
+              .from('imoveisvivareal')
+              .select('listing_id, tipo_imovel, descricao, endereco, cidade')
+              .eq('listing_id', String(eventData.propertyId))
+              .single();
+              
+            if (resultString.data) {
+              imovelVivaRealFallback = resultString.data;
+            } else {
+              // Segunda tentativa: como número
+              const numericId = Number(eventData.propertyId);
+              if (!isNaN(numericId)) {
+                const resultNumber = await supabase
+                  .from('imoveisvivareal')
+                  .select('listing_id, tipo_imovel, descricao, endereco, cidade')
+                  .eq('listing_id', numericId)
+                  .single();
+                imovelVivaRealFallback = resultNumber.data;
+              }
+            }
+              
+            if (imovelVivaRealFallback) {
+              propertyTitle = `${imovelVivaRealFallback.tipo_imovel || 'Imóvel'} (ID: ${imovelVivaRealFallback.listing_id})`;
+              propertyAddress = imovelVivaRealFallback.endereco || imovelVivaRealFallback.cidade || 'Endereço a definir';
+              console.log('✅ Imóvel encontrado via propertyId fallback:', propertyTitle);
+            }
+          } catch (err) {
+            console.log('❌ Erro no fallback propertyId:', err);
+          }
+        }
+      }
+      
+      // Buscar cliente - primeiro na lista local, depois diretamente no Supabase
+      client = clients.find(c => c.id === eventData.clientId);
+      
+      if (!client) {
+        console.log('🔍 Cliente não encontrado na lista local, buscando diretamente no Supabase...');
+        try {
+          const { data: clientData, error: clientError } = await supabase
+            .from('leads')
+            .select('*')
+            .eq('id', eventData.clientId)
+            .single();
+            
+          if (clientData && !clientError) {
+            client = clientData;
+            console.log('✅ Cliente encontrado no Supabase:', client.name);
+          } else {
+            console.log('❌ Cliente não encontrado no Supabase:', clientError);
+          }
+        } catch (err) {
+          console.log('❌ Erro ao buscar cliente no Supabase:', err);
+        }
+      }
+      
+      console.log('🔍 Resultado final - Property:', propertyTitle || 'NÃO ENCONTRADO', 'Cliente:', client?.name || 'NÃO ENCONTRADO');
+      
+      if (!propertyTitle || !client) {
         throw new Error('Imóvel ou cliente não encontrado');
       }
 
@@ -472,19 +949,31 @@ export function AgendaView() {
       // Processar seleção do corretor
       let corretorAssignado = eventData.corretor;
       
-      // Se selecionou "aleatorio", escolher automaticamente entre Isis e Arthur
+      // Se selecionou "aleatorio", escolher automaticamente entre corretores disponíveis
       if (eventData.corretor === 'aleatorio') {
-        const corretores = ['Isis', 'Arthur'];
-        corretorAssignado = corretores[Math.floor(Math.random() * corretores.length)];
-        console.log(`🎲 Corretor atribuído automaticamente: ${corretorAssignado}`);
+        try {
+          const users = await getCompanyUsers();
+          const corretores = users.filter((u: any) => u.role === 'corretor').map((u: any) => u.full_name || u.email);
+          
+          if (corretores.length > 0) {
+            corretorAssignado = corretores[Math.floor(Math.random() * corretores.length)];
+            console.log(`🎲 Corretor atribuído automaticamente: ${corretorAssignado}`);
+          } else {
+            console.log('⚠️ Nenhum corretor encontrado, usando valor padrão');
+            corretorAssignado = 'Corretor disponível';
+          }
+        } catch (err) {
+          console.log('Erro ao buscar corretores, usando fallback');
+          corretorAssignado = 'Corretor disponível';
+        }
       } else {
         console.log(`👤 Corretor selecionado manualmente: ${corretorAssignado}`);
       }
 
       // Preparar payload para o webhook
       const webhookPayload = {
-        summary: `${eventData.type} ao ${property.title}`,
-        description: `${eventData.type} agendada para o imóvel ${property.title} (${property.address}) com o cliente ${client.name}. Corretor responsável: ${corretorAssignado}`,
+        summary: `${eventData.type} ao ${propertyTitle}`,
+        description: `${eventData.type} agendada para o imóvel ${propertyTitle} (${propertyAddress}) com o cliente ${client.name}. Corretor responsável: ${corretorAssignado}`,
         start: {
           dateTime: eventData.date.toISOString(),
           timeZone: 'America/Sao_Paulo'
@@ -499,13 +988,14 @@ export function AgendaView() {
             displayName: client.name
           }
         ],
-        location: property.address,
+        location: propertyAddress,
         // Dados adicionais para contexto
         imovel: {
-          id: property.id,
-          titulo: property.title,
-          endereco: property.address,
-          preco: property.price
+          id: eventData.listingId || eventData.propertyId,
+          titulo: propertyTitle,
+          endereco: propertyAddress,
+          preco: property?.price || 0,
+          listing_id: eventData.listingId
         },
         cliente: {
           id: client.id,
@@ -545,18 +1035,74 @@ export function AgendaView() {
         throw new Error(`Erro ao criar evento: ${response.status} - ${response.statusText}`);
       }
 
-      const responseData = await response.json();
-      try { await logAudit({ action: 'agenda.event_created', resource: 'agenda_event', resourceId: undefined, meta: { summary: webhookPayload.summary, date: webhookPayload.start.dateTime } }); } catch {}
+      // Verificar se há conteúdo na resposta antes de tentar fazer parse JSON
+      let responseData = null;
+      const responseText = await response.text();
+      
+      if (responseText && responseText.trim().length > 0) {
+        try {
+          responseData = JSON.parse(responseText);
+          console.log('📊 Resposta do webhook:', JSON.stringify(responseData, null, 2));
+        } catch (parseError) {
+          console.log('⚠️ Resposta não é JSON válido:', responseText);
+          // Continuar mesmo assim, pois status 200 indica sucesso
+        }
+      } else {
+        console.log('⚠️ Webhook retornou resposta vazia, mas status 200 - considerando sucesso');
+      }
+      
+      // Gerar ID do evento para audit log
+      const eventId = responseData?.id || `local_${Date.now()}`;
+      
+      // Salvar evento no banco local para persistência
+      try {
+        await saveEventToDatabase({
+          event_id: eventId,
+          summary: webhookPayload.summary,
+          description: webhookPayload.description,
+          start_time: webhookPayload.start.dateTime,
+          end_time: webhookPayload.end.dateTime,
+          location: webhookPayload.location,
+          attendee_email: webhookPayload.attendees[0]?.email,
+          attendee_name: webhookPayload.attendees[0]?.displayName,
+          property_id: webhookPayload.imovel.id,
+          property_title: webhookPayload.imovel.titulo,
+          client_id: webhookPayload.cliente.id,
+          client_name: webhookPayload.cliente.nome,
+          corretor_name: webhookPayload.corretor.nome,
+          event_type: webhookPayload.tipo_evento,
+          status: 'confirmed'
+        });
+        console.log('✅ Evento salvo no banco local com ID:', eventId);
+      } catch (saveError) {
+        console.error('❌ Erro ao salvar evento no banco local:', saveError);
+      }
+      
+      try { 
+        await logAudit({ 
+          action: 'agenda.event_created', 
+          resource: 'agenda_event', 
+          resourceId: eventId, 
+          meta: { 
+            summary: webhookPayload.summary, 
+            date: webhookPayload.start.dateTime,
+            property: webhookPayload.imovel.titulo,
+            client: webhookPayload.cliente.nome,
+            corretor: webhookPayload.corretor.nome
+          } 
+        }); 
+      } catch (auditError) {
+        console.error('❌ Erro ao registrar audit log:', auditError);
+      }
       console.log('✅ EVENTO CRIADO COM SUCESSO NO GOOGLE CALENDAR');
-      console.log('📊 Resposta:', JSON.stringify(responseData, null, 2));
 
       // Criar o evento localmente após sucesso do webhook
       const newEvent: AgendaEvent = {
-        id: responseData.id || Date.now(), // Usar ID do Google Calendar se disponível
+        id: responseData?.id || Date.now(), // Usar ID do Google Calendar se disponível
         date: eventData.date,
         client: client.name,
-        property: property.title,
-        address: property.address,
+        property: propertyTitle,
+        address: propertyAddress,
         type: eventData.type,
         status: 'confirmada', // Confirmada porque foi criada no Google Calendar
         corretor: corretorAssignado // Usar o corretor efetivamente atribuído
@@ -571,23 +1117,19 @@ export function AgendaView() {
       console.error('❌ Erro ao criar evento:', error);
       
       // Se o webhook falhar, ainda assim criar localmente como backup
-      const property = properties.find(p => p.id === eventData.propertyId);
-      const client = clients.find(c => c.id === eventData.clientId);
-      
-      if (property && client) {
+      if (propertyTitle && client) {
         // Processar corretor para backup também
         let corretorBackup = eventData.corretor;
         if (eventData.corretor === 'aleatorio') {
-          const corretores = ['Isis', 'Arthur'];
-          corretorBackup = corretores[Math.floor(Math.random() * corretores.length)];
+          corretorBackup = 'Corretor disponível'; // Fallback simples para o caso de erro
         }
 
         const backupEvent: AgendaEvent = {
           id: Date.now(),
           date: eventData.date,
           client: client.name,
-          property: property.title,
-          address: property.address,
+          property: propertyTitle,
+          address: propertyAddress,
           type: eventData.type,
           status: 'agendada', // Status diferente para indicar que não foi sincronizado
           corretor: corretorBackup // Usar o corretor processado

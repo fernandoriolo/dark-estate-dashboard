@@ -93,13 +93,13 @@ const PlantaoView = () => {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [configCalendarId, setConfigCalendarId] = useState<string | null>(null);
   const [assignedUserLocal, setAssignedUserLocal] = useState<string>("");
-  const [companyUsers, setCompanyUsers] = useState<{ id: string; full_name: string; email: string }[]>([]);
+  const [companyUsers, setCompanyUsers] = useState<{ id: string; full_name: string; email: string; role?: string }[]>([]);
   const { profile, isManager, getCompanyUsers } = useUserProfile();
   const [expandedCalendars, setExpandedCalendars] = useState<Record<string, boolean>>({});
   const [dirtyCalendars, setDirtyCalendars] = useState<Record<string, boolean>>({});
   const [savingCalendars, setSavingCalendars] = useState<Record<string, boolean>>({});
   type EscalaSlot = { dia: string; inicio: string; fim: string };
-  const [escalas, setEscalas] = useState<Record<string, { calendarName: string; assignedUserId?: string; slots: EscalaSlot[] }>>({});
+  const [escalas, setEscalas] = useState<Record<string, { calendarName: string; assignedUserId?: string; assignedUserName?: string; slots: EscalaSlot[] }>>({});
 
   const formatTimeZoneLabel = (tz?: string) => {
     if (!tz) return "-";
@@ -404,20 +404,28 @@ const PlantaoView = () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+      
       // Buscar primeiro por assigned_user_id (quando o calendário foi vinculado pelo gestor)
       let { data, error } = await supabase
         .from('oncall_schedules')
-        .select('*')
+        .select(`
+          *,
+          assigned_user_profile:assigned_user_id(id, full_name, email)
+        `)
         .eq('assigned_user_id', user.id)
         .eq('calendar_id', calendarId)
         .maybeSingle();
 
       if (error && error.code !== 'PGRST116') throw error;
+      
       // Se não houver linha por assigned_user_id, tentar pelo owner (user_id)
       if (!data) {
         const res2 = await supabase
           .from('oncall_schedules')
-          .select('*')
+          .select(`
+            *,
+            assigned_user_profile:assigned_user_id(id, full_name, email)
+          `)
           .eq('user_id', user.id)
           .eq('calendar_id', calendarId)
           .maybeSingle();
@@ -425,6 +433,10 @@ const PlantaoView = () => {
       }
 
       if (data) {
+        const assignedUserProfile = (data as any).assigned_user_profile;
+        const assignedUserName = assignedUserProfile ? 
+          (assignedUserProfile.full_name || assignedUserProfile.email) : undefined;
+          
         const slots = [
           (data as any).mon_works ? { dia: 'Segunda', inicio: toHalfHour(toHHMM((data as any).mon_start)), fim: toHalfHour(toHHMM((data as any).mon_end)) } : null,
           (data as any).tue_works ? { dia: 'Terça', inicio: toHalfHour(toHHMM((data as any).tue_start)), fim: toHalfHour(toHHMM((data as any).tue_end)) } : null,
@@ -434,13 +446,38 @@ const PlantaoView = () => {
           (data as any).sat_works ? { dia: 'Sábado', inicio: toHalfHour(toHHMM((data as any).sat_start)), fim: toHalfHour(toHHMM((data as any).sat_end)) } : null,
           (data as any).sun_works ? { dia: 'Domingo', inicio: toHalfHour(toHHMM((data as any).sun_start)), fim: toHalfHour(toHHMM((data as any).sun_end)) } : null,
         ].filter(Boolean) as EscalaSlot[];
-        persistEscalas({ ...escalas, [calendarId]: { calendarName, assignedUserId: (data as any).assigned_user_id || undefined, slots } });
+        
+        persistEscalas({ 
+          ...escalas, 
+          [calendarId]: { 
+            calendarName, 
+            assignedUserId: (data as any).assigned_user_id || undefined, 
+            assignedUserName,
+            slots 
+          } 
+        });
       } else {
-        persistEscalas({ ...escalas, [calendarId]: { calendarName, assignedUserId: undefined, slots: [] } });
+        persistEscalas({ 
+          ...escalas, 
+          [calendarId]: { 
+            calendarName, 
+            assignedUserId: undefined, 
+            assignedUserName: undefined,
+            slots: [] 
+          } 
+        });
       }
     } catch (e) {
       console.error('Falha ao carregar escala:', e);
-      persistEscalas({ ...escalas, [calendarId]: { calendarName, assignedUserId: undefined, slots: [] } });
+      persistEscalas({ 
+        ...escalas, 
+        [calendarId]: { 
+          calendarName, 
+          assignedUserId: undefined, 
+          assignedUserName: undefined,
+          slots: [] 
+        } 
+      });
     }
   };
 
@@ -450,26 +487,65 @@ const PlantaoView = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       if (!calendars || calendars.length === 0) return;
+      if (!profile) return; // Aguardar profile carregar antes de fazer query
+      
       const calendarIds = calendars.map(c => c.id);
-      // Buscar linhas onde o usuário é owner OU assigned_user
-      const { data, error } = await supabase
+      
+      
+      // Buscar escalas com JOIN para trazer o nome do corretor vinculado
+      // SOLUÇÃO: Para gestores, buscar TODAS as escalas (não filtrar por calendar_id)
+      // Para corretores: apenas escalas onde ele é owner OU assigned
+      let query = supabase
         .from('oncall_schedules')
-        .select('*')
-        .in('calendar_id', calendarIds)
-        .or(`user_id.eq.${user.id},assigned_user_id.eq.${user.id}`);
+        .select(`
+          *,
+          assigned_user_profile:assigned_user_id(id, full_name, email)
+        `);
+      
+      if (profile?.role === 'admin' || profile?.role === 'gestor') {
+        // Admins e gestores veem todas as escalas da empresa
+        // Não filtrar por calendar_id porque pode haver escalas de calendários não carregados
+      } else if (profile?.role === 'corretor') {
+        // Corretores só veem escalas onde estão como assigned_user_id
+        query = query.eq('assigned_user_id', user.id);
+      } else {
+        // Para roles desconhecidos, não mostrar nada (fallback de segurança)
+        query = query.eq('id', 'never-match');
+      }
+      
+      const { data, error } = await query;
+      
+      console.log('🔍 DEBUG loadAllSchedules resultado:', {
+        userRole: profile?.role,
+        queryData: data,
+        error,
+        escalasAntes: Object.keys(escalas).length
+      });
+      
       if (error) throw error;
 
       const next: typeof escalas = { ...escalas };
+      
       // Inicializa todas as agendas conhecidas com slots vazios caso não haja registro
       for (const c of calendars) {
         if (!next[c.id]) {
-          next[c.id] = { calendarName: c.name, assignedUserId: undefined, slots: [] };
+          next[c.id] = { 
+            calendarName: c.name, 
+            assignedUserId: undefined, 
+            assignedUserName: undefined,
+            slots: [] 
+          };
         }
       }
+      
       // Preenche com as escalas vindas do banco
       for (const row of (data || [])) {
         const calendarId = (row as any).calendar_id as string;
-        const calendarName = calendars.find(x => x.id === calendarId)?.name || (row as any).calendar_name || '';
+        const calendarName = calendars.find(x => x.id === calendarId)?.name || (row as any).calendar_name || 'Agenda Externa';
+        const assignedUserProfile = (row as any).assigned_user_profile;
+        const assignedUserName = assignedUserProfile ? 
+          (assignedUserProfile.full_name || assignedUserProfile.email) : undefined;
+        
         const slots: EscalaSlot[] = [
           (row as any).mon_works ? { dia: 'Segunda', inicio: toHalfHour(toHHMM((row as any).mon_start)), fim: toHalfHour(toHHMM((row as any).mon_end)) } : null,
           (row as any).tue_works ? { dia: 'Terça', inicio: toHalfHour(toHHMM((row as any).tue_start)), fim: toHalfHour(toHHMM((row as any).tue_end)) } : null,
@@ -479,9 +555,12 @@ const PlantaoView = () => {
           (row as any).sat_works ? { dia: 'Sábado', inicio: toHalfHour(toHHMM((row as any).sat_start)), fim: toHalfHour(toHHMM((row as any).sat_end)) } : null,
           (row as any).sun_works ? { dia: 'Domingo', inicio: toHalfHour(toHHMM((row as any).sun_start)), fim: toHalfHour(toHHMM((row as any).sun_end)) } : null,
         ].filter(Boolean) as EscalaSlot[];
+        
+        
         next[calendarId] = {
           calendarName,
           assignedUserId: (row as any).assigned_user_id || undefined,
+          assignedUserName,
           slots,
         };
       }
@@ -544,6 +623,7 @@ const PlantaoView = () => {
     // Persist já acontece a cada alteração local, aqui iremos consolidar e enviar ao Supabase
     const cfg = escalas[calendarId];
     if (!cfg) return;
+    
     // Montar payload diário: dias ausentes vão como não trabalha
     const dayMap: Record<string, { works: boolean; start: string | null; end: string | null }> = {
       Segunda: { works: false, start: null, end: null },
@@ -577,7 +657,9 @@ const PlantaoView = () => {
           console.warn('company_id não encontrado; gravando com company_id nulo (MVP)');
         }
         const effectiveAssigned = (assignedOverride ?? cfg.assignedUserId) || null;
-        const rowUserId = effectiveAssigned || user.id;
+        // CORREÇÃO: user_id deve ser sempre do usuário que está logado (quem criou/editou)
+        // assigned_user_id é quem está vinculado à agenda
+        const rowUserId = user.id;
         const payload = {
           calendar_id: calendarId,
           calendar_name: cfg.calendarName,
@@ -592,39 +674,91 @@ const PlantaoView = () => {
           sat_works: dayMap['Sábado'].works, sat_start: dayMap['Sábado'].start, sat_end: dayMap['Sábado'].end,
           sun_works: dayMap['Domingo'].works, sun_start: dayMap['Domingo'].start, sun_end: dayMap['Domingo'].end,
         } as any;
-        // upsert usando unique constraint existente
-        const { error } = await supabase
+        
+        // upsert usando unique constraint existente: (user_id, calendar_id)
+        const { data: upsertData, error } = await supabase
           .from('oncall_schedules')
           .upsert(payload, { 
-            onConflict: effectiveAssigned ? 'calendar_id,assigned_user_id' : 'user_id,calendar_id',
+            onConflict: 'user_id,calendar_id',
             ignoreDuplicates: false 
-          });
+          })
+          .select();
+        
+        
         if (error) throw error;
-        toast({ description: 'Escala salva no banco de dados' });
+        
+        // Toast específico baseado no tipo de operação
+        if (assignedOverride !== undefined) {
+          if (assignedOverride === null) {
+            toast({ 
+              description: 'Vinculação removida da agenda',
+              duration: 4000
+            });
+          } else {
+            toast({ 
+              description: 'Corretor vinculado à agenda com sucesso',
+              duration: 4000
+            });
+          }
+        } else if (cfg.slots.length > 0) {
+          toast({ 
+            description: 'Horários do plantão salvos com sucesso',
+            duration: 4000
+          });
+        } else {
+          toast({ 
+            description: 'Configuração da escala salva no banco',
+            duration: 4000
+          });
+        }
+        
         setDirtyCalendars(prev => ({ ...prev, [calendarId]: false }));
         // Recarregar do banco para garantir consistência visual
         await loadSchedule(calendarId, cfg.calendarName);
       } catch (e: any) {
         console.error(e);
-        toast({ description: 'Falha ao salvar escala', });
+        toast({ 
+          description: `Erro ao salvar: ${e.message || 'Falha ao comunicar com o banco de dados'}`,
+          variant: "destructive",
+          duration: 6000
+        });
       } finally {
         setSavingCalendars(prev => ({ ...prev, [calendarId]: false }));
       }
     })();
   };
 
-  // Carregar usuários da empresa para o seletor de proprietário da agenda
+  // Carregar apenas CORRETORES da empresa para o seletor de vinculação de agenda
   useEffect(() => {
     const loadUsers = async () => {
       try {
         if (isManager) {
           const users = await getCompanyUsers();
-          setCompanyUsers(users.map(u => ({ id: u.id, full_name: (u as any).full_name, email: (u as any).email })));
-        } else if (profile) {
-          setCompanyUsers([{ id: profile.id, full_name: profile.full_name, email: profile.email }]);
+          // Filtrar apenas usuários com role 'corretor'
+          const corretores = users
+            .filter(u => (u as any).role === 'corretor')
+            .map(u => ({ 
+              id: u.id, 
+              full_name: (u as any).full_name, 
+              email: (u as any).email,
+              role: (u as any).role 
+            }));
+          setCompanyUsers(corretores);
+        } else if (profile && profile.role === 'corretor') {
+          // Corretores só veem a si mesmos (não devem acessar o seletor mesmo)
+          setCompanyUsers([{ 
+            id: profile.id, 
+            full_name: profile.full_name, 
+            email: profile.email,
+            role: profile.role 
+          }]);
         }
       } catch (e) {
-        console.error('Falha ao carregar usuários da empresa:', e);
+        console.error('Falha ao carregar corretores da empresa:', e);
+        toast({
+          description: 'Erro ao carregar lista de corretores',
+          variant: "destructive"
+        });
       }
     };
     loadUsers();
@@ -634,6 +768,7 @@ const PlantaoView = () => {
   useEffect(() => {
     const ensureData = async () => {
       if (activeTab !== 'escala') return;
+      if (!profile) return; // Aguardar profile carregar
       if (calendars.length === 0) {
         await puxarAgendas('auto');
       }
@@ -641,15 +776,15 @@ const PlantaoView = () => {
     };
     ensureData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
+  }, [activeTab, profile]);
 
   // Quando a lista de calendários mudar e a aba Escala estiver ativa, recarregar escalas
   useEffect(() => {
-    if (activeTab === 'escala' && calendars.length > 0) {
+    if (activeTab === 'escala' && calendars.length > 0 && profile) {
       loadAllSchedules();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [calendars]);
+  }, [calendars, profile]);
 
   return (
     <div className="space-y-6">
@@ -873,18 +1008,69 @@ const PlantaoView = () => {
               <CardDescription className="text-xs mt-1">Configure horários de plantão por calendário</CardDescription>
             </CardHeader>
             <CardContent>
-              {/* Listagem de todas as agendas conhecidas */}
+              {/* Listagem de todas as agendas conhecidas + escalas do banco */}
               <div className="space-y-6">
-                {calendars.length === 0 ? (
-                  <p className="text-sm text-gray-400">Nenhuma agenda encontrada.</p>
-                ) : (
-                  (isManager ? calendars : calendars.filter((c) => (escalas[c.id]?.assignedUserId) === profile?.id)).map((c) => {
+                {(() => {
+                  // Combinar calendários da API + escalas do banco
+                  const allScheduleIds = new Set([
+                    ...calendars.map(c => c.id),
+                    ...Object.keys(escalas)
+                  ]);
+                  
+                  const schedulesToShow = Array.from(allScheduleIds)
+                    .map(calendarId => {
+                      const apiCalendar = calendars.find(c => c.id === calendarId);
+                      const dbSchedule = escalas[calendarId];
+                      
+                      return {
+                        id: calendarId,
+                        name: apiCalendar?.name || dbSchedule?.calendarName || 'Agenda Externa',
+                        fromAPI: !!apiCalendar,
+                        hasSchedule: !!dbSchedule
+                      };
+                    })
+                    .filter(item => {
+                      // Gestores e admins veem todas as agendas
+                      if (profile?.role === 'admin' || profile?.role === 'gestor') return true;
+                      
+                      // Corretores só veem agendas onde estão vinculados
+                      if (profile?.role === 'corretor') {
+                        return escalas[item.id]?.assignedUserId === profile?.id;
+                      }
+                      
+                      // Fallback: não mostrar nada para roles desconhecidos
+                      return false;
+                    });
+                  
+                  
+                  return schedulesToShow.length === 0 ? (
+                    <p className="text-sm text-gray-400">
+                      {profile?.role === 'corretor' 
+                        ? 'Você não possui agendas vinculadas.' 
+                        : 'Nenhuma agenda encontrada.'
+                      }
+                    </p>
+                  ) : (
+                    schedulesToShow.map((c) => {
                     const cfg = escalas[c.id] || { calendarName: c.name, slots: [] };
-                    const canEdit = isManager || (cfg.assignedUserId === profile?.id);
+                    // Permissões de edição: admins/gestores podem editar tudo, corretores só suas próprias escalas
+                    const canEdit = (profile?.role === 'admin' || profile?.role === 'gestor') || 
+                                   (profile?.role === 'corretor' && cfg.assignedUserId === profile?.id);
                     const resumo = buildScheduleSummary(cfg);
                     const dayMap = getDayMapFromSlots(cfg.slots);
-                    const ownerName = cfg.assignedUserId ? (companyUsers.find(u => u.id === cfg.assignedUserId)?.full_name || companyUsers.find(u => u.id === cfg.assignedUserId)?.email || 'Usuário') : 'Não vinculado';
+                    const ownerName = cfg.assignedUserName || 'Não vinculado';
                     const isOpen = !!expandedCalendars[c.id];
+                    
+                    if (c.id.includes('0ae22feaa75b11bebadb9e065010b9af7737828cd27764412524369d6fa8c3d1')) {
+                      console.log('🔍 DEBUG agenda Isis:', {
+                        calendarId: c.id,
+                        cfg,
+                        assignedUserName: cfg.assignedUserName,
+                        assignedUserId: cfg.assignedUserId,
+                        ownerName
+                      });
+                    }
+                    
                     return (
                       <div key={c.id} className="rounded-xl border border-gray-800 p-4 bg-gradient-to-br from-gray-900 to-gray-950 hover:border-blue-800/40 hover:shadow-xl transition-all">
                         <div className="flex items-start justify-between gap-3 cursor-pointer select-none" onClick={() => toggleExpanded(c.id, c.name)} role="button" aria-expanded={isOpen}>
@@ -894,13 +1080,31 @@ const PlantaoView = () => {
                               <h3 className="text-white font-semibold truncate">{c.name}</h3>
                             </div>
                             {/* resumo removido por solicitação */}
-                            <p className="text-xs text-gray-400 mt-1">Usuário: <span className="text-gray-200">{ownerName}</span></p>
+                            <p className="text-xs text-gray-400 mt-1">
+                              Usuário: <span className="text-gray-200">{ownerName}</span>
+                              {cfg.assignedUserId === profile?.id && profile?.role === 'corretor' && (
+                                <span className="ml-2 px-1.5 py-0.5 bg-blue-900/50 text-blue-200 rounded text-[10px]">
+                                  Sua agenda
+                                </span>
+                              )}
+                            </p>
                           </div>
                           <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                            {isManager && (
+                            {/* Botão Configurar apenas para ADMIN e GESTOR */}
+                            {(profile?.role === 'admin' || profile?.role === 'gestor') && (
                             <Dialog open={isConfigOpen && configCalendarId === c.id} onOpenChange={(v) => { setIsConfigOpen(v); if (!v) setConfigCalendarId(null); }}>
                               <DialogTrigger asChild>
-                                <Button variant="ghost" className="text-white hover:bg-transparent" onClick={() => { setConfigCalendarId(c.id); setAssignedUserLocal(escalas[c.id]?.assignedUserId || ""); }}>Configurar</Button>
+                                <Button 
+                                  variant="ghost" 
+                                  className="text-blue-300 hover:text-blue-200 hover:bg-blue-900/20" 
+                                  onClick={() => { 
+                                    setConfigCalendarId(c.id); 
+                                    // Se não há usuário vinculado, usar valor especial para remoção
+                                    setAssignedUserLocal(escalas[c.id]?.assignedUserId || "__remove__"); 
+                                  }}
+                                >
+                                  Configurar
+                                </Button>
                               </DialogTrigger>
                               <DialogContent className="bg-gray-900 border border-gray-800 text-white">
                                 <DialogHeader>
@@ -908,26 +1112,59 @@ const PlantaoView = () => {
                                 </DialogHeader>
                                 <div className="space-y-3">
                                   <div>
-                                    <label className="text-xs text-gray-400">Vincular a usuário</label>
+                                    <label className="text-xs text-gray-400">Vincular agenda ao corretor</label>
                                     <Select value={assignedUserLocal} onValueChange={setAssignedUserLocal}>
                                       <SelectTrigger className="bg-gray-800 border-gray-700 text-white">
-                                        <SelectValue placeholder="Selecione o usuário" />
+                                        <SelectValue placeholder={
+                                          companyUsers.length === 0 
+                                            ? "Nenhum corretor encontrado" 
+                                            : "Selecione um corretor"
+                                        } />
                                       </SelectTrigger>
                                       <SelectContent className="bg-gray-900 border-gray-800 text-white">
+                                        <SelectItem value="__remove__" className="text-gray-400">
+                                          Remover vinculação
+                                        </SelectItem>
                                         {companyUsers.map(u => (
                                           <SelectItem key={u.id} value={u.id} className="text-white">
                                             {u.full_name || u.email}
+                                            <span className="text-xs text-gray-400 ml-2">
+                                              (Corretor)
+                                            </span>
                                           </SelectItem>
                                         ))}
                                       </SelectContent>
                                     </Select>
+                                    {companyUsers.length === 0 && (
+                                      <p className="text-xs text-yellow-400 mt-1">
+                                        Nenhum corretor disponível na empresa
+                                      </p>
+                                    )}
                                   </div>
                                   <div className="flex justify-end gap-2">
                                     <Button variant="ghost" className="text-white/80 hover:text-white" onClick={() => { setIsConfigOpen(false); setConfigCalendarId(null); }}>Cancelar</Button>
                                     <Button
                                       variant="ghost"
                                       className="text-white hover:bg-transparent"
-                                      onClick={() => { persistEscalas({ ...escalas, [c.id]: { ...escalas[c.id], assignedUserId: assignedUserLocal } }); setDirtyCalendars(prev => ({ ...prev, [c.id]: true })); salvarCalendario(c.id, assignedUserLocal); setIsConfigOpen(false); setConfigCalendarId(null); }}
+                                      onClick={() => { 
+                                        // Tratar valor especial para remoção
+                                        const effectiveUserId = assignedUserLocal === '__remove__' ? null : assignedUserLocal;
+                                        const selectedUser = effectiveUserId ? companyUsers.find(u => u.id === effectiveUserId) : null;
+                                        const assignedUserName = selectedUser ? (selectedUser.full_name || selectedUser.email) : undefined;
+                                        
+                                        persistEscalas({ 
+                                          ...escalas, 
+                                          [c.id]: { 
+                                            ...escalas[c.id], 
+                                            assignedUserId: effectiveUserId,
+                                            assignedUserName 
+                                          } 
+                                        }); 
+                                        setDirtyCalendars(prev => ({ ...prev, [c.id]: true })); 
+                                        salvarCalendario(c.id, effectiveUserId); 
+                                        setIsConfigOpen(false); 
+                                        setConfigCalendarId(null); 
+                                      }}
                                     >
                                       Salvar
                                     </Button>
@@ -943,7 +1180,11 @@ const PlantaoView = () => {
                                 disabled={!!savingCalendars[c.id]}
                                 onClick={() => salvarCalendario(c.id)}
                               >
-                                {savingCalendars[c.id] ? 'Salvando...' : (dirtyCalendars[c.id] ? 'Salvar alterações' : 'Salvar')}
+                                {savingCalendars[c.id] ? 'Salvando...' : (
+                                  dirtyCalendars[c.id] 
+                                    ? (profile?.role === 'corretor' ? 'Salvar meu plantão' : 'Salvar alterações')
+                                    : (profile?.role === 'corretor' ? 'Salvar plantão' : 'Salvar')
+                                )}
                               </Button>
                             )}
                           </div>
@@ -992,7 +1233,8 @@ const PlantaoView = () => {
                       </div>
                     );
                   })
-                )}
+                  );
+                })()}
               </div>
             </CardContent>
           </Card>

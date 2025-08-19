@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,13 +6,16 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, Clock } from "lucide-react";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { CalendarIcon, Clock, Building2, ChevronsUpDown, Check } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { PropertyWithImages } from "@/hooks/useProperties";
 import { DatabaseClient } from "@/hooks/useClients";
 import { cn } from "@/lib/utils";
 import { CustomModal } from "./CustomModal";
+import { supabase } from "@/integrations/supabase/client";
+import { useUserProfile } from "@/hooks/useUserProfile";
 
 interface AddEventModalProps {
   isOpen: boolean;
@@ -27,6 +30,7 @@ interface AddEventModalProps {
     time: string;
     type: string;
     corretor: string;
+    listingId?: string;
   }) => void;
 }
 
@@ -48,6 +52,19 @@ export function AddEventModal({
   const [selectedCorretor, setSelectedCorretor] = useState<string>("aleatorio");
   const [loading, setLoading] = useState(false);
   
+  // Estados para seleção de imóvel via Viva Real
+  const [listingId, setListingId] = useState<string>("");
+  const [listingOpen, setListingOpen] = useState(false);
+  const [listingQuery, setListingQuery] = useState("");
+  const [listingLoading, setListingLoading] = useState(false);
+  const [listingOptions, setListingOptions] = useState<{ id: number; listing_id: string; tipo_imovel: string | null; descricao: string | null; endereco: string | null; cidade: string | null }[]>([]);
+  
+  // Estados para corretores disponíveis com horários
+  const [corretoresDisponiveis, setCorretoresDisponiveis] = useState<{ id: string; full_name: string; available: boolean }[]>([]);
+  const [corretorLoading, setCorretorLoading] = useState(false);
+  
+  const { getCompanyUsers } = useUserProfile();
+  
   // Estados para modais personalizados
   const [showModal, setShowModal] = useState(false);
   const [modalConfig, setModalConfig] = useState({
@@ -62,6 +79,268 @@ export function AddEventModal({
     const client = clients.find(c => c.id === clientId);
     if (client?.email) {
       setEmail(client.email);
+    }
+  };
+
+  // Carregar imóveis quando o modal abrir
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    const loadImoveis = async () => {
+      try {
+        setListingLoading(true);
+        const { data, error } = await supabase
+          .from('imoveisvivareal')
+          .select('id, listing_id, tipo_imovel, descricao, endereco, cidade')
+          .order('listing_id', { ascending: true })
+          .limit(50);
+          
+        if (!error) {
+          const mapped = (data as any[] || []).map(r => ({
+            id: r.id,
+            listing_id: String(r.listing_id || r.id),
+            tipo_imovel: r.tipo_imovel,
+            descricao: r.descricao,
+            endereco: r.endereco,
+            cidade: r.cidade
+          }));
+          mapped.sort((a, b) => (Number(a.listing_id) || 0) - (Number(b.listing_id) || 0));
+          setListingOptions(mapped);
+        }
+      } catch (err) {
+        console.error('Erro ao carregar imóveis:', err);
+      } finally {
+        setListingLoading(false);
+      }
+    };
+
+    loadImoveis();
+  }, [isOpen]);
+
+  // Buscar imóveis conforme digitação (debounced)
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (!isOpen) return;
+      
+      try {
+        setListingLoading(true);
+        const term = listingQuery.trim();
+        let query = supabase
+          .from('imoveisvivareal')
+          .select('id, listing_id, tipo_imovel, descricao, endereco, cidade')
+          .order('listing_id', { ascending: true })
+          .limit(50);
+          
+        if (term) {
+          query = query.ilike('listing_id', `%${term}%`);
+        }
+        
+        const { data, error } = await query;
+        if (!error) {
+          const mapped = (data as any[] || []).map(r => ({
+            id: r.id,
+            listing_id: String(r.listing_id || r.id),
+            tipo_imovel: r.tipo_imovel,
+            descricao: r.descricao,
+            endereco: r.endereco,
+            cidade: r.cidade
+          }));
+          mapped.sort((a, b) => (Number(a.listing_id) || 0) - (Number(b.listing_id) || 0));
+          setListingOptions(mapped);
+        }
+      } catch (err) {
+        console.error('Erro ao buscar imóveis:', err);
+      } finally {
+        setListingLoading(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [listingQuery, isOpen]);
+
+
+  // REMOVIDO: Lógica duplicada - agora carregamos apenas uma vez com escalas
+  
+  // Carregar APENAS corretores que têm escalas definidas
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    const loadCorretoresComEscalas = async () => {
+      try {
+        setCorretorLoading(true);
+        console.log('🔍 Buscando corretores com escalas definidas...');
+        
+        // Primeiro, buscar IDs dos corretores que têm escalas
+        const { data: escalasData, error: escalasError } = await supabase
+          .from('oncall_schedules')
+          .select('assigned_user_id');
+          
+        if (escalasError) {
+          console.error('❌ Erro ao buscar escalas:', escalasError);
+          setCorretoresDisponiveis([]);
+          return;
+        }
+        
+        const corretoresComEscalaIds = escalasData?.map(e => e.assigned_user_id) || [];
+        console.log('📋 IDs de corretores com escalas:', corretoresComEscalaIds);
+        
+        if (corretoresComEscalaIds.length === 0) {
+          console.log('❌ Nenhum corretor tem escalas definidas');
+          setCorretoresDisponiveis([]);
+          return;
+        }
+        
+        // Agora buscar os dados dos corretores que têm escalas
+        const { data: corretoresComEscalas, error } = await supabase
+          .from('user_profiles')
+          .select(`
+            id,
+            full_name,
+            email,
+            role,
+            company_id
+          `)
+          .eq('role', 'corretor')
+          .in('id', corretoresComEscalaIds);
+        
+        if (error) {
+          console.error('❌ Erro ao buscar corretores com escalas:', error);
+          setCorretoresDisponiveis([]);
+          return;
+        }
+        
+        const corretoresFormatados = (corretoresComEscalas || []).map((corretor: any) => ({
+          id: corretor.id,
+          full_name: corretor.full_name || corretor.email,
+          available: false // Será verificado quando data/hora forem selecionadas
+        }));
+        
+        console.log(`✅ Encontrados ${corretoresFormatados.length} corretores com escalas:`, 
+          corretoresFormatados.map(c => c.full_name));
+        
+        setCorretoresDisponiveis(corretoresFormatados);
+      } catch (err) {
+        console.error('❌ Erro ao carregar corretores com escalas:', err);
+        setCorretoresDisponiveis([]);
+      } finally {
+        setCorretorLoading(false);
+      }
+    };
+    
+    loadCorretoresComEscalas();
+  }, [isOpen]);
+  
+  // Verificar disponibilidade apenas quando data E hora estiverem selecionadas
+  useEffect(() => {
+    if (!isOpen || !selectedDate || !time || corretoresDisponiveis.length === 0) return;
+    
+    const checkAvailability = async () => {
+      try {
+        setCorretorLoading(true);
+        
+        const corretoresComDisponibilidade = await Promise.all(
+          corretoresDisponiveis.map(async (corretor) => {
+            const disponivel = await verificarDisponibilidadeCorretor(
+              corretor.id, 
+              selectedDate, 
+              time
+            );
+            
+            return {
+              ...corretor,
+              available: disponivel
+            };
+          })
+        );
+        
+        setCorretoresDisponiveis(corretoresComDisponibilidade);
+      } catch (err) {
+        console.error('Erro ao verificar disponibilidade:', err);
+        // Manter corretores como estão em caso de erro
+      } finally {
+        setCorretorLoading(false);
+      }
+    };
+    
+    // Debounce para evitar muitas chamadas
+    const timeoutId = setTimeout(checkAvailability, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [selectedDate, time, isOpen]);
+
+  // Cache para escalas (evitar consultas repetidas)
+  const escalasCache = useRef<{ [key: string]: any[] }>({});
+  const cacheTime = useRef<{ [key: string]: number }>({});
+  const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
+
+  // Função otimizada para verificar disponibilidade do corretor no horário
+  const verificarDisponibilidadeCorretor = async (
+    corretorId: string, 
+    data: Date, 
+    horario: string
+  ): Promise<boolean> => {
+    try {
+      console.log(`🔍 Verificando disponibilidade - Corretor: ${corretorId}, Data: ${data.toLocaleDateString()}, Horário: ${horario}`);
+      
+      // Verificar cache primeiro
+      const cacheKey = `escalas_${corretorId}`;
+      const now = Date.now();
+      
+      let escalas = escalasCache.current[cacheKey];
+      
+      // Se não há cache ou expirou, buscar do banco
+      if (!escalas || !cacheTime.current[cacheKey] || (now - cacheTime.current[cacheKey]) > CACHE_DURATION) {
+        console.log(`📥 Buscando escalas do banco para corretor ${corretorId}`);
+        
+        const { data: escalaData, error } = await supabase
+          .from('oncall_schedules')
+          .select('*')
+          .eq('assigned_user_id', corretorId);
+        
+        if (error) {
+          console.log('❌ Erro ao verificar escalas:', error);
+          return false;
+        }
+        
+        escalas = escalaData || [];
+        escalasCache.current[cacheKey] = escalas;
+        cacheTime.current[cacheKey] = now;
+      } else {
+        console.log(`💾 Usando escalas do cache para corretor ${corretorId}`);
+      }
+      
+      if (!escalas || escalas.length === 0) {
+        console.log(`❌ Nenhuma escala encontrada para corretor ${corretorId} - corretor não deve aparecer na lista`);
+        return false;
+      }
+      
+      console.log(`📋 Escalas encontradas para corretor ${corretorId}:`, escalas.length);
+      
+      // Verificar disponibilidade
+      const diaSemana = data.getDay(); // 0=domingo, 1=segunda, etc
+      const horaInt = parseInt(horario.split(':')[0]);
+      
+      const temEscalaDisponivel = escalas.some(escala => {
+        const diaColunas = ['sun_works', 'mon_works', 'tue_works', 'wed_works', 'thu_works', 'fri_works', 'sat_works'];
+        const diaStartColunas = ['sun_start', 'mon_start', 'tue_start', 'wed_start', 'thu_start', 'fri_start', 'sat_start'];
+        const diaEndColunas = ['sun_end', 'mon_end', 'tue_end', 'wed_end', 'thu_end', 'fri_end', 'sat_end'];
+        
+        const trabalhaNodia = (escala as any)[diaColunas[diaSemana]];
+        
+        if (!trabalhaNodia) return false;
+        
+        const horaInicio = parseInt(((escala as any)[diaStartColunas[diaSemana]] || '0:00').split(':')[0]);
+        const horaFim = parseInt(((escala as any)[diaEndColunas[diaSemana]] || '23:59').split(':')[0]);
+        
+        return horaInt >= horaInicio && horaInt <= horaFim;
+      });
+      
+      console.log(`🎯 Resultado para corretor ${corretorId}: ${temEscalaDisponivel ? 'DISPONÍVEL' : 'INDISPONÍVEL'}`);
+      
+      return temEscalaDisponivel || false;
+      
+    } catch (err) {
+      console.error('❌ Erro ao verificar disponibilidade:', err);
+      return false;
     }
   };
 
@@ -145,7 +424,8 @@ export function AddEventModal({
         date: eventDateTime,
         time,
         type: eventType,
-        corretor: selectedCorretor
+        corretor: selectedCorretor,
+        listingId: listingId || undefined
       });
 
       // Mostrar sucesso e resetar formulário
@@ -157,6 +437,7 @@ export function AddEventModal({
         setTime("");
         setEventType("Visita");
         setSelectedCorretor("aleatorio");
+        setListingId("");
         setShowDatePicker(false);
         setShowTimePicker(false);
         onClose();
@@ -216,23 +497,54 @@ export function AddEventModal({
             </Select>
           </div>
 
-          {/* Seleção de Imóvel */}
+          {/* Seleção de Imóvel via Viva Real */}
           <div className="space-y-2">
-            <Label htmlFor="property" className="text-gray-300">
+            <Label htmlFor="imovel" className="text-gray-300 flex items-center gap-2">
+              <Building2 className="w-4 h-4" />
               Imóvel <span className="text-red-400">*</span>
             </Label>
-            <Select value={selectedProperty} onValueChange={setSelectedProperty}>
-              <SelectTrigger className="bg-gray-700 border-gray-600 text-white">
-                <SelectValue placeholder="Selecione um imóvel" />
-              </SelectTrigger>
-              <SelectContent className="bg-gray-700 border-gray-600">
-                {properties.map((property) => (
-                  <SelectItem key={property.id} value={property.id}>
-                    {property.title} - {property.address}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover open={listingOpen} onOpenChange={setListingOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex w-full items-center justify-between rounded-md border border-gray-600 bg-gray-700 px-3 py-2 text-left text-white hover:bg-gray-600"
+                  aria-label="Selecione o imóvel"
+                >
+                  <span className="truncate">
+                    {listingId ? `${listingId} - ${listingOptions.find(opt => opt.listing_id === listingId)?.endereco || listingOptions.find(opt => opt.listing_id === listingId)?.cidade || 'Endereço não disponível'}` : 'Selecione o ID do imóvel ou digite'}
+                  </span>
+                  <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="p-0 w-[--radix-popover-trigger-width] bg-white border-gray-200" style={{ zIndex: 10000 }}>
+                <Command>
+                  <CommandInput placeholder="Digite o ID do imóvel..." value={listingQuery} onValueChange={setListingQuery} />
+                  <CommandList>
+                    <CommandEmpty>{listingLoading ? 'Carregando...' : 'Nenhum resultado'}</CommandEmpty>
+                    <CommandGroup>
+                      {listingOptions.map((opt) => (
+                        <CommandItem
+                          key={`${opt.id}-${opt.listing_id}`}
+                          value={opt.listing_id}
+                          onSelect={() => {
+                            setListingId(opt.listing_id);
+                            setSelectedProperty(opt.listing_id); // Manter compatibilidade
+                            setListingOpen(false);
+                          }}
+                        >
+                          <div className="flex flex-col text-black">
+                            <span className="font-medium">{opt.listing_id} - {(opt.endereco || opt.cidade || '-')}</span>
+                          </div>
+                          {listingId === opt.listing_id && (
+                            <Check className="ml-auto h-4 w-4 text-black" />
+                          )}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
 
           {/* Seleção de Cliente */}
@@ -499,14 +811,38 @@ export function AddEventModal({
             )}
           </div>
 
-          {/* Seleção de Corretor */}
+          {/* Seleção de Corretor com Disponibilidade */}
           <div className="space-y-2">
-            <Label htmlFor="corretor" className="text-gray-300">
+            <Label htmlFor="corretor" className="text-gray-300 flex items-center gap-2">
+              <span className="text-lg">👥</span>
               Corretor
+              {selectedDate && time && (
+                <span className="text-xs bg-blue-500/20 px-2 py-1 rounded-full text-blue-300">
+                  Baseado na disponibilidade
+                </span>
+              )}
             </Label>
             <Select value={selectedCorretor} onValueChange={setSelectedCorretor}>
-              <SelectTrigger className="bg-gray-700 border-gray-600 text-white">
-                <SelectValue placeholder="Selecione um corretor" />
+              <SelectTrigger 
+                className="bg-gray-700 border-gray-600 text-white"
+                onClick={() => {
+                  console.log('🎛️ DROPDOWN ABERTO - Estado atual:');
+                  console.log('📅 Data selecionada:', selectedDate?.toLocaleDateString());
+                  console.log('⏰ Horário selecionado:', time);
+                  console.log('👥 Total corretores:', corretoresDisponiveis.length);
+                  console.log('✅ Disponíveis:', corretoresDisponiveis.filter(c => c.available).length);
+                  console.log('❌ Indisponíveis:', corretoresDisponiveis.filter(c => !c.available).length);
+                  console.log('🔍 Modo filtragem ativa:', !!(selectedDate && time));
+                  console.log('📋 Lista de corretores COM ESCALAS:', corretoresDisponiveis.map(c => `${c.full_name}: ${c.available ? 'DISPONÍVEL' : 'INDISPONÍVEL'}`));
+                  
+                  if (selectedDate && time) {
+                    console.log('✨ FILTRO ATIVO: Mostrando apenas', corretoresDisponiveis.filter(c => c.available).length, 'corretores disponíveis no horário');
+                  } else {
+                    console.log('🔓 FILTRO INATIVO: Mostrando corretores com escalas (sem verificar horário)');
+                  }
+                }}
+              >
+                <SelectValue placeholder={corretorLoading ? "Verificando disponibilidade..." : "Selecione um corretor"} />
               </SelectTrigger>
               <SelectContent className="bg-gray-700 border-gray-600">
                 <SelectItem value="aleatorio" className="flex items-center gap-2">
@@ -515,18 +851,35 @@ export function AddEventModal({
                     <span>Aleatório (sistema escolhe)</span>
                   </div>
                 </SelectItem>
-                <SelectItem value="Isis" className="flex items-center gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">👩‍💼</span>
-                    <span>Isis - Corretora</span>
-                  </div>
-                </SelectItem>
-                <SelectItem value="Arthur" className="flex items-center gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">👨‍💼</span>
-                    <span>Arthur - Corretor</span>
-                  </div>
-                </SelectItem>
+                
+                {/* Se data E horário selecionados: mostrar APENAS disponíveis */}
+                {(selectedDate && time) ? (
+                  // Modo filtrado: apenas corretores disponíveis no horário
+                  corretoresDisponiveis.filter(c => c.available).map((corretor) => (
+                    <SelectItem key={corretor.id} value={corretor.full_name} className="flex items-center gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
+                        <span className="text-lg">👤</span>
+                        <span>{corretor.full_name}</span>
+                        <span className="text-xs text-green-400 ml-2">✓ Disponível</span>
+                      </div>
+                    </SelectItem>
+                  ))
+                ) : (
+                  // Modo sem filtro: mostrar todos os corretores
+                  corretoresDisponiveis.map((corretor) => (
+                    <SelectItem key={corretor.id} value={corretor.full_name} className="flex items-center gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${corretor.available ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`}></div>
+                        <span className="text-lg">👤</span>
+                        <span>{corretor.full_name}</span>
+                        <span className={`text-xs ml-2 ${corretor.available ? 'text-green-400' : 'text-gray-400'}`}>
+                          {corretor.available ? '✓ Com escala' : '⏳ Verificar horário'}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
             
@@ -534,16 +887,41 @@ export function AddEventModal({
             <div className="flex items-center gap-2 mt-2">
               <div className={`w-3 h-3 rounded-full ${
                 selectedCorretor === 'aleatorio' ? 'bg-yellow-500' :
-                selectedCorretor === 'Isis' ? 'bg-pink-500' :
-                selectedCorretor === 'Arthur' ? 'bg-indigo-500' : 'bg-gray-500'
+                corretoresDisponiveis.find(c => c.full_name === selectedCorretor)?.available ? 'bg-green-500' :
+                'bg-red-500'
               }`}></div>
               <span className="text-sm text-gray-400">
-                {selectedCorretor === 'aleatorio' ? 'Sistema escolherá automaticamente' :
-                 selectedCorretor === 'Isis' ? 'Evento será atribuído à Isis' :
-                 selectedCorretor === 'Arthur' ? 'Evento será atribuído ao Arthur' :
-                 'Corretor selecionado'}
+                {selectedCorretor === 'aleatorio' ? 'Sistema escolherá entre corretores disponíveis' :
+                 corretoresDisponiveis.find(c => c.full_name === selectedCorretor)?.available ? 
+                   `${selectedCorretor} está disponível no horário selecionado` :
+                 selectedCorretor ? `${selectedCorretor} não está no plantão neste horário` :
+                 'Selecione um corretor'}
               </span>
             </div>
+            
+            {/* Avisos sobre filtragem */}
+            {(!selectedDate || !time) ? (
+              <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 mt-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">⚠️</span>
+                  <span className="text-yellow-300 text-sm">
+                    Selecione data e horário para filtrar apenas corretores disponíveis no plantão
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 mt-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🔍</span>
+                  <span className="text-blue-300 text-sm">
+                    Mostrando apenas corretores disponíveis em {format(selectedDate, "dd/MM", { locale: ptBR })} às {time}
+                    {corretoresDisponiveis.filter(c => c.available).length === 0 && (
+                      <span className="text-red-400 ml-2">⚠️ Nenhum corretor disponível neste horário</span>
+                    )}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Botões */}

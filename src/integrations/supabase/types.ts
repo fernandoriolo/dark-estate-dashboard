@@ -580,6 +580,104 @@ export type Database = {
           },
         ]
       }
+      oncall_events: {
+        Row: {
+          address: string | null
+          assigned_user_id: string | null
+          client_email: string | null
+          client_name: string | null
+          client_phone: string | null
+          company_id: string
+          created_at: string | null
+          description: string | null
+          ends_at: string | null
+          google_event_id: string | null
+          id: string
+          property_id: string | null
+          property_title: string | null
+          starts_at: string
+          status: string | null
+          title: string
+          type: string | null
+          updated_at: string | null
+          user_id: string
+          webhook_source: string | null
+        }
+        Insert: {
+          address?: string | null
+          assigned_user_id?: string | null
+          client_email?: string | null
+          client_name?: string | null
+          client_phone?: string | null
+          company_id: string
+          created_at?: string | null
+          description?: string | null
+          ends_at?: string | null
+          google_event_id?: string | null
+          id?: string
+          property_id?: string | null
+          property_title?: string | null
+          starts_at: string
+          status?: string | null
+          title: string
+          type?: string | null
+          updated_at?: string | null
+          user_id: string
+          webhook_source?: string | null
+        }
+        Update: {
+          address?: string | null
+          assigned_user_id?: string | null
+          client_email?: string | null
+          client_name?: string | null
+          client_phone?: string | null
+          company_id?: string
+          created_at?: string | null
+          description?: string | null
+          ends_at?: string | null
+          google_event_id?: string | null
+          id?: string
+          property_id?: string | null
+          property_title?: string | null
+          starts_at?: string
+          status?: string | null
+          title?: string
+          type?: string | null
+          updated_at?: string | null
+          user_id?: string
+          webhook_source?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "oncall_events_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "oncall_events_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "oncall_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "oncall_events_assigned_user_id_fkey"
+            columns: ["assigned_user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       properties: {
         Row: {
           address: string

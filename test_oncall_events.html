@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste da Tabela oncall_events</title>
+</head>
+<body>
+    <h1>Teste da Tabela oncall_events</h1>
+    <button id="testBtn">Testar Inserção de Evento</button>
+    <pre id="result"></pre>
+
+    <script type="module">
+        import { createClient } from 'https://cdn.skypack.dev/@supabase/supabase-js';
+
+        const supabaseUrl = 'https://zldxpndslomjccbilowh.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpsZHhwbmRzbG9tamdjaWJpbG93aCIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzM0NTM5MjA5LCJleHAiOjIwNTAxMTUyMDl9.L8H1_YZVrAVInWiJoYL5c2VvEo32u-Zcnj3zUPbmYS0';
+        
+        const supabase = createClient(supabaseUrl, supabaseKey);
+        
+        const resultElement = document.getElementById('result');
+        const testBtn = document.getElementById('testBtn');
+        
+        function log(message) {
+            resultElement.textContent += message + '\n';
+        }
+        
+        testBtn.addEventListener('click', async () => {
+            resultElement.textContent = '';
+            log('🔍 Testando estrutura da tabela oncall_events...');
+            
+            try {
+                // Teste 1: Verificar se a tabela existe
+                log('\n1. Verificando se a tabela existe...');
+                const { data: tableExists, error: existsError } = await supabase
+                    .from('oncall_events')
+                    .select('*')
+                    .limit(1);
+                    
+                if (existsError) {
+                    log('❌ Erro ao acessar tabela: ' + existsError.message);
+                    return;
+                }
+                
+                log('✅ Tabela oncall_events existe');
+                log('Dados encontrados: ' + (tableExists ? tableExists.length : 0) + ' registros');
+                
+                // Teste 2: Tentar inserir um registro de teste
+                log('\n2. Testando inserção...');
+                const testEvent = {
+                    title: 'Evento de Teste',
+                    description: 'Teste de inserção na tabela oncall_events',
+                    starts_at: new Date().toISOString(),
+                    client_name: 'Cliente Teste',
+                    property_title: 'Propriedade Teste',
+                    address: 'Endereço de Teste',
+                    type: 'Visita',
+                    status: 'Confirmado',
+                    webhook_source: 'local',
+                    company_id: 'test-company-id',
+                    user_id: 'test-user-id'
+                };
+                
+                const { data: insertData, error: insertError } = await supabase
+                    .from('oncall_events')
+                    .insert(testEvent)
+                    .select();
+                    
+                if (insertError) {
+                    log('❌ Erro na inserção: ' + insertError.message);
+                    log('Detalhes: ' + JSON.stringify(insertError, null, 2));
+                } else {
+                    log('✅ Evento inserido com sucesso!');
+                    log('Dados inseridos: ' + JSON.stringify(insertData, null, 2));
+                    
+                    // Teste 3: Buscar o evento inserido
+                    log('\n3. Buscando evento inserido...');
+                    const { data: searchData, error: searchError } = await supabase
+                        .from('oncall_events')
+                        .select('*')
+                        .eq('id', insertData[0].id);
+                        
+                    if (searchError) {
+                        log('❌ Erro ao buscar: ' + searchError.message);
+                    } else {
+                        log('✅ Evento encontrado: ' + JSON.stringify(searchData, null, 2));
+                        
+                        // Teste 4: Remover o evento de teste
+                        log('\n4. Removendo evento de teste...');
+                        const { error: deleteError } = await supabase
+                            .from('oncall_events')
+                            .delete()
+                            .eq('id', insertData[0].id);
+                            
+                        if (deleteError) {
+                            log('❌ Erro ao remover: ' + deleteError.message);
+                        } else {
+                            log('✅ Evento de teste removido com sucesso');
+                        }
+                    }
+                }
+                
+            } catch (error) {
+                log('❌ Erro geral: ' + error.message);
+                log('Stack: ' + error.stack);
+            }
+        });
+    </script>
+</body>
+</html>
