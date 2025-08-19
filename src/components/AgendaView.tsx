@@ -1071,7 +1071,7 @@ export function AgendaView() {
           client_name: webhookPayload.cliente.nome,
           corretor_name: webhookPayload.corretor.nome,
           event_type: webhookPayload.tipo_evento,
-          status: 'confirmed'
+          status: 'Confirmado'
         });
         console.log('✅ Evento salvo no banco local com ID:', eventId);
       } catch (saveError) {
