@@ -253,7 +253,7 @@ export function InquilinatoView() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-white">Chat Assistente</CardTitle>
-            <Button variant="outline" className="border-gray-700 text-gray-200 hover:text-white" onClick={async () => {
+            <Button variant="outline" className="border-gray-700 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10" onClick={async () => {
               // Novo chat
               if (!user?.id) return;
               const { data } = await supabase

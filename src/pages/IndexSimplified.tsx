@@ -8,7 +8,7 @@ import { DashboardHeader } from "@/components/DashboardHeader";
 
 // Lazy modules (code splitting)
 const DashboardContent = lazy(() => import("@/components/DashboardContent").then(m => ({ default: m.DashboardContent })));
-const ReportsView = lazy(() => import("@/components/ReportsView").then(m => ({ default: m.ReportsView })));
+import ReportsView from "@/components/DashboardReports";
 const ClientsView = lazy(() => import("@/components/ClientsView").then(m => ({ default: m.ClientsView })));
 const ClientsCRMView = lazy(() => import("@/components/ClientsCRMView").then(m => ({ default: m.ClientsCRMView })));
 const PermissionsManagementView = lazy(() => import("@/components/PermissionsManagementView").then(m => ({ default: m.PermissionsManagementView })));
@@ -72,6 +72,7 @@ const Index = () => {
           />
         );
       case "reports":
+        console.log("🔧 Tentando renderizar ReportsView");
         return <ReportsView />;
       case "properties":
         return <PropertyList properties={[]} loading={loading} onAddNew={() => window.dispatchEvent(new Event("open-add-imovel-modal"))} />;

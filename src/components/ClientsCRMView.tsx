@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -79,6 +80,7 @@ const getBrokerColor = (role: string) => {
 };
 
 export function ClientsCRMView() {
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTab, setSelectedTab] = useState('todos');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -205,6 +207,11 @@ export function ClientsCRMView() {
   const handleEditLead = (lead) => {
     setSelectedLead(lead);
     setShowEditModal(true);
+  };
+
+  const handleOpenWhatsApp = (lead) => {
+    // Navegar para o módulo Chats com o lead específico
+    navigate('/chats', { state: { leadPhone: lead.phone, leadName: lead.name } });
   };
 
   const handleCloseViewModal = () => {
@@ -633,7 +640,7 @@ export function ClientsCRMView() {
                                 icon: MessageSquare, 
                                 color: "bg-emerald-700 border-emerald-600 text-emerald-100 hover:bg-emerald-600", 
                                 label: "WhatsApp",
-                                action: () => console.log("WhatsApp feature coming soon...")
+                                action: () => handleOpenWhatsApp(lead)
                               }
                             ].map((action, actionIndex) => (
                               <motion.div
@@ -865,7 +872,7 @@ export function ClientsCRMView() {
                 <Button
                   variant="outline"
                   onClick={handleCloseViewModal}
-                  className="border-gray-600 text-gray-300 hover:bg-gray-800"
+                  className="border-gray-600 text-red-400 hover:bg-gray-800 hover:text-red-300"
                 >
                   Fechar
                 </Button>

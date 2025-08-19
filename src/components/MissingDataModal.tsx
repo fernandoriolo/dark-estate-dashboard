@@ -435,7 +435,7 @@ const MissingDataModal: React.FC<MissingDataModalProps> = ({
               
               <motion.button
                 onClick={handleClose}
-                className="text-white/80 hover:text-white hover:bg-white/20 p-2 rounded-xl transition-all duration-300"
+                className="text-white/80 hover:text-white hover:bg-gray-800/50 p-2 rounded-xl transition-all duration-300"
                 whileHover={{ scale: 1.1, rotate: 90 }}
                 whileTap={{ scale: 0.9 }}
               >

@@ -1609,7 +1609,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel className="border-gray-600 text-gray-300 hover:bg-gray-700">
+                              <AlertDialogCancel className="border-gray-600 text-red-400 hover:bg-gray-700 hover:text-red-300">
                                 Cancelar
                               </AlertDialogCancel>
                               <AlertDialogAction 
@@ -1918,7 +1918,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
               <textarea value={editDescricao} onChange={(e) => setEditDescricao(e.target.value)} className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-md p-2 text-gray-200 min-h-[100px]"></textarea>
             </div>
             <div className="flex justify-end gap-3 pt-2">
-              <Button variant="outline" className="border-gray-600 text-gray-300 hover:bg-gray-800" onClick={() => setIsVivaRealEditOpen(false)}>Cancelar</Button>
+              <Button variant="outline" className="border-gray-600 text-red-400 hover:bg-gray-800 hover:text-red-300" onClick={() => setIsVivaRealEditOpen(false)}>Cancelar</Button>
               <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={submitVivaRealEdit}>Salvar</Button>
             </div>
           </div>

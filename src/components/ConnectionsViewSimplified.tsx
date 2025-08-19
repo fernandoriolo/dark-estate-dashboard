@@ -829,7 +829,7 @@ export function ConnectionsViewSimplified() {
             <Button
               variant="outline"
               onClick={() => setShowAddModal(false)}
-              className="border-gray-600 text-gray-300 hover:bg-gray-800"
+              className="border-gray-600 text-red-400 hover:bg-gray-800 hover:text-red-300"
             >
               {canCreate ? 'Cancelar' : 'Fechar'}
             </Button>
@@ -1120,7 +1120,7 @@ export function ConnectionsViewSimplified() {
             <Button
               variant="outline"
               onClick={() => setShowConfigModal(false)}
-              className="border-gray-600 text-gray-300 hover:bg-gray-800"
+              className="border-gray-600 text-red-400 hover:bg-gray-800 hover:text-red-300"
             >
               Cancelar
             </Button>
@@ -1195,7 +1195,7 @@ export function ConnectionsViewSimplified() {
             <Button
               variant="outline"
               onClick={() => setShowRequestModal(false)}
-              className="border-gray-600 text-gray-300 hover:bg-gray-800"
+              className="border-gray-600 text-red-400 hover:bg-gray-800 hover:text-red-300"
               disabled={requestingConnection}
             >
               Cancelar

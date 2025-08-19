@@ -400,7 +400,7 @@ export function UserManagementView() {
             variant="outline" 
             onClick={() => fetchUsers(searchTerm, roleFilter)}
             disabled={loading}
-            className="border-gray-600 text-gray-300 hover:bg-gray-800"
+            className="border-gray-600 text-green-400 hover:bg-gray-800 hover:text-green-300"
           >
             <Users className="h-4 w-4 mr-2" />
             Atualizar

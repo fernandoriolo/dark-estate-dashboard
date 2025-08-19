@@ -93,7 +93,7 @@ export function PropertyEditForm({ property, onSubmit, onCancel }: PropertyEditF
                 type="button"
                 variant="outline"
                 onClick={onCancel}
-                className="flex-1 border-gray-600 text-gray-300 hover:bg-gray-700"
+                className="flex-1 border-gray-600 text-red-400 hover:bg-gray-700 hover:text-red-300"
                 disabled={loading}
               >
                 Cancelar

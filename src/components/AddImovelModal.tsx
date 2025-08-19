@@ -478,7 +478,7 @@ export const AddImovelModal: React.FC<AddImovelModalProps> = ({ isOpen, onClose 
                   <Button 
                     variant="outline" 
                     onClick={onClose}
-                    className="border-gray-700 text-gray-300 hover:bg-gray-800 hover:text-white"
+                    className="border-gray-700 text-red-400 hover:bg-gray-800 hover:text-red-300"
                   >
                     Cancelar
                   </Button>

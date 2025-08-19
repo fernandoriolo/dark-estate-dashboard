@@ -305,7 +305,7 @@ export function PermissionsManagementView() {
             <Button 
               onClick={refreshPermissions}
               variant="outline"
-              className="border-gray-600 hover:border-blue-500 hover:bg-blue-500/10"
+              className="border-gray-600 text-green-400 hover:border-green-500 hover:bg-green-500/10 hover:text-green-300"
             >
               <RefreshCw className="h-4 w-4 mr-2" />
               Atualizar

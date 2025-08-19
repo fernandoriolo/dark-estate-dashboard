@@ -41,7 +41,7 @@ const DashboardContent = createLazyComponent(
   "DashboardContent"
 );
 const ReportsView = createLazyComponent(
-  () => import("@/components/ReportsView").then(m => ({ default: m.ReportsView })),
+  () => import("@/components/ReportsView").then(m => ({ default: m.default })),
   "ReportsView"
 );
 const ClientsView = createLazyComponent(

@@ -43,10 +43,12 @@ export function useChatsDataSimple() {
   // Estados para corretores (gestores)
   const [corretores, setCorretores] = useState<CorretorInfo[]>([]);
   const [selectedCorretor, setSelectedCorretor] = useState<string | null>(null);
+  const [corretoresLoading, setCorretoresLoading] = useState(false);
   
   // Estados para conversas
   const [conversas, setConversas] = useState<ChatLead[]>([]);
   const [selectedChat, setSelectedChat] = useState<string | null>(null);
+  const [conversasLoading, setConversasLoading] = useState(false);
   
   // Estados para mensagens
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -58,7 +60,7 @@ export function useChatsDataSimple() {
     if (!profile || profile.role === 'corretor') return;
     
     try {
-      setLoading(true);
+      setCorretoresLoading(true);
       setError(null);
       
       // Query direta sem RLS - buscar corretores e contar chats separadamente
@@ -112,6 +114,7 @@ export function useChatsDataSimple() {
       console.error('❌ Erro ao carregar corretores (simples):', err);
       setError(err instanceof Error ? err.message : 'Erro ao carregar corretores');
     } finally {
+      setCorretoresLoading(false);
       setLoading(false);
     }
   }, [profile]);
@@ -122,7 +125,7 @@ export function useChatsDataSimple() {
     if (!profile) return;
     
     try {
-      setLoading(true);
+      setConversasLoading(true);
       setError(null);
       
       // Query direta sem RLS
@@ -197,7 +200,7 @@ export function useChatsDataSimple() {
       setError(err instanceof Error ? err.message : 'Erro ao carregar conversas');
       setConversas([]);
     } finally {
-      setLoading(false);
+      setConversasLoading(false);
     }
   }, [profile]);
 
@@ -289,7 +292,7 @@ export function useChatsDataSimple() {
     return true;
   }, []);
 
-  // Efeito para carregar dados iniciais
+  // Efeito para carregar dados iniciais - otimizado
   useEffect(() => {
     console.log('🚀 useEffect SIMPLES inicial. Profile:', profile);
     if (!profile) {
@@ -304,17 +307,17 @@ export function useChatsDataSimple() {
       console.log('👑 Usuário é gestor/admin - carregando corretores (simples)');
       loadCorretores();
     }
-  }, [profile, loadConversas, loadCorretores]);
+  }, [profile?.role, profile?.company_id]); // Dependências mais específicas
 
-  // Efeito para carregar conversas quando corretor é selecionado
+  // Efeito para carregar conversas quando corretor é selecionado - otimizado
   useEffect(() => {
     if (profile?.role !== 'corretor' && selectedCorretor) {
       console.log('🔄 Carregando conversas do corretor selecionado:', selectedCorretor);
       loadConversas(selectedCorretor);
     }
-  }, [selectedCorretor, profile, loadConversas]);
+  }, [selectedCorretor, profile?.role]); // Dependências reduzidas
 
-  // Efeito para carregar mensagens quando chat é selecionado
+  // Efeito para carregar mensagens quando chat é selecionado - otimizado
   useEffect(() => {
     if (selectedChat) {
       console.log('💬 Carregando mensagens do chat:', selectedChat);
@@ -322,13 +325,15 @@ export function useChatsDataSimple() {
     } else {
       setMessages([]);
     }
-  }, [selectedChat, loadMessages]);
+  }, [selectedChat]); // Dependência única
 
   return {
     // Estados
     loading,
     error,
     messagesLoading,
+    corretoresLoading,
+    conversasLoading,
     
     // Dados para gestores
     corretores,

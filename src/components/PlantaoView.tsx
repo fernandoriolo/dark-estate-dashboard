@@ -1142,7 +1142,7 @@ const PlantaoView = () => {
                                     )}
                                   </div>
                                   <div className="flex justify-end gap-2">
-                                    <Button variant="ghost" className="text-white/80 hover:text-white" onClick={() => { setIsConfigOpen(false); setConfigCalendarId(null); }}>Cancelar</Button>
+                                    <Button variant="ghost" className="text-red-400 hover:text-red-300" onClick={() => { setIsConfigOpen(false); setConfigCalendarId(null); }}>Cancelar</Button>
                                     <Button
                                       variant="ghost"
                                       className="text-white hover:bg-transparent"

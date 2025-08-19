@@ -26,7 +26,8 @@ function ReportsView() {
 
       // Import dinâmico para evitar problemas de cache
       const jsPDF = (await import('jspdf')).default;
-      
+      const autoTable = (await import('jspdf-autotable')).default;
+
       const doc = new jsPDF();
       const today = new Date().toLocaleDateString('pt-BR');
       
@@ -81,6 +82,7 @@ function ReportsView() {
 
       // Import dinâmico para evitar problemas de cache
       const jsPDF = (await import('jspdf')).default;
+      const autoTable = (await import('jspdf-autotable')).default;
 
       const doc = new jsPDF();
       const today = new Date().toLocaleDateString('pt-BR');
@@ -120,7 +122,6 @@ function ReportsView() {
       });
     }
   };
-
   return (
     <div className="space-y-6">
       <div>
