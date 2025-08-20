@@ -1,7 +1,7 @@
 import React from "react";
 import { ChartContainer } from '@mui/x-charts/ChartContainer';
 import { ChartsLegend, ChartsAxis, ChartsTooltip, ChartsGrid, ChartsAxisHighlight } from '@mui/x-charts';
-import { BarPlot } from '@mui/x-charts/BarChart';
+import { BarChart, BarPlot } from '@mui/x-charts/BarChart';
 import { LinePlot, AreaPlot } from '@mui/x-charts/LineChart';
 import { PieChart } from '@mui/x-charts/PieChart';
 
@@ -10,7 +10,7 @@ import { formatCurrencyCompact, monthLabel } from '@/lib/charts/formatters';
 import { chartPalette, pieChartColors } from '@/lib/charts/palette';
 import { gridStyle, tooltipSlotProps, vgvTooltipSlotProps, currencyValueFormatter, numberValueFormatter } from '@/lib/charts/config';
 import { supabase } from '@/integrations/supabase/client';
-import { fetchDistribuicaoPorTipo, fetchFunilLeads, fetchHeatmapConversas, fetchCorretoresComConversas, fetchHeatmapConversasPorCorretor, fetchLeadsPorCanalTop8, fetchLeadsPorCorretor, fetchLeadsCorretorEstagio, fetchLeadsPorTempo, fetchLeadsSemCorretor, fetchTaxaOcupacao, fetchVgvByPeriod, VgvPeriod } from '@/services/metrics';
+import { fetchDistribuicaoPorTipo, fetchFunilLeads, fetchHeatmapConversas, fetchCorretoresComConversas, fetchHeatmapConversasPorCorretor, fetchLeadsPorCanalTop8, fetchLeadsPorCorretor, fetchLeadsCorretorEstagio, fetchLeadsPorTempo, fetchLeadsSemCorretor, fetchTaxaOcupacao, fetchImoveisMaisProcurados, fetchVgvByPeriod, VgvPeriod, TimeRange } from '@/services/metrics';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
@@ -44,12 +44,67 @@ export const DashboardCharts: React.FC = () => {
 	const [availableBrokers, setAvailableBrokers] = React.useState<{id: string, name: string}[]>([]);
 
 	// Estados para filtro de tempo no gráfico temporal
-	const [timeRange, setTimeRange] = React.useState<'total' | 'year' | 'month' | 'week' | 'day'>('total');
+	const [timeRange, setTimeRange] = React.useState<TimeRange>('total');
+
+	// Estados para gráfico de disponibilidade/imóveis procurados
+	const [showAvailabilityChart, setShowAvailabilityChart] = React.useState<boolean>(true);
+	const [imoveisProcurados, setImoveisProcurados] = React.useState<{ id: string; name: string; value: number }[]>([]);
+
+	// Estados para hover card de propriedade
+	const [hoveredProperty, setHoveredProperty] = React.useState<any>(null);
+	const [hoverPosition, setHoverPosition] = React.useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
 	// Effect para atualizar VGV quando período muda
 	React.useEffect(() => {
 		fetchVgvByPeriod(vgvPeriod).then(setVgv).catch(() => setVgv([]));
 	}, [vgvPeriod]);
+
+	// Effect para atualizar dados temporais quando timeRange muda
+	React.useEffect(() => {
+		fetchLeadsPorTempo(timeRange).then(setLeadsTempo).catch(() => setLeadsTempo([]));
+	}, [timeRange]);
+
+	// Função para buscar informações básicas do imóvel no hover
+	const handlePropertyHover = async (imovelId: string, event: React.MouseEvent) => {
+		try {
+			const rect = event.currentTarget.getBoundingClientRect();
+			const viewportWidth = window.innerWidth;
+			const cardWidth = 320; // Largura aproximada do card
+			
+			// Se não houver espaço à direita, mostrar à esquerda
+			const x = rect.right + 10 + cardWidth > viewportWidth 
+				? rect.left - cardWidth - 10 
+				: rect.right + 10;
+				
+			setHoverPosition({
+				x: Math.max(10, x), // Garantir que não saia da tela pela esquerda
+				y: rect.top
+			});
+
+			// Buscar informações básicas do imóvel pelo listing_id
+			const { data: property, error } = await supabase
+				.from('imoveisvivareal')
+				.select('id, listing_id, tipo_imovel, descricao, preco, tamanho_m2, quartos, banheiros, garagem, endereco, cidade, bairro')
+				.eq('listing_id', imovelId) // O imovel_interesse contém o listing_id
+				.single();
+			
+			if (error) {
+				console.error('Erro ao buscar informações do imóvel:', error);
+				return;
+			}
+
+			if (property) {
+				setHoveredProperty(property);
+			}
+		} catch (error) {
+			console.error('Erro ao buscar informações do imóvel:', error);
+		}
+	};
+
+	// Função para limpar hover
+	const handlePropertyHoverExit = () => {
+		setHoveredProperty(null);
+	};
 
 	// Função para buscar dados do heatmap com filtro de corretor
 	const refetchHeatmapData = React.useCallback(() => {
@@ -70,11 +125,11 @@ export const DashboardCharts: React.FC = () => {
 				fetchLeadsPorCanalTop8().then(setCanal).catch(() => setCanal([])),
 				fetchDistribuicaoPorTipo().then(setTipos).catch(() => setTipos([])),
 				fetchFunilLeads().then(setFunil).catch(() => setFunil([])),
-				fetchLeadsPorTempo().then(setLeadsTempo).catch(() => setLeadsTempo([])),
 				fetchLeadsPorCorretor().then(setBrokers).catch(() => setBrokers([])),
 				fetchLeadsCorretorEstagio().then(setBrokersStages).catch(() => setBrokersStages(new Map())),
 				fetchLeadsSemCorretor().then(setUnassignedLeads).catch(() => setUnassignedLeads(0)),
 				fetchTaxaOcupacao().then(setGauge).catch(() => setGauge({ ocupacao: 0, total: 0, disponiveis: 0 } as any)),
+				fetchImoveisMaisProcurados().then(setImoveisProcurados).catch(() => setImoveisProcurados([])),
 				// Buscar corretores disponíveis para filtro
 				fetchCorretoresComConversas().then(setAvailableBrokers).catch(() => setAvailableBrokers([])),
 			]);
@@ -369,26 +424,179 @@ export const DashboardCharts: React.FC = () => {
 			</Card>
 
 			<Card className="bg-gray-800/50 border-gray-700/50 xl:col-span-4">
-				<CardHeader>
-					<CardTitle className="text-white">Taxa de ocupação</CardTitle>
+				<CardHeader className="flex flex-row items-center justify-between">
+					<CardTitle className="text-white">
+						{showAvailabilityChart ? 'Taxa de Disponibilidade' : 'Imóveis mais Procurados (por ID)'}
+					</CardTitle>
+					<div className="flex items-center gap-2">
+						<Button
+							variant={showAvailabilityChart ? "default" : "outline"}
+							size="sm"
+							onClick={() => setShowAvailabilityChart(true)}
+							className="text-xs"
+						>
+							Taxa
+						</Button>
+						<Button
+							variant={!showAvailabilityChart ? "default" : "outline"}
+							size="sm"
+							onClick={() => setShowAvailabilityChart(false)}
+							className="text-xs"
+						>
+							Procurados
+						</Button>
+					</div>
 				</CardHeader>
 				<CardContent>
-					<div className="h-72">
-						<PieChart
-							series={[{ 
-								data: (gauge?.breakdown || []).map((item, i) => ({ 
-									id: item.status, 
-									label: `${item.status} (${item.total})`,  // Incluir número na legenda
-									value: item.total,
-									color: pieChartColors[i % pieChartColors.length]  // Usar paleta diferenciada
-								})),
-								innerRadius: 60,
-								outerRadius: 100,
-								paddingAngle: 3,  // Aumentar espaçamento entre fatias
-								cornerRadius: 8   // Bordas mais arredondadas
-							}]}
-							margin={{ top: 40, bottom: 40, left: 80, right: 80 }}  // Margem para acomodar legenda
-						/>
+					<div className="h-72 relative">
+						{showAvailabilityChart ? (
+							<PieChart
+								series={[{ 
+									data: (gauge?.breakdown || []).map((item, i) => ({ 
+										id: item.status, 
+										label: `${item.status} (${item.total})`,  // Incluir número na legenda
+										value: item.total,
+										color: pieChartColors[i % pieChartColors.length]  // Usar paleta diferenciada
+									})),
+									innerRadius: 60,
+									outerRadius: 100,
+									paddingAngle: 3,  // Aumentar espaçamento entre fatias
+									cornerRadius: 8   // Bordas mais arredondadas
+								}]}
+								margin={{ top: 40, bottom: 40, left: 80, right: 80 }}  // Margem para acomodar legenda
+							/>
+						) : (
+							<div className="flex flex-col h-full">
+								{/* Gráfico de barras horizontais */}
+								<div className="flex-1">
+									<ChartContainer
+										xAxis={[{ 
+											scaleType: 'linear', 
+											position: 'bottom', 
+											valueFormatter: (v: number) => `${Number(v||0)} leads`,
+											tickLabelStyle: { fill: chartPalette.textSecondary, fontSize: '0.7rem' }
+										}]}
+										yAxis={[{ 
+											scaleType: 'band', 
+											position: 'left', 
+											data: imoveisProcurados.map(i => i.id),
+											tickLabelStyle: { 
+												fill: chartPalette.textPrimary, 
+												fontSize: '0.75rem', 
+												fontWeight: 500,
+												fontFamily: 'Inter, system-ui, sans-serif'
+											}
+										}]}
+										series={imoveisProcurados.map((imovel, i) => {
+											const colors = [
+												'#60a5fa', '#fbbf24', '#34d399', '#fb7185', '#a78bfa', '#22d3ee'
+											];
+											return {
+												type: 'bar' as const,
+												data: imoveisProcurados.map(im => im.id === imovel.id ? imovel.value : 0),
+												label: imovel.name,
+												color: colors[i % colors.length],
+												layout: 'horizontal' as const
+											};
+										})}
+										height={180}
+										margin={{
+											left: 80,
+											right: 40,
+											top: 10,
+											bottom: 20
+										}}
+									>
+										<BarPlot />
+										<ChartsAxis />
+										<ChartsTooltip />
+									</ChartContainer>
+								</div>
+								
+								{/* Legenda clicável */}
+								<div className="mt-4 flex flex-wrap gap-2 justify-center">
+									{imoveisProcurados.map((imovel, i) => {
+										const colors = [
+											'#60a5fa', '#fbbf24', '#34d399', '#fb7185', '#a78bfa', '#22d3ee'
+										];
+										return (
+											<div
+												key={imovel.id}
+												onMouseEnter={(e) => handlePropertyHover(imovel.id, e)}
+												onMouseLeave={handlePropertyHoverExit}
+												className="flex items-center gap-2 px-3 py-1 rounded-full bg-gray-700 hover:bg-gray-600 transition-colors text-xs cursor-pointer"
+											>
+												<div 
+													className="w-3 h-3 rounded-full"
+													style={{ backgroundColor: colors[i % colors.length] }}
+												></div>
+												<span className="text-gray-200">{imovel.id}</span>
+											</div>
+										);
+									})}
+								</div>
+							</div>
+						)}
+						
+						{/* Hover card com informações do imóvel */}
+						{hoveredProperty && (
+							<div 
+								className="fixed z-50 bg-gray-800 border border-gray-600 rounded-lg shadow-lg p-4 max-w-xs"
+								style={{ 
+									left: hoverPosition.x, 
+									top: hoverPosition.y,
+									transform: 'translateY(-50%)'
+								}}
+							>
+								<div className="space-y-2">
+									<div className="flex items-center justify-between">
+										<h4 className="text-white font-semibold text-sm">ID: {hoveredProperty.listing_id}</h4>
+										<span className="text-xs text-gray-400">{hoveredProperty.tipo_imovel || 'N/A'}</span>
+									</div>
+									
+									{hoveredProperty.preco && (
+										<div className="text-green-400 font-semibold text-sm">
+											R$ {Number(hoveredProperty.preco).toLocaleString('pt-BR')}
+										</div>
+									)}
+									
+									<div className="grid grid-cols-3 gap-2 text-xs text-gray-300">
+										{hoveredProperty.tamanho_m2 && (
+											<div className="flex items-center gap-1">
+												<span className="text-gray-400">Área:</span>
+												<span>{hoveredProperty.tamanho_m2}m²</span>
+											</div>
+										)}
+										{hoveredProperty.quartos && (
+											<div className="flex items-center gap-1">
+												<span className="text-gray-400">Qtos:</span>
+												<span>{hoveredProperty.quartos}</span>
+											</div>
+										)}
+										{hoveredProperty.banheiros && (
+											<div className="flex items-center gap-1">
+												<span className="text-gray-400">Banh:</span>
+												<span>{hoveredProperty.banheiros}</span>
+											</div>
+										)}
+									</div>
+									
+									{(hoveredProperty.endereco || hoveredProperty.bairro || hoveredProperty.cidade) && (
+										<div className="text-xs text-gray-400 truncate">
+											📍 {[hoveredProperty.endereco, hoveredProperty.bairro, hoveredProperty.cidade]
+												.filter(Boolean).join(', ')}
+										</div>
+									)}
+									
+									{hoveredProperty.descricao && (
+										<div className="text-xs text-gray-300 max-h-16 overflow-hidden">
+											{hoveredProperty.descricao.substring(0, 120)}
+											{hoveredProperty.descricao.length > 120 && '...'}
+										</div>
+									)}
+								</div>
+							</div>
+						)}
 					</div>
 				</CardContent>
 			</Card>
@@ -408,38 +616,40 @@ export const DashboardCharts: React.FC = () => {
 										scaleType: 'linear', 
 										position: 'bottom', 
 										valueFormatter: (v: number) => `${Number(v||0).toLocaleString('pt-BR')}`,
-												tickLabelStyle: { fill: chartPalette.textSecondary, fontSize: '0.7rem' }
+										tickLabelStyle: { fill: chartPalette.textSecondary, fontSize: '0.7rem' }
 									}]}
 									yAxis={[{ 
 										scaleType: 'band', 
 										position: 'left', 
 										data: canal.map(c => c.name),
-												tickLabelStyle: { 
-													fill: chartPalette.textPrimary, 
-													fontSize: '0.75rem', 
-													fontWeight: 500,
-													fontFamily: 'Inter, system-ui, sans-serif'
-												},
-												width: 70
+										tickLabelStyle: { 
+											fill: chartPalette.textPrimary, 
+											fontSize: '0.75rem', 
+											fontWeight: 500,
+											fontFamily: 'Inter, system-ui, sans-serif'
+										}
 									}]}
-									series={canal.map((c, i) => ({ 
-										type: 'bar' as const, 
-										id: `canal-${i}`, 
-										data: Array(canal.length).fill(0).map((_, idx) => idx === i ? c.value : 0),
-										label: c.name,
-										color: pieChartColors[i % pieChartColors.length],
-										layout: 'horizontal' as const,
-										stack: 'canal'
-									}))}
+									series={canal.map((c, i) => {
+										const colors = [
+											'#60a5fa', '#fbbf24', '#34d399', '#fb7185', '#a78bfa', 
+											'#22d3ee', '#a3e635', '#fb923c', '#f472b6', '#818cf8'
+										];
+										return {
+											type: 'bar' as const,
+											data: canal.map(ch => ch.name === c.name ? c.value : 0),
+											label: c.name,
+											color: colors[i % colors.length],
+											layout: 'horizontal' as const
+										};
+									})}
 									height={240}
 									margin={{
-										left: 20,
+										left: 120,
 										right: 40,
-										top: 10,
+										top: 20,
 										bottom: 30
 									}}
 								>
-									<ChartsGrid vertical style={gridStyle} />
 									<BarPlot />
 									<ChartsAxis />
 									<ChartsTooltip />

@@ -88,13 +88,36 @@ export async function fetchVgvByPeriod(period: VgvPeriod = 'mensal') {
 	return Array.from(byPeriod.entries()).map(([k, v]) => ({ month: k, ...v }));
 }
 
+function mapChannelName(canalName: string): string {
+	const channelMapping: Record<string, string> = {
+		'sdr_facebook': 'Facebook',
+		'sdr_google': 'Google',
+		'sdr_whatsapp': 'WhatsApp' // Mapear para WhatsApp para combinar com canal existente
+	};
+	return channelMapping[canalName] || canalName;
+}
+
 export async function fetchLeadsPorCanalTop8() {
 	const { data, error } = await supabase
 		.from('vw_chart_leads_por_canal')
 		.select('canal_bucket, total');
 	if (error) throw error;
-	return (data || [])
-		.map((r: any) => ({ name: r.canal_bucket as string, value: Number(r.total || 0) }))
+	
+	// Processar dados e mapear nomes
+	const channelData = new Map<string, number>();
+	
+	(data || []).forEach((r: any) => {
+		const mappedName = mapChannelName(r.canal_bucket as string);
+		const value = Number(r.total || 0);
+		
+		// Combinar valores de canais com mesmo nome mapeado
+		const currentValue = channelData.get(mappedName) || 0;
+		channelData.set(mappedName, currentValue + value);
+	});
+	
+	// Converter Map para array e ordenar
+	return Array.from(channelData.entries())
+		.map(([name, value]) => ({ name, value }))
 		.sort((a, b) => b.value - a.value);
 }
 
@@ -342,41 +365,166 @@ export async function fetchHeatmapConversasPorCorretor(brokerId?: string) {
 	return grid;
 }
 
-export async function fetchLeadsPorTempo() {
-	// Usar a view criada para análise temporal - mais eficiente
+export type TimeRange = 'total' | 'year' | 'month' | 'week' | 'day';
+
+export async function fetchLeadsPorTempo(timeRange: TimeRange = 'total') {
+	const now = new Date();
+	let startDate: Date;
+	let groupBy: string;
+	let periods: number;
+	let dateFormat: (date: Date, index?: number) => string;
+
+	switch (timeRange) {
+		case 'total':
+			startDate = new Date(2020, 0, 1); // Início histórico
+			groupBy = 'year';
+			periods = now.getFullYear() - 2020 + 1;
+			dateFormat = (d: Date) => d.getFullYear().toString();
+			break;
+		case 'year':
+			startDate = new Date(now.getFullYear() - 2, 0, 1); // 3 anos
+			groupBy = 'year';
+			periods = 3;
+			dateFormat = (d: Date) => d.getFullYear().toString();
+			break;
+		case 'month':
+			startDate = new Date(now.getFullYear(), now.getMonth() - 11, 1); // 12 meses
+			groupBy = 'month';
+			periods = 12;
+			dateFormat = (d: Date) => monthLabel(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+			break;
+		case 'week':
+			startDate = new Date(now.getTime() - 12 * 7 * 24 * 60 * 60 * 1000); // 12 semanas
+			groupBy = 'week';
+			periods = 12;
+			dateFormat = (d: Date, i?: number) => `S${(i || 0) + 1}`;
+			break;
+		case 'day':
+			startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // 30 dias
+			groupBy = 'day';
+			periods = 30;
+			dateFormat = (d: Date) => d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+			break;
+	}
+
+	// Buscar dados da view baseado na data de início
 	const { data, error } = await supabase
 		.from('vw_chart_leads_temporal')
 		.select('mes_key, total_leads')
+		.gte('mes_key', startDate.toISOString().substring(0, 7)) // YYYY-MM format
 		.order('mes_key', { ascending: true });
 	
 	if (error) throw error;
+
+	// Inicializar períodos com dados zerados
+	const timeData = new Map<string, number>();
 	
-	// Sempre garantir 6 meses de dados (últimos 6 meses)
-	const monthlyData = new Map<string, number>();
-	
-	// Inicializar últimos 6 meses com zero
-	for (let i = 5; i >= 0; i--) {
-		const date = new Date();
-		date.setMonth(date.getMonth() - i);
-		const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-		monthlyData.set(key, 0);
+	for (let i = 0; i < periods; i++) {
+		let periodDate: Date;
+		let key: string;
+
+		if (groupBy === 'year') {
+			periodDate = new Date(startDate.getFullYear() + i, 0, 1);
+			key = periodDate.getFullYear().toString();
+		} else if (groupBy === 'month') {
+			periodDate = new Date(startDate.getFullYear(), startDate.getMonth() + i, 1);
+			key = `${periodDate.getFullYear()}-${String(periodDate.getMonth() + 1).padStart(2, '0')}`;
+		} else if (groupBy === 'week') {
+			periodDate = new Date(startDate.getTime() + i * 7 * 24 * 60 * 60 * 1000);
+			key = `week-${i}`;
+		} else { // day
+			periodDate = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
+			key = periodDate.toISOString().substring(0, 10); // YYYY-MM-DD
+		}
+		
+		timeData.set(key, 0);
 	}
-	
-	// Sobrescrever com dados reais onde existirem
+
+	// Processar dados reais
 	if (data && data.length > 0) {
 		data.forEach((row: any) => {
-			const key = row.mes_key;
-			const current = monthlyData.get(key) || 0;
-			monthlyData.set(key, current + Number(row.total_leads || 0));
+			const mesKey = row.mes_key; // YYYY-MM format
+			const date = new Date(mesKey + '-01');
+			const count = Number(row.total_leads || 0);
+
+			if (groupBy === 'year') {
+				const key = date.getFullYear().toString();
+				const current = timeData.get(key) || 0;
+				timeData.set(key, current + count);
+			} else if (groupBy === 'month') {
+				const key = mesKey;
+				const current = timeData.get(key) || 0;
+				timeData.set(key, current + count);
+			} else if (groupBy === 'week') {
+				// Para semanas, calcular qual semana pertence
+				const weekIndex = Math.floor((date.getTime() - startDate.getTime()) / (7 * 24 * 60 * 60 * 1000));
+				const key = `week-${weekIndex}`;
+				if (timeData.has(key)) {
+					const current = timeData.get(key) || 0;
+					timeData.set(key, current + count);
+				}
+			} else if (groupBy === 'day') {
+				// Para dias, usar a data exata
+				const key = date.toISOString().substring(0, 10);
+				if (timeData.has(key)) {
+					const current = timeData.get(key) || 0;
+					timeData.set(key, current + count);
+				}
+			}
 		});
 	}
-	
-	// Retornar sempre na ordem cronológica (últimos 6 meses)
-	return Array.from(monthlyData.entries())
+
+	// Retornar dados ordenados com labels formatados
+	return Array.from(timeData.entries())
 		.sort(([a], [b]) => a.localeCompare(b))
-		.map(([month, count]) => ({
-			month: monthLabel(month),
-			count
+		.map(([key, count], index) => {
+			let displayLabel: string;
+			
+			if (groupBy === 'year') {
+				displayLabel = key;
+			} else if (groupBy === 'month') {
+				displayLabel = monthLabel(key);
+			} else if (groupBy === 'week') {
+				displayLabel = `S${index + 1}`;
+			} else {
+				const date = new Date(key);
+				displayLabel = date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+			}
+			
+			return {
+				month: displayLabel,
+				count
+			};
+		});
+}
+
+export async function fetchImoveisMaisProcurados() {
+	const { data, error } = await supabase
+		.from('leads')
+		.select('imovel_interesse')
+		.not('imovel_interesse', 'is', null)
+		.not('imovel_interesse', 'eq', '');
+	
+	if (error) throw error;
+
+	// Contar ocorrências de cada imóvel
+	const imovelCount = new Map<string, number>();
+	(data || []).forEach((row: any) => {
+		const imovelId = row.imovel_interesse?.toString();
+		if (imovelId) {
+			const current = imovelCount.get(imovelId) || 0;
+			imovelCount.set(imovelId, current + 1);
+		}
+	});
+
+	// Retornar top 6 imóveis mais procurados
+	return Array.from(imovelCount.entries())
+		.sort(([, a], [, b]) => b - a)
+		.slice(0, 6)
+		.map(([imovelId, count]) => ({
+			id: imovelId,
+			name: `Imóvel ${imovelId}`,
+			value: count
 		}));
 }
 
