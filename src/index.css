@@ -2,6 +2,66 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Sistema de Temas - CSS Custom Properties */
+:root {
+  /* Tema Escuro (padrão) */
+  --bg-primary: #0a0a0a;      /* gray-950 */
+  --bg-secondary: #111827;     /* gray-900 */
+  --bg-tertiary: #1f2937;     /* gray-800 */
+  --bg-card: #374151;         /* gray-700 */
+  --text-primary: #ffffff;
+  --text-secondary: #9ca3af;   /* gray-400 */
+  --text-muted: #6b7280;      /* gray-500 */
+  --border-primary: #374151;   /* gray-700 */
+  --border-secondary: #4b5563; /* gray-600 */
+  
+  /* Cores de acento (mantidas entre temas) */
+  --accent-blue: #3b82f6;     /* blue-600 */
+  --accent-purple: #9333ea;   /* purple-600 */
+  --success: #10b981;         /* emerald-500 */
+  --warning: #f59e0b;         /* amber-500 */
+  --error: #ef4444;           /* red-500 */
+  
+  /* Cor primária dinâmica (controlada pelo ThemeProvider) */
+  --primary-color: #3b82f6;
+  --primary-color-hover: #2563eb;
+  --primary-color-light: rgba(59, 130, 246, 0.1);
+}
+
+/* Tema Claro */
+[data-theme="light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f9fafb;     /* gray-50 */
+  --bg-tertiary: #f3f4f6;     /* gray-100 */
+  --bg-card: #ffffff;
+  --text-primary: #111827;     /* gray-900 */
+  --text-secondary: #6b7280;   /* gray-500 */
+  --text-muted: #9ca3af;      /* gray-400 */
+  --border-primary: #e5e7eb;   /* gray-200 */
+  --border-secondary: #d1d5db; /* gray-300 */
+}
+
+/* Classes utilitárias para o sistema de temas */
+.bg-theme-primary { background-color: var(--bg-primary); }
+.bg-theme-secondary { background-color: var(--bg-secondary); }
+.bg-theme-tertiary { background-color: var(--bg-tertiary); }
+.bg-theme-card { background-color: var(--bg-card); }
+
+.text-theme-primary { color: var(--text-primary); }
+.text-theme-secondary { color: var(--text-secondary); }
+.text-theme-muted { color: var(--text-muted); }
+
+.border-theme-primary { border-color: var(--border-primary); }
+.border-theme-secondary { border-color: var(--border-secondary); }
+
+.bg-primary-color { background-color: var(--primary-color); }
+.text-primary-color { color: var(--primary-color); }
+.border-primary-color { border-color: var(--primary-color); }
+
+/* Hover states com cor primária */
+.hover\:bg-primary-color:hover { background-color: var(--primary-color-hover); }
+.hover\:bg-primary-light:hover { background-color: var(--primary-color-light); }
+
 /* Animações personalizadas */
 @keyframes fadeInUp {
   from {

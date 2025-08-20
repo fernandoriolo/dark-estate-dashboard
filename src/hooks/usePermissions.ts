@@ -1,6 +1,7 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useUserProfile } from './useUserProfile';
+import { validatePermissionChange, getManagedRoles, canAccessPermissionsModule } from '@/lib/permissions/rules';
 
 export interface RolePermission {
   id: string;
@@ -17,83 +18,104 @@ export interface RolePermission {
 export function usePermissions() {
   const { profile, isAdmin } = useUserProfile();
   const [permissions, setPermissions] = useState<RolePermission[]>([]);
-  const [userPermissions, setUserPermissions] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Carregar permissões do usuário atual
-  const loadUserPermissions = async () => {
+  // Cache das permissões do usuário para consulta rápida
+  const userPermissions = useMemo(() => {
+    if (!profile) return {};
+    
+    const userPerms = permissions.filter(p => p.role === profile.role);
+    const permsMap: Record<string, boolean> = {};
+    userPerms.forEach(perm => {
+      permsMap[perm.permission_key] = perm.is_enabled;
+    });
+    return permsMap;
+  }, [permissions, profile]);
+
+  // Carregar apenas permissões necessárias baseado na nova hierarquia
+  const loadPermissions = useCallback(async () => {
     try {
       if (!profile) return;
 
-      const { data, error } = await supabase
-        .from('role_permissions')
-        .select('*')
-        .eq('role', profile.role);
+      let query = supabase.from('role_permissions').select('*');
 
-      if (error) throw error;
+      // Verificar se pode acessar módulo de permissões
+      const canAccess = canAccessPermissionsModule(profile.role);
+      if (!canAccess) {
+        // Se não pode acessar módulo, carregar apenas suas permissões
+        query = query.eq('role', profile.role);
+      } else {
+        // Se pode acessar módulo, carregar permissões dos roles que pode gerenciar
+        const managedRoles = getManagedRoles(profile.role);
+        if (managedRoles.length > 0) {
+          query = query.in('role', managedRoles);
+        } else {
+          // Se não gerencia ninguém, carregar apenas suas permissões
+          query = query.eq('role', profile.role);
+        }
+      }
 
-      // Converter para objeto chave-valor para fácil consulta
-      const permsMap: Record<string, boolean> = {};
-      data?.forEach(perm => {
-        permsMap[perm.permission_key] = perm.is_enabled;
-      });
-
-      setUserPermissions(permsMap);
-
-    } catch (error: any) {
-      console.error('Erro ao carregar permissões do usuário:', error);
-      setError(error.message);
-    }
-  };
-
-  // Carregar todas as permissões (apenas para admins)
-  const loadAllPermissions = async () => {
-    try {
-      if (!isAdmin) return;
-
-      const { data, error } = await supabase
-        .from('role_permissions')
-        .select('*')
+      const { data, error } = await query
         .order('role', { ascending: true })
         .order('category', { ascending: true })
         .order('permission_name', { ascending: true });
 
       if (error) throw error;
-
       setPermissions(data || []);
 
     } catch (error: any) {
-      console.error('Erro ao carregar todas as permissões:', error);
+      console.error('Erro ao carregar permissões:', error);
       setError(error.message);
+    } finally {
+      setLoading(false);
     }
-  };
+  }, [profile]);
 
-  // Verificar se usuário tem uma permissão específica
-  const hasPermission = (permissionKey: string): boolean => {
-    // Admin sempre tem todas as permissões
+  // Verificar permissão com cache
+  const hasPermission = useCallback((permissionKey: string): boolean => {
     if (profile?.role === 'admin') return true;
-
     return userPermissions[permissionKey] || false;
-  };
+  }, [profile, userPermissions]);
 
-  // Atualizar permissão (apenas para admins)
-  const updatePermission = async (id: string, isEnabled: boolean) => {
+  // Atualizar permissão com validação
+  const updatePermission = useCallback(async (id: string, isEnabled: boolean) => {
     try {
-      if (!isAdmin) {
+      if (!profile || !canAccessPermissionsModule(profile.role)) {
         throw new Error('Sem permissão para alterar configurações');
+      }
+
+      // Buscar dados da permissão para validação
+      const permission = permissions.find(p => p.id === id);
+      if (!permission) {
+        throw new Error('Permissão não encontrada');
+      }
+
+      // Validar regras de negócio
+      const validation = validatePermissionChange(
+        profile.role,
+        permission.role,
+        permission.permission_key,
+        isEnabled
+      );
+
+      if (!validation.valid) {
+        throw new Error(validation.message);
       }
 
       const { data, error } = await supabase
         .from('role_permissions')
-        .update({ is_enabled: isEnabled })
+        .update({ 
+          is_enabled: isEnabled,
+          updated_at: new Date().toISOString()
+        })
         .eq('id', id)
         .select()
         .single();
 
       if (error) throw error;
 
-      // Atualizar estado local
+      // Atualizar estado local otimizado
       setPermissions(prev => 
         prev.map(perm => 
           perm.id === id ? { ...perm, is_enabled: isEnabled } : perm
@@ -106,32 +128,42 @@ export function usePermissions() {
       console.error('Erro ao atualizar permissão:', error);
       throw error;
     }
-  };
+  }, [isAdmin, profile, permissions]);
 
-  // Obter permissões por role
-  const getPermissionsByRole = (role: 'corretor' | 'gestor' | 'admin') => {
+  // Obter permissões por role (memoizado)
+  const getPermissionsByRole = useCallback((role: 'corretor' | 'gestor' | 'admin') => {
     return permissions.filter(perm => perm.role === role);
-  };
+  }, [permissions]);
 
-  // Obter permissões por categoria
-  const getPermissionsByCategory = (category: string) => {
+  // Obter permissões por categoria (memoizado)
+  const getPermissionsByCategory = useCallback((category: string) => {
     return permissions.filter(perm => perm.category === category);
-  };
+  }, [permissions]);
 
   useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      await Promise.all([
-        loadUserPermissions(),
-        loadAllPermissions()
-      ]);
-      setLoading(false);
-    };
-
     if (profile) {
-      loadData();
+      loadPermissions();
     }
-  }, [profile, isAdmin]);
+  }, [profile, loadPermissions]);
+
+  // Subscription para mudanças em tempo real (apenas para gerenciadores de permissões)
+  useEffect(() => {
+    if (!profile || !canAccessPermissionsModule(profile.role)) return;
+
+    const subscription = supabase
+      .channel('permissions_changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'role_permissions' },
+        () => {
+          loadPermissions(); // Recarregar quando houver mudanças
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [profile, loadPermissions]);
 
   return {
     permissions,
@@ -142,9 +174,6 @@ export function usePermissions() {
     updatePermission,
     getPermissionsByRole,
     getPermissionsByCategory,
-    refreshPermissions: () => {
-      loadUserPermissions();
-      loadAllPermissions();
-    }
+    refreshPermissions: loadPermissions
   };
 }

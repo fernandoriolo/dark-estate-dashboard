@@ -328,6 +328,51 @@ export function useKanbanLeads() {
     }
   }, []);
 
+  // Vinculação em massa de leads a um corretor
+  const bulkAssignLeads = useCallback(async (leadIds: string[], corretorId: string | null) => {
+    try {
+      // Atualizar no banco de dados
+      const { error } = await supabase
+        .from('leads')
+        .update({ 
+          id_corretor_responsavel: corretorId,
+          updated_at: new Date().toISOString()
+        })
+        .in('id', leadIds);
+
+      if (error) {
+        throw error;
+      }
+
+      // Atualizar estado local
+      setLeads(prevLeads => 
+        prevLeads.map(lead => 
+          leadIds.includes(lead.id) 
+            ? { ...lead, id_corretor_responsavel: corretorId }
+            : lead
+        )
+      );
+
+      // Fazer log da operação
+      logAudit({ 
+        action: 'leads.bulk_assign', 
+        resource: 'leads', 
+        resourceId: leadIds.join(','), 
+        meta: { 
+          corretorId, 
+          leadCount: leadIds.length,
+          action: corretorId ? 'assign' : 'unassign'
+        }
+      });
+
+      return true;
+    } catch (err) {
+      console.error('Erro ao atribuir leads em massa:', err);
+      setError(err instanceof Error ? err.message : 'Erro ao atribuir leads');
+      return false;
+    }
+  }, []);
+
   // Buscar leads por estágio
   const getLeadsByStage = useCallback((stage: string) => {
     return leads.filter(lead => lead.stage === stage);
@@ -456,6 +501,7 @@ export function useKanbanLeads() {
     createLead,
     updateLead,
     deleteLead,
+    bulkAssignLeads,
     getLeadsByStage,
     // Estatísticas calculadas
     totalLeads: leads.length,

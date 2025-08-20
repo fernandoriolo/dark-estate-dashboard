@@ -96,10 +96,14 @@ const UserManagementView = createLazyComponent(
   () => import("@/components/UserManagementView").then(m => ({ default: m.UserManagementView })),
   "UserManagementView"
 );
+const ConfigurationsView = createLazyComponent(
+  () => import("@/components/ConfigurationsView").then(m => ({ default: m.ConfigurationsView })),
+  "ConfigurationsView"
+);
 
 import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
-import { usePermissions } from "@/hooks/usePermissions";
 import { useUserProfile } from "@/hooks/useUserProfile";
+import { PreviewProvider } from "@/contexts/PreviewContext";
 
 const Index = () => {
   const { currentView, changeView } = useBasicNavigation();
@@ -144,6 +148,19 @@ const Index = () => {
         return <InquilinatoView />;
       case "disparador":
         return <DisparadorView />;
+      case "configurations":
+        console.log('🔧 Renderizando ConfigurationsView...');
+        try {
+          return <ConfigurationsView />;
+        } catch (error) {
+          console.error('❌ Erro ao renderizar ConfigurationsView:', error);
+          return (
+            <div className="p-8 text-center">
+              <div className="text-red-400 mb-4">Erro ao carregar Configurações</div>
+              <div className="text-gray-400 text-sm">{String(error)}</div>
+            </div>
+          );
+        }
       case "profile":
         return <UserProfileView />;
       default:
@@ -152,31 +169,33 @@ const Index = () => {
   };
 
   return (
-    <SidebarProvider className="bg-gray-950">
-      <div className="flex min-h-screen bg-gray-950 flex-1 min-w-0">
-        <AppSidebar 
-          currentView={currentView} 
-          onViewChange={(view) => changeView(view, "sidebar-click")} 
-        />
-        <div className="flex-1 min-w-0">
-          <DashboardHeader />
-          <main className="p-6 overflow-x-hidden">
-            <Suspense fallback={
-              <div className="flex items-center justify-center p-8">
-                <div className="text-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400 mx-auto mb-4"></div>
-                  <div className="text-gray-300">Carregando módulo...</div>
+    <PreviewProvider>
+      <SidebarProvider className="bg-gray-950">
+        <div className="flex min-h-screen bg-gray-950 flex-1 min-w-0">
+          <AppSidebar 
+            currentView={currentView} 
+            onViewChange={(view) => changeView(view, "sidebar-click")} 
+          />
+          <div className="flex-1 min-w-0">
+            <DashboardHeader />
+            <main className="p-6 overflow-x-hidden overflow-y-visible">
+              <Suspense fallback={
+                <div className="flex items-center justify-center p-8">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400 mx-auto mb-4"></div>
+                    <div className="text-gray-300">Carregando módulo...</div>
+                  </div>
                 </div>
-              </div>
-            }>
-              {renderContent()}
-              {/* Monta o modal globalmente para responder ao onAddNew */}
-              <AddImovelModalMount />
-            </Suspense>
-          </main>
+              }>
+                {renderContent()}
+                {/* Monta o modal globalmente para responder ao onAddNew */}
+                <AddImovelModalMount />
+              </Suspense>
+            </main>
+          </div>
         </div>
-      </div>
-    </SidebarProvider>
+      </SidebarProvider>
+    </PreviewProvider>
   );
 };
 

@@ -108,6 +108,7 @@ function AppContent() {
         <Route path="/inquilinato" element={<Index />} />
         <Route path="/disparador" element={<Index />} />
         <Route path="/chats" element={<Index />} />
+        <Route path="/configurations" element={<Index />} />
         <Route path="/profile" element={<Index />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

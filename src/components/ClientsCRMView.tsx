@@ -37,6 +37,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useKanbanLeads } from '@/hooks/useKanbanLeads';
 import { AddLeadModal } from '@/components/AddLeadModal';
+import { BulkAssignModal } from '@/components/BulkAssignModal';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
@@ -90,13 +91,14 @@ export function ClientsCRMView() {
   const [brokerFilter, setBrokerFilter] = useState<string>('all');
   const [selectedBrokers, setSelectedBrokers] = useState<Set<string>>(new Set());
   const [showBrokerFilter, setShowBrokerFilter] = useState<boolean>(false);
-  const [brokers, setBrokers] = useState<Array<{ id: string; full_name: string }>>([]);
+  const [brokers, setBrokers] = useState<Array<{ id: string; full_name: string; role: string }>>([]);
   const brokerFilterRef = useRef<HTMLDivElement>(null);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const pageSize = 10;
+  const [showBulkAssignModal, setShowBulkAssignModal] = useState<boolean>(false);
   
   // Usar o mesmo hook que o Pipeline de Clientes
-  const { leads, loading, createLead } = useKanbanLeads();
+  const { leads, loading, createLead, bulkAssignLeads } = useKanbanLeads();
   
   // Verificar se o usuário pode ver informações de todos os corretores
   const { profile, getCompanyUsers } = useUserProfile();
@@ -111,7 +113,11 @@ export function ClientsCRMView() {
         const users = await getCompanyUsers();
         if (cancelled) return;
         const onlyBrokers = (users || []).filter((u: any) => (u.role ?? 'corretor') === 'corretor');
-        setBrokers(onlyBrokers.map((u: any) => ({ id: u.id, full_name: u.full_name || 'Sem nome' })));
+        setBrokers(onlyBrokers.map((u: any) => ({ 
+          id: u.id, 
+          full_name: u.full_name || 'Sem nome',
+          role: u.role || 'corretor'
+        })));
       } catch (e) {
         // silencioso
       }
@@ -263,6 +269,17 @@ export function ClientsCRMView() {
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.4, duration: 0.8 }}
         >
+          {canSeeAllBrokers && (
+            <Button
+              variant="outline"
+              onClick={() => setShowBulkAssignModal(true)}
+              className="flex items-center gap-2 bg-gray-900/50 border-green-600/50 text-green-400 hover:bg-gray-800"
+            >
+              <Users className="h-4 w-4" />
+              Gestão em Massa
+            </Button>
+          )}
+          
           {canSeeAllBrokers && (
             <div ref={brokerFilterRef} className="relative">
               <Button
@@ -708,7 +725,7 @@ export function ClientsCRMView() {
                           <PaginationLink
                             href="#"
                             isActive={safePage === (i + 1)}
-                            className="text-black"
+                            className="text-white hover:text-blue-400 data-[state=active]:text-blue-400"
                             onClick={(e) => { e.preventDefault(); setCurrentPage(i + 1); }}
                           >
                             {i + 1}
@@ -742,6 +759,15 @@ export function ClientsCRMView() {
         isOpen={showEditModal}
         onClose={handleCloseEditModal}
         leadToEdit={selectedLead}
+      />
+
+      {/* Modal Gestão em Massa */}
+      <BulkAssignModal
+        isOpen={showBulkAssignModal}
+        onClose={() => setShowBulkAssignModal(false)}
+        leads={leads}
+        brokers={brokers}
+        onBulkAssign={bulkAssignLeads}
       />
 
       {/* Modal Visualizar Cliente */}

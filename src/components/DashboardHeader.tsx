@@ -79,7 +79,13 @@ export function DashboardHeader() {
         </div>
         
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="text-gray-400 hover:text-white hover:bg-gray-800/50 transition-colors">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="text-gray-400 hover:text-white hover:bg-gray-800/50 transition-colors"
+            onClick={() => navigate('/configurations')}
+            title="Configurações"
+          >
             <Settings className="h-5 w-5" />
           </Button>
           <Button 

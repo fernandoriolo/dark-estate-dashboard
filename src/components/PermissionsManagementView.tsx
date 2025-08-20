@@ -1,6 +1,9 @@
 ﻿import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePermissions } from '@/hooks/usePermissions';
+import { PermissionConfirmDialog } from '@/components/PermissionConfirmDialog';
+import { getManagedRoles } from '@/lib/permissions/rules';
+import { useUserProfile } from '@/hooks/useUserProfile';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -161,22 +164,42 @@ export function PermissionsManagementView() {
     refreshPermissions 
   } = usePermissions();
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    permission: any;
+    isEnabling: boolean;
+    onConfirm: () => void;
+  }>({
+    open: false,
+    permission: null,
+    isEnabling: false,
+    onConfirm: () => {}
+  });
 
   // Arrays para partículas
   const particles = Array.from({ length: 15 }, (_, i) => i);
   const particleTypes = ['default', 'star', 'spark', 'glow'];
 
-  const handlePermissionToggle = async (id: string, newValue: boolean) => {
-    try {
-      setUpdatingId(id);
-      await updatePermission(id, newValue);
-      toast.success('✅ Permissão atualizada!');
-      try { await logAudit({ action: 'permissions.updated', resource: 'permission', resourceId: id, meta: { enabled: newValue } }); } catch {}
-    } catch (error: any) {
-      toast.error('❌ Erro: ' + error.message);
-    } finally {
-      setUpdatingId(null);
-    }
+  const handlePermissionToggle = async (permission: any, newValue: boolean) => {
+    // Mostrar diálogo de confirmação
+    setConfirmDialog({
+      open: true,
+      permission,
+      isEnabling: newValue,
+      onConfirm: async () => {
+        try {
+          setUpdatingId(permission.id);
+          await updatePermission(permission.id, newValue);
+          toast.success('✅ Permissão atualizada!');
+          try { await logAudit({ action: 'permissions.updated', resource: 'permission', resourceId: permission.id, meta: { enabled: newValue } }); } catch {}
+        } catch (error: any) {
+          toast.error('❌ Erro: ' + error.message);
+        } finally {
+          setUpdatingId(null);
+          setConfirmDialog(prev => ({ ...prev, open: false }));
+        }
+      }
+    });
   };
 
   const getRoleData = (role: string) => {
@@ -220,7 +243,10 @@ export function PermissionsManagementView() {
     }
   };
 
-  const roles = ['corretor', 'gestor', 'admin'] as const;
+  // Obter roles que o usuário atual pode gerenciar
+  const { profile } = useUserProfile();
+  const managedRoles = profile ? getManagedRoles(profile.role) : [];
+  const roles = managedRoles.length > 0 ? managedRoles : ['corretor'] as const;
 
   if (loading) {
     return (
@@ -481,7 +507,7 @@ export function PermissionsManagementView() {
                                       checked={permission.is_enabled}
                                       disabled={updatingId === permission.id}
                                       onCheckedChange={(checked) => 
-                                        handlePermissionToggle(permission.id, checked)
+                                        handlePermissionToggle(permission, checked)
                                       }
                                       className="data-[state=checked]:bg-green-600"
                                     />
@@ -499,6 +525,15 @@ export function PermissionsManagementView() {
             })}
           </Tabs>
         </motion.div>
+
+        {/* Modal de Confirmação */}
+        <PermissionConfirmDialog
+          open={confirmDialog.open}
+          onOpenChange={(open) => setConfirmDialog(prev => ({ ...prev, open }))}
+          onConfirm={confirmDialog.onConfirm}
+          permission={confirmDialog.permission}
+          isEnabling={confirmDialog.isEnabling}
+        />
       </div>
     </div>
   );

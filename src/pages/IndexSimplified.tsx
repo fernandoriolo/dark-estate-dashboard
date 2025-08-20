@@ -24,7 +24,6 @@ const AgendaView = lazy(() => import("@/components/AgendaView").then(m => ({ def
 const UserManagementView = lazy(() => import("@/components/UserManagementView").then(m => ({ default: m.UserManagementView })));
 
 import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
-import { usePermissions } from "@/hooks/usePermissions";
 import { useUserProfile } from "@/hooks/useUserProfile";
 
 const Index = () => {

@@ -21,6 +21,9 @@ import { Button } from "./ui/button";
 import { User } from '@supabase/supabase-js';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useCompanySettings } from '@/hooks/useCompanySettings';
+import { usePreview } from '@/contexts/PreviewContext';
+import { canAccessPermissionsModule } from '@/lib/permissions/rules';
 
 const menuItems = [
   {
@@ -70,7 +73,7 @@ const menuItems = [
     url: "#",
     icon: MessageSquare,
     view: "chats" as const,
-    // Sem permissionKey para aparecer por padrão (pode ser protegido depois)
+    permissionKey: "menu_chats",
   },
   {
     title: "Conexões",
@@ -85,13 +88,6 @@ const menuItems = [
     icon: Users,
     view: "users" as const,
     permissionKey: "menu_users",
-  },
-  {
-    title: "Configurar Permissões",
-    url: "#",
-    icon: ShieldCheck,
-    view: "permissions" as const,
-    permissionKey: "menu_permissions",
   },
   {
     title: "Lei do Inquilinato",
@@ -128,15 +124,23 @@ const analyticsItems = [
 
 const secondaryItems = [
   {
+    title: "Configurar Permissões",
+    url: "#",
+    icon: ShieldCheck,
+    view: "permissions" as const,
+    permissionKey: "menu_permissions",
+  },
+  {
     title: "Configurações",
     url: "#",
     icon: Settings,
+    view: "configurations" as const,
   },
 ];
 
 interface AppSidebarProps {
   currentView: string;
-  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "plantao" | "reports" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "disparador" | "chats" | "profile") => void;
+  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "plantao" | "reports" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "disparador" | "chats" | "configurations" | "profile") => void;
 }
 
 export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
@@ -146,8 +150,34 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
   const [user, setUser] = useState<User | null>(null);
   const { profile, isAdmin } = useUserProfile();
   const { hasPermission } = usePermissions();
+  const { settings } = useCompanySettings();
+  const { 
+    isPreviewMode,
+    previewName,
+    previewSubtitle,
+    previewNameFont,
+    previewNameSize,
+    previewNameColor,
+    previewNameBold,
+    previewSubtitleFont,
+    previewSubtitleSize,
+    previewSubtitleColor,
+    previewSubtitleBold,
+    previewLogoSize,
+  } = usePreview();
 
-
+  // Usar valores de preview quando estiver no modo preview, senão usar configurações salvas
+  const companyDisplayName = isPreviewMode ? previewName : settings?.display_name;
+  const companyDisplaySubtitle = isPreviewMode ? previewSubtitle : settings?.display_subtitle;
+  const nameFont = isPreviewMode ? previewNameFont : settings?.company_name_font_family;
+  const nameSize = isPreviewMode ? previewNameSize : settings?.company_name_font_size;
+  const nameColor = isPreviewMode ? previewNameColor : settings?.company_name_color;
+  const nameBold = isPreviewMode ? previewNameBold : settings?.company_name_bold;
+  const subtitleFont = isPreviewMode ? previewSubtitleFont : settings?.company_subtitle_font_family;
+  const subtitleSize = isPreviewMode ? previewSubtitleSize : settings?.company_subtitle_font_size;
+  const subtitleColor = isPreviewMode ? previewSubtitleColor : settings?.company_subtitle_color;
+  const subtitleBold = isPreviewMode ? previewSubtitleBold : settings?.company_subtitle_bold;
+  const logoSize = isPreviewMode ? previewLogoSize : settings?.logo_size;
 
   useEffect(() => {
     // Buscar usuário atual
@@ -198,6 +228,12 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
   const filteredMenuItems = menuItems.filter(item => {
     if (!item.permissionKey) return true; // Se não tem permissão definida, mostrar para todos
     if (!profile) return false; // Se não tem perfil, não mostrar menus
+    
+    // Verificação especial para o módulo de permissões
+    if (item.permissionKey === 'menu_permissions') {
+      return canAccessPermissionsModule(profile.role);
+    }
+    
     return hasPermission(item.permissionKey);
   });
   const filteredAnalyticsItems = analyticsItems.filter(item => {
@@ -205,24 +241,73 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
     if (!profile) return false;
     return hasPermission(item.permissionKey);
   });
+  
+  const filteredSecondaryItems = secondaryItems.filter(item => {
+    if (!('permissionKey' in item) || !item.permissionKey) return true;
+    if (!profile) return false;
+    
+    // Verificação especial para o módulo de permissões
+    if (item.permissionKey === 'menu_permissions') {
+      return canAccessPermissionsModule(profile.role);
+    }
+    
+    return hasPermission(item.permissionKey);
+  });
 
   return (
-    <Sidebar className="border-r border-gray-800 bg-gray-900 text-white">
-      <SidebarHeader className="p-6 border-b border-gray-800 bg-gray-900">
+    <Sidebar className="border-r border-theme-primary bg-theme-secondary text-theme-primary">
+      <SidebarHeader className="p-6 border-b border-theme-primary bg-theme-secondary">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 shadow-lg">
-            <Home className="h-5 w-5 text-white" />
-          </div>
+          {settings?.logo_url ? (
+            <img 
+              src={settings.logo_url} 
+              alt="Logo da empresa"
+              style={{ 
+                height: `${logoSize || 40}px`, 
+                width: `${logoSize || 40}px` 
+              }}
+              className="rounded-xl object-contain shadow-lg"
+            />
+          ) : (
+            <div 
+              style={{ 
+                height: `${logoSize || 40}px`, 
+                width: `${logoSize || 40}px`,
+                background: settings?.primary_color 
+                  ? `linear-gradient(45deg, ${settings.primary_color}, ${settings.primary_color}dd)`
+                  : 'linear-gradient(45deg, #3b82f6, #2563eb)'
+              }}
+              className="flex items-center justify-center rounded-xl shadow-lg text-white"
+            >
+              <Home className="h-5 w-5" />
+            </div>
+          )}
           <div className="flex flex-col">
-            <span className="text-xl font-bold text-white">
-              ImobiPro
+            <span 
+              style={{ 
+                fontFamily: nameFont || 'Inter',
+                fontSize: `${nameSize || 20}px`,
+                color: nameColor || '#FFFFFF',
+                fontWeight: nameBold ? 'bold' : 'normal'
+              }}
+            >
+              {companyDisplayName || 'ImobiPro'}
             </span>
-            <span className="text-xs text-gray-400">Gestão Imobiliária</span>
+            <span 
+              style={{ 
+                fontFamily: subtitleFont || 'Inter',
+                fontSize: `${subtitleSize || 12}px`,
+                color: subtitleColor || '#9CA3AF',
+                fontWeight: subtitleBold ? 'bold' : 'normal'
+              }}
+            >
+              {companyDisplaySubtitle || 'Gestão Imobiliária'}
+            </span>
           </div>
         </div>
       </SidebarHeader>
       
-      <SidebarContent className="px-3 bg-gray-900">
+      <SidebarContent className="px-3 bg-theme-secondary">
         <SidebarGroup>
           <SidebarGroupLabel className="text-gray-400 text-xs uppercase tracking-wider px-3 py-2">
             Principal
@@ -329,16 +414,36 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {secondaryItems.map((item) => (
+              {filteredSecondaryItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton 
                     asChild
-                    className="text-gray-300 hover:text-white hover:bg-gray-800/70 transition-all duration-200"
+                    isActive={('view' in item) && currentView === item.view}
+                    className={`
+                      text-gray-300 hover:text-white hover:bg-gray-800/70 transition-all duration-200
+                      ${('view' in item) && currentView === item.view 
+                        ? 'bg-gradient-to-r from-blue-600/20 to-blue-700/20 text-white border-l-2 border-blue-500' 
+                        : ''
+                      }
+                    `}
                   >
-                    <a href={item.url} className="flex items-center gap-3 px-3 py-2">
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
-                    </a>
+                    {('view' in item) ? (
+                      <button 
+                        onClick={() => {
+                          onViewChange(item.view);
+                          navigate(`/${item.view}`);
+                        }}
+                        className="flex items-center gap-3 w-full px-3 py-2"
+                      >
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.title}</span>
+                      </button>
+                    ) : (
+                      <a href={item.url} className="flex items-center gap-3 px-3 py-2">
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.title}</span>
+                      </a>
+                    )}
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
