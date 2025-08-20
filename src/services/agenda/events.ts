@@ -145,25 +145,12 @@ export async function fetchAgendaMonth(reference: Date, selectedAgenda: string =
 // Função para buscar eventos da tabela oncall_events
 async function fetchOncallEvents(startDate: Date, endDate: Date): Promise<AgendaEvent[]> {
 	try {
-		const { createClient } = await import('@supabase/supabase-js');
+		// Importar o cliente Supabase já configurado
+		const { supabase } = await import('@/integrations/supabase/client');
 		
-		// Usar as credenciais do ambiente
-		const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://zldxpndslomjccbilowh.supabase.co';
-		const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpsZHhwbmRzbG9tamdjaWJpbG93aCIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzM0NTM5MjA5LCJleHAiOjIwNTAxMTUyMDl9.L8H1_YZVrAVInWiJoYL5c2VvEo32u-Zcnj3zUPbmYS0';
+		console.log('🔍 Buscando eventos da tabela oncall_events...');
+		console.log('📅 Período:', startDate.toISOString(), 'até', endDate.toISOString());
 		
-		const supabase = createClient(supabaseUrl, supabaseKey);
-		
-		// Primeiro, verificar se a tabela existe
-		const { data: tableTest, error: tableError } = await supabase
-			.from('oncall_events')
-			.select('id')
-			.limit(1);
-			
-		if (tableError) {
-			console.warn('⚠️ Tabela oncall_events não existe no serviço, pulando busca...');
-			return [];
-		}
-
 		const { data: events, error } = await supabase
 			.from('oncall_events')
 			.select(`
@@ -171,11 +158,17 @@ async function fetchOncallEvents(startDate: Date, endDate: Date): Promise<Agenda
 				title,
 				description,
 				starts_at,
+				ends_at,
 				client_name,
+				client_email,
 				property_title,
 				address,
 				type,
-				status
+				status,
+				assigned_user_id,
+				user_profiles!assigned_user_id (
+					full_name
+				)
 			`)
 			.gte('starts_at', startDate.toISOString())
 			.lte('starts_at', endDate.toISOString())
@@ -186,54 +179,114 @@ async function fetchOncallEvents(startDate: Date, endDate: Date): Promise<Agenda
 			return [];
 		}
 		
-		const oncallEvents: AgendaEvent[] = events?.map(event => ({
-			id: event.id,
-			date: new Date(event.starts_at),
-			client: event.client_name || 'Cliente não informado',
-			property: event.property_title || event.title,
-			address: event.address || 'Local não informado',
-			type: event.type || 'Evento',
-			status: normalizeStatus(event.status),
-			corretor: 'Não informado' // Simplificado para evitar erro de JOIN
-		})) || [];
+		console.log(`✅ Encontrados ${events?.length || 0} eventos na tabela oncall_events`);
+		
+		const oncallEvents: AgendaEvent[] = events?.map(event => {
+			// Extrair nome do corretor do relacionamento com user_profiles
+			const corretor = (event as any).user_profiles?.full_name || 'Não informado';
+			
+			return {
+				id: `oncall_${event.id}`, // Prefixo para evitar conflito com Google Calendar
+				date: new Date(event.starts_at),
+				client: event.client_name || 'Cliente não informado',
+				property: event.property_title || event.title || 'Imóvel não informado',
+				address: event.address || 'Local não informado',
+				type: event.type || 'Evento',
+				status: event.status || 'Agendado',
+				corretor: corretor === 'Não informado' ? undefined : corretor
+			};
+		}) || [];
+		
+		console.log('📋 Eventos processados da oncall_events:', oncallEvents.map(e => ({
+			id: e.id,
+			date: e.date.toLocaleString('pt-BR'),
+			client: e.client,
+			corretor: e.corretor
+		})));
 		
 		return oncallEvents;
 	} catch (error) {
-		console.error('❌ Erro ao carregar eventos locais:', error);
+		console.error('❌ Erro ao carregar eventos da oncall_events:', error);
 		return [];
 	}
 }
 
 export async function fetchUpcomingFromAgenda(daysAhead: number = 7, limit: number = 5, selectedAgenda: string = "Todos"): Promise<AgendaEvent[]> {
+	console.log(`🔍 Buscando próximos eventos (${daysAhead} dias, limite ${limit}, agenda: ${selectedAgenda})`);
+	
 	const now = new Date();
 	const limitDate = new Date(now.getTime());
 	limitDate.setDate(now.getDate() + daysAhead);
 
-	// Buscar eventos do Google Calendar
-	const monthEvents = await fetchAgendaMonth(now, selectedAgenda);
-	
-	// Buscar eventos locais da tabela oncall_events
+	console.log('📅 Filtro de período:', {
+		agora: now.toLocaleString('pt-BR'),
+		limite: limitDate.toLocaleString('pt-BR')
+	});
+
+	// PRIORIDADE 1: Buscar eventos locais da tabela oncall_events (dados confiáveis)
 	const oncallEvents = await fetchOncallEvents(now, limitDate);
+	console.log(`📊 Eventos encontrados na oncall_events: ${oncallEvents.length}`);
 	
-	// Combinar e remover duplicatas
-	const allEvents = [...monthEvents];
+	// PRIORIDADE 2: Buscar eventos do Google Calendar (fallback/complemento)
+	let monthEvents: AgendaEvent[] = [];
+	try {
+		monthEvents = await fetchAgendaMonth(now, selectedAgenda);
+		console.log(`📊 Eventos encontrados no Google Calendar: ${monthEvents.length}`);
+	} catch (error) {
+		console.warn('⚠️ Erro ao buscar Google Calendar, usando apenas oncall_events:', error);
+	}
 	
-	oncallEvents.forEach(oncallEvent => {
-		const isDuplicate = monthEvents.some(gcalEvent => 
-			gcalEvent.id === oncallEvent.id ||
-			(gcalEvent.client === oncallEvent.client && 
-			 Math.abs(gcalEvent.date.getTime() - oncallEvent.date.getTime()) < 60000) // 1 minuto de tolerância
-		);
+	// Combinar priorizando oncall_events e removendo duplicatas
+	const allEvents: AgendaEvent[] = [...oncallEvents]; // Começar com eventos locais
+	
+	// Adicionar eventos do Google Calendar apenas se não forem duplicatas
+	monthEvents.forEach(gcalEvent => {
+		const isDuplicate = oncallEvents.some(oncallEvent => {
+			// Verificar se é duplicata por ID, cliente ou proximidade de tempo
+			if (gcalEvent.id === oncallEvent.id.replace('oncall_', '')) return true;
+			
+			const clientMatch = gcalEvent.client.toLowerCase().includes(oncallEvent.client.toLowerCase()) ||
+							   oncallEvent.client.toLowerCase().includes(gcalEvent.client.toLowerCase());
+							   
+			const timeDiff = Math.abs(gcalEvent.date.getTime() - oncallEvent.date.getTime());
+			const isNearTime = timeDiff < 60 * 60 * 1000; // 1 hora de tolerância
+			
+			return clientMatch && isNearTime;
+		});
 		
 		if (!isDuplicate) {
-			allEvents.push(oncallEvent);
+			allEvents.push({
+				...gcalEvent,
+				id: `gcal_${gcalEvent.id}` // Prefixo para identificar origem
+			});
 		}
 	});
 
-	return allEvents
-		.filter(e => e.date >= now && e.date <= limitDate)
+	// Filtrar apenas eventos futuros e ordenar por data
+	const upcomingEvents = allEvents
+		.filter(event => {
+			const isFuture = event.date >= now;
+			const isWithinRange = event.date <= limitDate;
+			
+			if (!isFuture) {
+				console.log('⏰ Evento no passado ignorado:', {
+					client: event.client,
+					date: event.date.toLocaleString('pt-BR'),
+					agora: now.toLocaleString('pt-BR')
+				});
+			}
+			
+			return isFuture && isWithinRange;
+		})
 		.sort((a, b) => a.date.getTime() - b.date.getTime())
 		.slice(0, limit);
+
+	console.log(`✅ Total de próximos eventos retornados: ${upcomingEvents.length}`);
+	upcomingEvents.forEach((event, index) => {
+		console.log(`${index + 1}. ${event.client} - ${event.date.toLocaleString('pt-BR')} - ${event.type} (${event.id.includes('oncall_') ? 'DB' : 'GCal'})`);
+	});
+
+	return upcomingEvents;
 }
 
 

@@ -144,17 +144,32 @@ export function useChatsDataSimple() {
       
       // Filtrar por corretor
       if (profile.role === 'corretor') {
+        console.log('🔒 Aplicando filtro para corretor:', profile.id);
         query = query.eq('user_id', profile.id);
       } else if (corretorId === 'sdr-agent') {
         // Conversas do agente SDR (sem user_id)
+        console.log('🤖 Carregando conversas do Agente SDR');
         query = query.is('user_id', null);
       } else if (corretorId) {
+        console.log('👥 Carregando conversas do corretor:', corretorId);
         query = query.eq('user_id', corretorId);
+      } else {
+        console.log('🌍 Carregando todas as conversas (admin/gestor)');
+        // Para gestores/admins sem corretor selecionado, não mostrar conversas ainda
+        if (profile.role !== 'admin' && profile.role !== 'gestor') {
+          console.log('❌ Acesso negado para role:', profile.role);
+          throw new Error('Acesso não autorizado');
+        }
       }
       
       const { data: chatsData, error } = await query.order('last_message_time', { ascending: false, nullsLast: true });
       
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Erro na query de conversas:', error);
+        throw error;
+      }
+
+      console.log('📋 Conversas encontradas:', chatsData?.length || 0);
       
       // Buscar dados complementares para cada chat
       const conversasData = await Promise.all(
@@ -201,6 +216,7 @@ export function useChatsDataSimple() {
       setConversas([]);
     } finally {
       setConversasLoading(false);
+      setLoading(false); // Garantir que loading global seja desativado
     }
   }, [profile]);
 
@@ -295,19 +311,33 @@ export function useChatsDataSimple() {
   // Efeito para carregar dados iniciais - otimizado
   useEffect(() => {
     console.log('🚀 useEffect SIMPLES inicial. Profile:', profile);
+    
+    // Se não tem perfil ainda, manter loading ativo
     if (!profile) {
       console.log('⏳ Aguardando profile...');
       return;
     }
     
+    // Se perfil está incompleto, mostrar erro
+    if (!profile.id || !profile.role) {
+      console.log('❌ Profile incompleto:', profile);
+      setError('Dados do usuário estão incompletos');
+      setLoading(false);
+      return;
+    }
+    
     if (profile.role === 'corretor') {
-      console.log('👤 Usuário é corretor - carregando conversas (simples)');
-      loadConversas();
-    } else {
+      console.log('👤 Usuário é corretor - carregando conversas diretas (simples)');
+      loadConversas(); // Para corretores, carregar diretamente suas conversas
+    } else if (profile.role === 'admin' || profile.role === 'gestor') {
       console.log('👑 Usuário é gestor/admin - carregando corretores (simples)');
       loadCorretores();
+    } else {
+      console.log('❌ Role não reconhecido:', profile.role);
+      setError(`Acesso não autorizado para role: ${profile.role}`);
+      setLoading(false);
     }
-  }, [profile?.role, profile?.company_id]); // Dependências mais específicas
+  }, [profile?.id, profile?.role, loadConversas, loadCorretores]);
 
   // Efeito para carregar conversas quando corretor é selecionado - otimizado
   useEffect(() => {

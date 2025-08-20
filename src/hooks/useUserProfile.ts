@@ -205,8 +205,15 @@ export function useUserProfile() {
         throw new Error('Sem permissão para ver usuários');
       }
 
+      // Usar company_id do próprio perfil em vez de company?.id (que é sempre null)
+      const companyId = profile?.company_id;
+      if (!companyId) {
+        console.warn('⚠️ Company ID não encontrado no perfil do usuário');
+        return [];
+      }
+
       const { data, error } = await supabase.rpc('list_company_users', {
-        target_company_id: company?.id ?? null,
+        target_company_id: companyId,
         search: null,
         roles: null,
         limit_count: 100,

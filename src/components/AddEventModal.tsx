@@ -516,7 +516,7 @@ export function AddEventModal({
                   <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
                 </button>
               </PopoverTrigger>
-              <PopoverContent className="p-0 w-[--radix-popover-trigger-width] bg-white border-gray-200" style={{ zIndex: 10000 }}>
+              <PopoverContent className="p-0 w-[--radix-popover-trigger-width] bg-gray-800 border-gray-600" style={{ zIndex: 10000 }}>
                 <Command>
                   <CommandInput placeholder="Digite o ID do imóvel..." value={listingQuery} onValueChange={setListingQuery} />
                   <CommandList>
@@ -532,11 +532,11 @@ export function AddEventModal({
                             setListingOpen(false);
                           }}
                         >
-                          <div className="flex flex-col text-black">
+                          <div className="flex flex-col text-white">
                             <span className="font-medium">{opt.listing_id} - {(opt.endereco || opt.cidade || '-')}</span>
                           </div>
                           {listingId === opt.listing_id && (
-                            <Check className="ml-auto h-4 w-4 text-black" />
+                            <Check className="ml-auto h-4 w-4 text-white" />
                           )}
                         </CommandItem>
                       ))}

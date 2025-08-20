@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Calendar, Copy, RefreshCw, ChevronDown, ChevronRight, Trash2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -81,7 +81,7 @@ const PlantaoView = () => {
   }>>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<'calendarios' | 'escala'>("calendarios");
+  const [activeTab, setActiveTab] = useState<'calendarios' | 'escala'>('calendarios');
   const [isAddAgendaOpen, setIsAddAgendaOpen] = useState(false);
   const [newAgendaName, setNewAgendaName] = useState("");
   const [addingAgenda, setAddingAgenda] = useState(false);
@@ -180,13 +180,16 @@ const PlantaoView = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
-  // Corretores só podem ver a aba "Escala" (sem acesso a "Calendários")
+  // Controlar aba baseado no perfil do usuário
   useEffect(() => {
-    if (!isManager && activeTab !== 'escala') {
+    if (profile?.role === 'corretor' && activeTab !== 'escala') {
+      console.log('🔄 PlantaoView: Forçando corretor para aba escala');
       setActiveTab('escala');
+    } else if (profile?.role && profile.role !== 'corretor' && activeTab !== 'calendarios') {
+      console.log('🔄 PlantaoView: Definindo aba calendários para gestor/admin');
+      setActiveTab('calendarios');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isManager]);
+  }, [profile?.role]); // Executar apenas quando o role mudar
 
   // Ações Calendários
   const handleAddAgenda = async () => {
@@ -258,9 +261,13 @@ const PlantaoView = () => {
   }, [calendars, searchTerm]);
 
   // Removido localStorage; manter apenas estado em memória e banco
-  const persistEscalas = (data: typeof escalas) => {
-    setEscalas(data);
-  };
+  const persistEscalas = useCallback((data: typeof escalas) => {
+    setEscalas(prevEscalas => {
+      // Só atualizar se houver mudanças reais
+      const isEqual = JSON.stringify(prevEscalas) === JSON.stringify(data);
+      return isEqual ? prevEscalas : data;
+    });
+  }, []);
 
   const dias = [
     'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'
@@ -482,7 +489,7 @@ const PlantaoView = () => {
   };
 
   // Carrega todas as escalas do usuário para os calendários atuais
-  const loadAllSchedules = async () => {
+  const loadAllSchedules = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -568,7 +575,7 @@ const PlantaoView = () => {
     } catch (e) {
       console.error('Falha ao carregar escalas:', e);
     }
-  };
+  }, [calendars, profile?.id, profile?.role]);
 
   const addCalendario = () => {
     if (!selectedCalendarId) return;
@@ -761,8 +768,12 @@ const PlantaoView = () => {
         });
       }
     };
-    loadUsers();
-  }, [isManager, profile, getCompanyUsers]);
+    
+    // Só carregar se ainda não carregamos e temos perfil
+    if (profile && companyUsers.length === 0) {
+      loadUsers();
+    }
+  }, [isManager, profile?.id, profile?.role]);
 
   // Ao entrar na aba Escala, garantir carregamento das agendas e escalas do banco
   useEffect(() => {
@@ -781,10 +792,14 @@ const PlantaoView = () => {
   // Quando a lista de calendários mudar e a aba Escala estiver ativa, recarregar escalas
   useEffect(() => {
     if (activeTab === 'escala' && calendars.length > 0 && profile) {
-      loadAllSchedules();
+      // Só recarregar se realmente precisamos
+      const hasEscalas = Object.keys(escalas).length > 0;
+      if (!hasEscalas) {
+        loadAllSchedules();
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [calendars, profile]);
+  }, [calendars.length, profile?.id, activeTab]);
 
   return (
     <div className="space-y-6">

@@ -6,6 +6,121 @@ import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { Calendar, DollarSign, Building2, Mail, Phone, User, FileText, Clock, Eye, Edit } from 'lucide-react';
 
+// Função para humanizar ações dos logs
+const humanizeAction = (action: string | null): string => {
+  if (!action) return 'Ação não identificada';
+  
+  const actionMap: Record<string, string> = {
+    'lead.created': 'Lead criado',
+    'lead.updated': 'Informações atualizadas',
+    'lead.deleted': 'Lead removido',
+    'lead.stage_changed': 'Status alterado',
+    'lead.assigned': 'Lead atribuído',
+    'lead.contacted': 'Contato realizado',
+    'lead.note_added': 'Observação adicionada',
+    'lead.email_sent': 'E-mail enviado',
+    'lead.call_made': 'Ligação realizada',
+    'lead.meeting_scheduled': 'Reunião agendada',
+    'lead.converted': 'Lead convertido',
+    'lead.qualification_updated': 'Qualificação atualizada',
+    'lead.follow_up_scheduled': 'Follow-up agendado',
+    'whatsapp.message_sent': 'Mensagem WhatsApp enviada',
+    'whatsapp.chat_created': 'Conversa WhatsApp iniciada',
+    'property.viewed': 'Imóvel visualizado',
+    'contract.created': 'Contrato criado',
+    'contract.updated': 'Contrato atualizado'
+  };
+  
+  return actionMap[action] || action.replace(/[._]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+};
+
+// Função para humanizar metadados dos logs
+const humanizeMeta = (meta: any, action: string | null): string => {
+  if (!meta || typeof meta !== 'object') return '';
+  
+  try {
+    const details: string[] = [];
+    
+    // Humanizar baseado no tipo de ação
+    switch (action) {
+      case 'lead.stage_changed':
+        if (meta.from_stage && meta.to_stage) {
+          details.push(`De "${meta.from_stage}" para "${meta.to_stage}"`);
+        }
+        if (meta.reason) {
+          details.push(`Motivo: ${meta.reason}`);
+        }
+        break;
+        
+      case 'lead.updated':
+        if (meta.updated_fields && Array.isArray(meta.updated_fields)) {
+          const fieldNames: Record<string, string> = {
+            'name': 'Nome',
+            'email': 'E-mail',
+            'phone': 'Telefone',
+            'interest': 'Interesse',
+            'estimated_value': 'Valor estimado',
+            'notes': 'Observações',
+            'stage': 'Status'
+          };
+          const humanFields = meta.updated_fields.map((field: string) => 
+            fieldNames[field] || field
+          );
+          details.push(`Campos alterados: ${humanFields.join(', ')}`);
+        }
+        break;
+        
+      case 'lead.assigned':
+        if (meta.assigned_to) {
+          details.push(`Atribuído para: ${meta.assigned_to}`);
+        }
+        if (meta.assigned_by) {
+          details.push(`Por: ${meta.assigned_by}`);
+        }
+        break;
+        
+      case 'whatsapp.message_sent':
+        if (meta.message_content) {
+          const content = meta.message_content.length > 50 
+            ? meta.message_content.substring(0, 50) + '...'
+            : meta.message_content;
+          details.push(`Mensagem: "${content}"`);
+        }
+        break;
+        
+      case 'lead.created':
+        if (meta.source) {
+          details.push(`Origem: ${meta.source}`);
+        }
+        if (meta.estimated_value) {
+          details.push(`Valor estimado: R$ ${meta.estimated_value.toLocaleString('pt-BR')}`);
+        }
+        break;
+        
+      default:
+        // Humanizar campos comuns
+        if (meta.value || meta.amount) {
+          const value = meta.value || meta.amount;
+          details.push(`Valor: R$ ${value.toLocaleString('pt-BR')}`);
+        }
+        if (meta.description || meta.comment || meta.note) {
+          const desc = meta.description || meta.comment || meta.note;
+          details.push(`Descrição: ${desc}`);
+        }
+        if (meta.status) {
+          details.push(`Status: ${meta.status}`);
+        }
+        if (meta.contact_method) {
+          details.push(`Método de contato: ${meta.contact_method}`);
+        }
+    }
+    
+    return details.join(' • ');
+  } catch (error) {
+    return 'Detalhes não disponíveis';
+  }
+};
+
 interface LeadViewModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -156,11 +271,13 @@ export const LeadViewModal: React.FC<LeadViewModalProps> = ({ isOpen, onClose, l
             {logs.map((log) => (
               <div key={log.id} className="text-xs text-gray-300 bg-gray-800/50 border border-gray-700 rounded p-2">
                 <div className="flex items-center justify-between">
-                  <span className="font-medium">{log.action || 'ação'}</span>
+                  <span className="font-medium">{humanizeAction(log.action)}</span>
                   <span className="text-[10px] text-gray-400">{new Date(log.created_at).toLocaleString('pt-BR')}</span>
                 </div>
                 {log.meta && (
-                  <div className="text-[11px] text-gray-400 mt-1 line-clamp-2">{typeof log.meta === 'string' ? log.meta : JSON.stringify(log.meta)}</div>
+                  <div className="text-[11px] text-gray-400 mt-1 line-clamp-2">
+                    {typeof log.meta === 'string' ? log.meta : humanizeMeta(log.meta, log.action)}
+                  </div>
                 )}
               </div>
             ))}

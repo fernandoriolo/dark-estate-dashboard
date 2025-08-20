@@ -74,12 +74,50 @@ export function AgendaView() {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [isAddEventModalOpen, setIsAddEventModalOpen] = useState(false);
   const [selectedAgenda, setSelectedAgenda] = useState<string>("Todos"); // Nova agenda selecionada
+  const [corretores, setCorretores] = useState<{ id: string; full_name: string }[]>([]);
+  const [loadingCorretores, setLoadingCorretores] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   
   // Buscar propriedades e clientes existentes
   const { properties } = useProperties();
   const { clients } = useClients();
   const { getCompanyUsers } = useUserProfile();
+
+  // Função para carregar todos os corretores do sistema
+  const loadCorretores = async () => {
+    try {
+      setLoadingCorretores(true);
+      console.log('🔍 Carregando todos os corretores do sistema...');
+      
+      const { data: corretoresData, error } = await supabase
+        .from('user_profiles')
+        .select('id, full_name, email')
+        .eq('role', 'corretor')
+        .order('full_name', { ascending: true });
+      
+      if (error) {
+        console.error('❌ Erro ao carregar corretores:', error);
+        throw error;
+      }
+      
+      const corretoresFormatados = (corretoresData || []).map(corretor => ({
+        id: corretor.id,
+        full_name: corretor.full_name || corretor.email || 'Nome não disponível'
+      }));
+      
+      console.log(`✅ Encontrados ${corretoresFormatados.length} corretores:`, corretoresFormatados.map(c => c.full_name));
+      setCorretores(corretoresFormatados);
+    } catch (error) {
+      console.error('❌ Erro ao buscar corretores:', error);
+      // Fallback para corretores hardcoded em caso de erro
+      setCorretores([
+        { id: 'isis', full_name: 'Isis' },
+        { id: 'arthur', full_name: 'Arthur' }
+      ]);
+    } finally {
+      setLoadingCorretores(false);
+    }
+  };
   
   // Função para salvar evento nas notas do cliente (fallback)
   const saveEventToClientNotes = async (eventInfo: {
@@ -738,6 +776,12 @@ export function AgendaView() {
     }
   };
 
+  // UseEffect para carregamento inicial dos corretores
+  useEffect(() => {
+    console.log('🚀 Carregando corretores na inicialização...');
+    loadCorretores();
+  }, []); // Executa apenas uma vez na montagem
+
   // UseEffect para carregamento inicial da agenda
   useEffect(() => {
     console.log('🚀 USE_EFFECT EXECUTADO! Carregando eventos do mês');
@@ -1304,7 +1348,7 @@ export function AgendaView() {
             <label className="text-sm font-medium text-gray-300">Corretor</label>
             <Select value={selectedAgenda} onValueChange={setSelectedAgenda}>
               <SelectTrigger className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600 transition-colors">
-                <SelectValue placeholder="Selecione o corretor" />
+                <SelectValue placeholder={loadingCorretores ? "Carregando corretores..." : "Selecione o corretor"} />
               </SelectTrigger>
               <SelectContent className="bg-gray-800 border-gray-600">
                 <SelectItem value="Todos" className="text-white hover:bg-gray-700 focus:bg-gray-700">
@@ -1313,18 +1357,34 @@ export function AgendaView() {
                     <span>Todos os corretores</span>
                   </div>
                 </SelectItem>
-                <SelectItem value="Isis" className="text-white hover:bg-gray-700 focus:bg-gray-700">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">👩‍💼</span>
-                    <span>Isis</span>
-                  </div>
-                </SelectItem>
-                <SelectItem value="Arthur" className="text-white hover:bg-gray-700 focus:bg-gray-700">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">👨‍💼</span>
-                    <span>Arthur</span>
-                  </div>
-                </SelectItem>
+                {loadingCorretores ? (
+                  <SelectItem value="loading" disabled className="text-gray-400">
+                    <div className="flex items-center gap-2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+                      <span>Carregando corretores...</span>
+                    </div>
+                  </SelectItem>
+                ) : corretores.length === 0 ? (
+                  <SelectItem value="no-corretores" disabled className="text-gray-400">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">⚠️</span>
+                      <span>Nenhum corretor encontrado</span>
+                    </div>
+                  </SelectItem>
+                ) : (
+                  corretores.map((corretor) => (
+                    <SelectItem 
+                      key={corretor.id} 
+                      value={corretor.full_name} 
+                      className="text-white hover:bg-gray-700 focus:bg-gray-700"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">👤</span>
+                        <span>{corretor.full_name}</span>
+                      </div>
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -1334,14 +1394,12 @@ export function AgendaView() {
             <label className="text-sm font-medium text-gray-300">Status</label>
             <div className="flex items-center gap-2 p-3 bg-gray-700/50 rounded-lg border border-gray-600">
               <div className={`w-3 h-3 rounded-full animate-pulse ${
-                selectedAgenda === 'Todos' ? 'bg-blue-500' :
-                selectedAgenda === 'Isis' ? 'bg-pink-500' :
-                selectedAgenda === 'Arthur' ? 'bg-indigo-500' : 'bg-gray-500'
+                selectedAgenda === 'Todos' ? 'bg-blue-500' : 'bg-green-500'
               }`}></div>
               <span className="text-sm text-gray-300">
                 {selectedAgenda === 'Todos' 
                   ? `Visualizando todos (${events.length} eventos)` 
-                  : `Agenda da ${selectedAgenda} (${events.filter(e => e.corretor === selectedAgenda).length} eventos)`
+                  : `Agenda de ${selectedAgenda} (${events.filter(e => e.corretor === selectedAgenda || e.corretor?.includes(selectedAgenda)).length} eventos)`
                 }
               </span>
             </div>

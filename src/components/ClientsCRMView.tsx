@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,7 +32,9 @@ import {
   Heart,
   ChevronDown,
   ChevronUp,
-  X
+  X,
+  AlertTriangle,
+  Info
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -96,6 +99,7 @@ export function ClientsCRMView() {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const pageSize = 10;
   const [showBulkAssignModal, setShowBulkAssignModal] = useState<boolean>(false);
+  const [leadsWithChats, setLeadsWithChats] = useState<Set<string>>(new Set());
   
   // Usar o mesmo hook que o Pipeline de Clientes
   const { leads, loading, createLead, bulkAssignLeads } = useKanbanLeads();
@@ -125,6 +129,48 @@ export function ClientsCRMView() {
     loadBrokers();
     return () => { cancelled = true; };
   }, [canSeeAllBrokers, getCompanyUsers]);
+
+  // Carregar leads que possuem conversas no WhatsApp
+  React.useEffect(() => {
+    let cancelled = false;
+    const loadLeadsWithChats = async () => {
+      if (!leads.length) return;
+      
+      try {
+        // Pegar lista de IDs dos leads atuais
+        const leadIds = leads.map(lead => lead.id);
+        
+        // Buscar conversas apenas para os leads atuais
+        const { data: chats, error } = await supabase
+          .from('whatsapp_chats')
+          .select('lead_id')
+          .not('lead_id', 'is', null)
+          .in('lead_id', leadIds);
+
+        if (error) {
+          console.error('Erro ao buscar chats:', error);
+          return;
+        }
+
+        if (cancelled) return;
+
+        // Criar set com os IDs dos leads que têm conversas
+        const leadsWithChatsSet = new Set(
+          (chats || [])
+            .map(chat => chat.lead_id)
+            .filter(Boolean)
+        );
+        
+        setLeadsWithChats(leadsWithChatsSet);
+        console.log('📱 Leads com conversas WhatsApp:', leadsWithChatsSet.size, 'de', leads.length, 'leads');
+      } catch (error) {
+        console.error('Erro ao verificar conversas dos leads:', error);
+      }
+    };
+
+    loadLeadsWithChats();
+    return () => { cancelled = true; };
+  }, [leads]);
 
   // Effect para fechar filtro ao clicar fora
   React.useEffect(() => {
@@ -216,8 +262,14 @@ export function ClientsCRMView() {
   };
 
   const handleOpenWhatsApp = (lead) => {
+    // Verificar se o lead tem conversa ativa
+    if (!leadsWithChats.has(lead.id)) {
+      console.log('❌ Lead não possui conversa ativa no WhatsApp:', lead.nome);
+      return;
+    }
+    
     // Navegar para o módulo Chats com o lead específico
-    navigate('/chats', { state: { leadPhone: lead.phone, leadName: lead.name } });
+    navigate('/chats', { state: { leadPhone: lead.telefone, leadName: lead.nome } });
   };
 
   const handleCloseViewModal = () => {
@@ -554,7 +606,7 @@ export function ClientsCRMView() {
                               {/* Informações do Negócio - Seção 2 */}
                               <div className="bg-gray-900/30 p-4 rounded-lg">
                                 <h4 className="text-sm font-medium text-green-400 mb-3 flex items-center gap-2">
-                                  <Building2 className="h-4 w-4" />
+                                  <AlertCircle className="h-4 w-4" />
                                   Interesse e Valor
                                 </h4>
                                 <div className="space-y-2">
@@ -640,42 +692,55 @@ export function ClientsCRMView() {
 
                           {/* Ações */}
                           <div className="flex items-center gap-2 lg:flex-col lg:items-end">
-                            {[
-                              { 
-                                icon: Eye, 
-                                color: "bg-blue-700 border-blue-600 text-blue-100 hover:bg-blue-600", 
-                                label: "Ver Detalhes",
-                                action: () => handleViewLead(lead)
-                              },
-                              { 
-                                icon: Edit, 
-                                color: "bg-green-700 border-green-600 text-green-100 hover:bg-green-600", 
-                                label: "Editar",
-                                action: () => handleEditLead(lead)
-                              },
-                              { 
-                                icon: MessageSquare, 
-                                color: "bg-emerald-700 border-emerald-600 text-emerald-100 hover:bg-emerald-600", 
-                                label: "WhatsApp",
-                                action: () => handleOpenWhatsApp(lead)
-                              }
-                            ].map((action, actionIndex) => (
-                              <motion.div
-                                key={actionIndex}
-                                whileHover={{ scale: 1.1, y: -2 }}
-                                whileTap={{ scale: 0.9 }}
-                              >
-                                <Button 
-                                  variant="outline" 
-                                  size="sm" 
-                                  className={`${action.color} backdrop-blur-sm transition-all duration-200`}
-                                  title={action.label}
-                                  onClick={action.action}
+                            {(() => {
+                              const hasWhatsAppChat = leadsWithChats.has(lead.id);
+                              const actions = [
+                                { 
+                                  icon: Eye, 
+                                  color: "bg-blue-700 border-blue-600 text-blue-100 hover:bg-blue-600", 
+                                  label: "Ver Detalhes",
+                                  action: () => handleViewLead(lead),
+                                  disabled: false
+                                },
+                                { 
+                                  icon: Edit, 
+                                  color: "bg-green-700 border-green-600 text-green-100 hover:bg-green-600", 
+                                  label: "Editar",
+                                  action: () => handleEditLead(lead),
+                                  disabled: false
+                                },
+                                { 
+                                  icon: MessageSquare, 
+                                  color: hasWhatsAppChat 
+                                    ? "bg-emerald-700 border-emerald-600 text-emerald-100 hover:bg-emerald-600" 
+                                    : "bg-gray-700 border-gray-600 text-gray-400 cursor-not-allowed",
+                                  label: hasWhatsAppChat 
+                                    ? "WhatsApp" 
+                                    : "WhatsApp (Sem conversa)",
+                                  action: () => handleOpenWhatsApp(lead),
+                                  disabled: !hasWhatsAppChat
+                                }
+                              ];
+                              
+                              return actions.map((action, actionIndex) => (
+                                <motion.div
+                                  key={actionIndex}
+                                  whileHover={!action.disabled ? { scale: 1.1, y: -2 } : {}}
+                                  whileTap={!action.disabled ? { scale: 0.9 } : {}}
                                 >
-                                  <action.icon className="h-4 w-4" />
-                                </Button>
-                              </motion.div>
-                            ))}
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm" 
+                                    disabled={action.disabled}
+                                    className={`${action.color} backdrop-blur-sm transition-all duration-200 ${action.disabled ? 'opacity-50' : ''}`}
+                                    title={action.label}
+                                    onClick={action.disabled ? undefined : action.action}
+                                  >
+                                    <action.icon className="h-4 w-4" />
+                                  </Button>
+                                </motion.div>
+                              ));
+                            })()}
                           </div>
                         </div>
                       </CardContent>

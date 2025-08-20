@@ -17,6 +17,11 @@ interface AuditLog {
   resource_id: string;
   meta: Record<string, unknown> | null;
   created_at: string;
+  actor?: {
+    id: string;
+    full_name: string | null;
+    role: string | null;
+  };
 }
 
 interface UserOption { id: string; name: string; role: Role }
@@ -131,18 +136,78 @@ export function RecentActivitiesCard() {
 
   const loadLogs = async () => {
     setLoading(true);
-    let query = supabase
-      .from('audit_logs')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .range(page * pageSize, page * pageSize + pageSize - 1);
+    
+    try {
+      // Verificar se o usuário tem permissão para ver logs
+      if (profile?.role === 'corretor') {
+        console.log('🔒 Corretor não tem acesso aos audit logs');
+        setLogs([]);
+        setLoading(false);
+        return;
+      }
 
-    // Filtro por usuário quando selecionado
-    if (userFilter !== 'all') {
-      query = query.eq('actor_id', userFilter);
+      // Primeiro, buscar os logs
+      let query = supabase
+        .from('audit_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .range(page * pageSize, page * pageSize + pageSize - 1);
+
+      // Filtro por usuário quando selecionado
+      if (userFilter !== 'all') {
+        query = query.eq('actor_id', userFilter);
+      }
+      
+      const { data: logsData, error: logsError } = await query;
+      
+      if (logsError) {
+        console.error('Erro ao carregar logs:', logsError);
+        setLogs([]);
+        setLoading(false);
+        return;
+      }
+
+      if (!logsData || logsData.length === 0) {
+        setLogs([]);
+        setLoading(false);
+        return;
+      }
+
+      // Buscar dados dos usuários únicos
+      const actorIds = [...new Set(logsData.map(log => log.actor_id))];
+      const { data: usersData, error: usersError } = await supabase
+        .from('user_profiles')
+        .select('id, full_name, role')
+        .in('id', actorIds);
+
+      if (usersError) {
+        console.error('Erro ao carregar usuários:', usersError);
+        // Ainda assim, mostrar os logs sem dados do usuário
+        setLogs(logsData);
+        setLoading(false);
+        return;
+      }
+
+      // Criar mapa de usuários para fácil acesso
+      const usersMap = new Map();
+      if (usersData) {
+        usersData.forEach(user => {
+          usersMap.set(user.id, user);
+        });
+      }
+
+      // Combinar logs com dados dos usuários
+      const logsWithUsers = logsData.map(log => ({
+        ...log,
+        actor: usersMap.get(log.actor_id) || null
+      }));
+
+      setLogs(logsWithUsers);
+    } catch (error) {
+      console.error('Erro geral ao carregar logs:', error);
+      setLogs([]);
     }
-    const { data, error } = await query;
-    if (!error) setLogs(data || []);
+    
     setLoading(false);
   };
 
@@ -272,8 +337,26 @@ export function RecentActivitiesCard() {
               <div key={log.id} className="p-3 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 transition-colors cursor-pointer">
                 <div className="flex items-center justify-between">
                   <div className="text-sm text-gray-300 flex-1">
-                    <span className="font-medium text-white">{formatAction(log.action)}</span>
-                    <div className="text-xs text-blue-400 mt-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-medium text-white">{formatAction(log.action)}</span>
+                      {log.actor && (
+                        <div className="flex items-center gap-1 text-xs">
+                          <span className="text-gray-500">por</span>
+                          <span className="text-green-400 font-medium">
+                            {log.actor.full_name || 'Nome não disponível'}
+                          </span>
+                          <span className="text-gray-500">•</span>
+                          <span className="text-blue-400">
+                            {log.actor.role || 'corretor'}
+                          </span>
+                          <span className="text-gray-500">•</span>
+                          <span className="text-gray-400 font-mono text-xs">
+                            ID: {log.actor.id.slice(0, 8)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-xs text-blue-400">
                       {formatLogDescription(log)}
                     </div>
                   </div>
