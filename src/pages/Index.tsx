@@ -103,10 +103,12 @@ const ConfigurationsView = createLazyComponent(
 
 import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
 import { useUserProfile } from "@/hooks/useUserProfile";
+import { usePermissions } from "@/hooks/usePermissions";
 import { PreviewProvider } from "@/contexts/PreviewContext";
 
 const Index = () => {
   const { currentView, changeView } = useBasicNavigation();
+  const { hasPermission } = usePermissions();
   
   console.log(`🚀 Index renderizado - currentView: ${currentView}`);
 
@@ -141,8 +143,40 @@ const Index = () => {
       case "connections":
         return <ConnectionsViewSimplified />;
       case "users":
+        // Verificar permissão de acesso ao módulo de Usuários
+        if (!hasPermission('menu_users')) {
+          console.log('🚫 Acesso negado ao módulo de Usuários');
+          return (
+            <div className="p-8 text-center">
+              <div className="text-red-400 mb-4">Acesso Negado</div>
+              <div className="text-gray-400 text-sm">
+                Você não tem permissão para acessar o módulo de Gestão de Usuários.
+              </div>
+              <div className="text-gray-400 text-sm mt-2">
+                Entre em contato com seu administrador para solicitar acesso.
+              </div>
+            </div>
+          );
+        }
+        
         return <UserManagementView />;
       case "permissions":
+        // Verificar permissão de acesso ao módulo de Permissões usando a função específica
+        if (!hasPermission('menu_permissions')) {
+          console.log('🚫 Acesso negado ao módulo de Permissões');
+          return (
+            <div className="p-8 text-center">
+              <div className="text-red-400 mb-4">Acesso Negado</div>
+              <div className="text-gray-400 text-sm">
+                Você não tem permissão para acessar o módulo de Configuração de Permissões.
+              </div>
+              <div className="text-gray-400 text-sm mt-2">
+                Apenas administradores e gestores podem configurar permissões.
+              </div>
+            </div>
+          );
+        }
+        
         return <PermissionsManagementView />;
       case "inquilinato":
         return <InquilinatoView />;
@@ -150,6 +184,23 @@ const Index = () => {
         return <DisparadorView />;
       case "configurations":
         console.log('🔧 Renderizando ConfigurationsView...');
+        
+        // Verificar permissão de acesso ao módulo Configurações
+        if (!hasPermission('menu_configurations')) {
+          console.log('🚫 Acesso negado ao módulo Configurações');
+          return (
+            <div className="p-8 text-center">
+              <div className="text-red-400 mb-4">Acesso Negado</div>
+              <div className="text-gray-400 text-sm">
+                Você não tem permissão para acessar o módulo de Configurações.
+              </div>
+              <div className="text-gray-400 text-sm mt-2">
+                Entre em contato com seu administrador para solicitar acesso.
+              </div>
+            </div>
+          );
+        }
+        
         try {
           return <ConfigurationsView />;
         } catch (error) {

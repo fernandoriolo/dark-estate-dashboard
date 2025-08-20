@@ -135,6 +135,7 @@ const secondaryItems = [
     url: "#",
     icon: Settings,
     view: "configurations" as const,
+    permissionKey: "menu_configurations",
   },
 ];
 

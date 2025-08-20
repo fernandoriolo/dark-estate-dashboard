@@ -141,7 +141,7 @@ export function usePermissions() {
       console.error('Erro ao atualizar permissão:', error);
       throw error;
     }
-  }, [isAdmin, profile, permissions]);
+  }, [profile, permissions]);
 
   // Obter permissões por role (memoizado)
   const getPermissionsByRole = useCallback((role: 'corretor' | 'gestor' | 'admin') => {
