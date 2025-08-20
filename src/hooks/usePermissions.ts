@@ -36,24 +36,32 @@ export function usePermissions() {
   // Carregar apenas permissões necessárias baseado na nova hierarquia
   const loadPermissions = useCallback(async () => {
     try {
-      if (!profile) return;
+      if (!profile) {
+        console.log('🔐 DEBUG LOAD: Profile não disponível, abortando carregamento');
+        return;
+      }
+
+      console.log(`🔐 DEBUG LOAD: Iniciando carregamento para profile:`, profile);
 
       let query = supabase.from('role_permissions').select('*');
 
       // Verificar se pode acessar módulo de permissões
       const canAccess = canAccessPermissionsModule(profile.role);
+      console.log(`🔐 DEBUG LOAD: canAccessPermissionsModule(${profile.role}) = ${canAccess}`);
+      
       if (!canAccess) {
         // Se não pode acessar módulo, carregar apenas suas permissões
+        console.log(`🔐 DEBUG LOAD: Carregando apenas permissões para role: ${profile.role}`);
         query = query.eq('role', profile.role);
       } else {
-        // Se pode acessar módulo, carregar permissões dos roles que pode gerenciar
+        // Se pode acessar módulo, carregar permissões do próprio role + roles que pode gerenciar
         const managedRoles = getManagedRoles(profile.role);
-        if (managedRoles.length > 0) {
-          query = query.in('role', managedRoles);
-        } else {
-          // Se não gerencia ninguém, carregar apenas suas permissões
-          query = query.eq('role', profile.role);
-        }
+        console.log(`🔐 DEBUG LOAD: Roles gerenciados por ${profile.role}:`, managedRoles);
+        
+        // Sempre incluir o próprio role + roles gerenciados
+        const allRoles = [profile.role, ...managedRoles];
+        console.log(`🔐 DEBUG LOAD: Carregando permissões para todos os roles:`, allRoles);
+        query = query.in('role', allRoles);
       }
 
       const { data, error } = await query
@@ -62,6 +70,8 @@ export function usePermissions() {
         .order('permission_name', { ascending: true });
 
       if (error) throw error;
+      console.log(`🔐 DEBUG LOAD PERMISSIONS: Carregadas ${data?.length || 0} permissões para role ${profile.role}:`, data);
+      console.log(`🔐 DEBUG LOAD PERMISSIONS: Roles carregados:`, [...new Set(data?.map(p => p.role) || [])]);
       setPermissions(data || []);
 
     } catch (error: any) {
@@ -74,8 +84,11 @@ export function usePermissions() {
 
   // Verificar permissão com cache
   const hasPermission = useCallback((permissionKey: string): boolean => {
+    console.log(`🔐 DEBUG PERMISSION: ${permissionKey} - Role: ${profile?.role}, UserPermissions:`, userPermissions);
     if (profile?.role === 'admin') return true;
-    return userPermissions[permissionKey] || false;
+    const hasAccess = userPermissions[permissionKey] || false;
+    console.log(`🔐 DEBUG RESULT: ${permissionKey} = ${hasAccess}`);
+    return hasAccess;
   }, [profile, userPermissions]);
 
   // Atualizar permissão com validação

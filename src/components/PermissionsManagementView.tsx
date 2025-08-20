@@ -247,6 +247,12 @@ export function PermissionsManagementView() {
   const { profile } = useUserProfile();
   const managedRoles = profile ? getManagedRoles(profile.role) : [];
   const roles = managedRoles.length > 0 ? managedRoles : ['corretor'] as const;
+  
+  console.log('🔐 DEBUG PERMISSIONS VIEW: Profile:', profile);
+  console.log('🔐 DEBUG PERMISSIONS VIEW: Managed roles:', managedRoles);
+  console.log('🔐 DEBUG PERMISSIONS VIEW: Roles to show:', roles);
+  console.log('🔐 DEBUG PERMISSIONS VIEW: All permissions loaded:', permissions);
+  console.log('🔐 DEBUG PERMISSIONS VIEW: Corretor permissions:', getPermissionsByRole('corretor'));
 
   if (loading) {
     return (

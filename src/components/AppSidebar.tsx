@@ -227,19 +227,31 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
   // Filtrar menus baseado nas permissões
   const filteredMenuItems = menuItems.filter(item => {
     if (!item.permissionKey) return true; // Se não tem permissão definida, mostrar para todos
-    if (!profile) return false; // Se não tem perfil, não mostrar menus
+    if (!profile) {
+      console.log('⚠️ DEBUG: Profile não disponível no filtro de menus');
+      return false; // Se não tem perfil, não mostrar menus
+    }
     
     // Verificação especial para o módulo de permissões
     if (item.permissionKey === 'menu_permissions') {
-      return canAccessPermissionsModule(profile.role);
+      const canAccess = canAccessPermissionsModule(profile.role);
+      console.log(`🔍 DEBUG: ${item.title} (permissions) - Role: ${profile.role}, CanAccess: ${canAccess}`);
+      return canAccess;
     }
     
-    return hasPermission(item.permissionKey);
+    const hasAccess = hasPermission(item.permissionKey);
+    console.log(`🔍 DEBUG: ${item.title} (${item.permissionKey}) - Role: ${profile.role}, HasAccess: ${hasAccess}`);
+    return hasAccess;
   });
   const filteredAnalyticsItems = analyticsItems.filter(item => {
     if (!('permissionKey' in item) || !item.permissionKey) return true;
-    if (!profile) return false;
-    return hasPermission(item.permissionKey);
+    if (!profile) {
+      console.log('⚠️ DEBUG: Profile não disponível no filtro analytics');
+      return false;
+    }
+    const hasAccess = hasPermission(item.permissionKey);
+    console.log(`🔍 DEBUG ANALYTICS: ${item.title} (${item.permissionKey}) - Role: ${profile.role}, HasAccess: ${hasAccess}`);
+    return hasAccess;
   });
   
   const filteredSecondaryItems = secondaryItems.filter(item => {
