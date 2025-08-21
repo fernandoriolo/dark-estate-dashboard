@@ -29,6 +29,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { useWhatsAppInstances } from "@/hooks/useWhatsAppInstances";
+import { useNotifications } from "@/hooks/useNotifications";
 import { supabase } from "@/integrations/supabase/client";
 
 interface WhatsAppInstance {
@@ -58,6 +59,7 @@ export function ConnectionsView() {
   // URLs dos webhooks através do proxy
   const WEBHOOK_BASE_URL = '/api/webhook';
   const { profile, isManager } = useUserProfile();
+  const { createConnectionRequest } = useNotifications();
   const { 
     instances, 
     loading, 
@@ -92,6 +94,11 @@ export function ConnectionsView() {
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [showConfigSuccessModal, setShowConfigSuccessModal] = useState(false);
+  const [userHasInstance, setUserHasInstance] = useState<boolean | null>(null);
+  const [loadingInstanceCheck, setLoadingInstanceCheck] = useState(true);
+  const [requestingConnection, setRequestingConnection] = useState(false);
+  const [hasPendingRequest, setHasPendingRequest] = useState<boolean>(false);
+  const [loadingPendingCheck, setLoadingPendingCheck] = useState(true);
   
   // Estados dos campos editáveis
   const [configFields, setConfigFields] = useState({
@@ -735,6 +742,95 @@ export function ConnectionsView() {
     }
   };
 
+  // Verificar se o usuário atual tem uma instância
+  const checkUserInstance = async () => {
+    try {
+      if (!profile?.id) return;
+      
+      console.log('🔍 Verificando se usuário tem instância...', profile.id);
+      
+      const { data, error } = await supabase
+        .from('whatsapp_instances')
+        .select('id')
+        .eq('user_id', profile.id)
+        .single();
+      
+      if (error && error.code !== 'PGRST116') { // PGRST116 = not found
+        throw error;
+      }
+      
+      const hasInstance = !!data;
+      setUserHasInstance(hasInstance);
+      
+      console.log(hasInstance ? '✅ Usuário tem instância' : '❌ Usuário não tem instância');
+    } catch (error) {
+      console.error('❌ Erro ao verificar instância do usuário:', error);
+      setUserHasInstance(false);
+    } finally {
+      setLoadingInstanceCheck(false);
+    }
+  };
+
+  // Verificar se o usuário tem solicitação pendente
+  const checkPendingRequest = async () => {
+    try {
+      if (!profile?.id) return;
+      
+      console.log('📝 Verificando solicitação pendente...', profile.id);
+      
+      const { data, error } = await supabase
+        .from('connection_requests')
+        .select('id, status')
+        .eq('user_id', profile.id)
+        .eq('status', 'pending')
+        .single();
+      
+      if (error && error.code !== 'PGRST116') { // PGRST116 = not found
+        throw error;
+      }
+      
+      const hasPending = !!data;
+      setHasPendingRequest(hasPending);
+      
+      console.log(hasPending ? '📝 Usuário tem solicitação pendente' : '✅ Nenhuma solicitação pendente');
+    } catch (error) {
+      console.error('❌ Erro ao verificar solicitação pendente:', error);
+      setHasPendingRequest(false);
+    } finally {
+      setLoadingPendingCheck(false);
+    }
+  };
+
+  // Solicitar conexão
+  const handleRequestConnection = async () => {
+    try {
+      setRequestingConnection(true);
+      console.log('📞 Solicitando conexão...');
+      
+      await createConnectionRequest(
+        `Solicitação de conexão WhatsApp de ${profile?.full_name} (${profile?.role})`
+      );
+      
+      // Atualizar estado local
+      setHasPendingRequest(true);
+      
+      alert('Solicitação enviada com sucesso! Os gestores foram notificados.');
+    } catch (error: any) {
+      console.error('❌ Erro ao solicitar conexão:', error);
+      alert(error.message || 'Erro ao enviar solicitação. Tente novamente.');
+    } finally {
+      setRequestingConnection(false);
+    }
+  };
+
+  // Verificar instância e solicitações do usuário quando profile carregar
+  useEffect(() => {
+    if (profile?.id) {
+      checkUserInstance();
+      checkPendingRequest();
+    }
+  }, [profile?.id]);
+
   // Carregar usuários disponíveis usando a função centralizada do hook
   const loadAvailableUsers = async () => {
     if (!isManager) {
@@ -764,28 +860,36 @@ export function ConnectionsView() {
   };
 
   const handleAddInstance = async () => {
+    // BLOQUEIO ABSOLUTO: Apenas gestores e admins podem criar instâncias
+    if (!isManager) {
+      console.error('❌ TENTATIVA DE ACESSO NEGADA: Corretor tentou criar instância');
+      alert('Acesso negado. Apenas gestores podem criar instâncias.');
+      setShowAddModal(false); // Fechar modal imediatamente
+      return;
+    }
+
     if (!newInstanceName.trim() || !newInstanceNumber.trim()) return;
     
     // Para gestores, verificar se selecionou um usuário
-    if (isManager && !selectedUserId) {
+    if (!selectedUserId) {
       alert('Por favor, selecione para qual usuário esta instância será atribuída.');
       return;
     }
     
     // Verificar se há usuários disponíveis
-    if (isManager && availableUsers.length === 0) {
+    if (availableUsers.length === 0) {
       alert('Não há usuários disponíveis. Todos os usuários já possuem instâncias conectadas.');
       return;
     }
 
     try {
       setCreatingInstance(true);
-      const targetUserId = isManager ? selectedUserId : profile?.id;
       
+      // APENAS gestores chegam até aqui - sempre usar selectedUserId
       await createInstance({
         instance_name: newInstanceName,
         phone_number: newInstanceNumber,
-        assigned_user_id: targetUserId
+        assigned_user_id: selectedUserId // NUNCA usar profile?.id
       });
 
       // Limpar form
@@ -795,9 +899,7 @@ export function ConnectionsView() {
       setShowAddModal(false);
       
       // Recarregar lista de usuários disponíveis para o próximo uso
-      if (isManager) {
-        loadAvailableUsers();
-      }
+      loadAvailableUsers();
       
     } catch (error) {
       console.error('❌ Erro ao criar instância:', error);
@@ -889,13 +991,48 @@ export function ConnectionsView() {
               <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
               Atualizar
             </Button>
-            {canCreateInstances && (
+            
+            {/* Botão Solicitar Conexão para corretores sem instância */}
+            {profile?.role === 'corretor' && !loadingInstanceCheck && !loadingPendingCheck && userHasInstance === false && !hasPendingRequest && (
+              <Button
+                onClick={handleRequestConnection}
+                disabled={requestingConnection}
+                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg hover:shadow-xl transition-all duration-200"
+              >
+                {requestingConnection ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Enviando...
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    Solicitar Conexão
+                  </>
+                )}
+              </Button>
+            )}
+            
+            {/* Status aguardando para corretores com solicitação pendente */}
+            {profile?.role === 'corretor' && !loadingInstanceCheck && !loadingPendingCheck && userHasInstance === false && hasPendingRequest && (
+              <div className="bg-gradient-to-r from-yellow-600/20 to-yellow-700/20 border border-yellow-500/30 rounded-lg px-4 py-2 flex items-center gap-2">
+                <Clock className="h-4 w-4 text-yellow-400" />
+                <span className="text-yellow-400 text-sm font-medium">Aguardando Gestor criar sua Instância</span>
+              </div>
+            )}
+            
+            {/* Botão Nova Instância - APENAS para gestores e admins */}
+            {isManager && canCreateInstances && profile?.role !== 'corretor' && (
               <Button
                 onClick={() => {
-                  setShowAddModal(true);
-                  if (isManager) {
-                    loadAvailableUsers();
+                  // Dupla verificação de segurança
+                  if (!isManager || profile?.role === 'corretor') {
+                    console.error('❌ BLOQUEIO: Tentativa de acesso negada ao modal de criação');
+                    alert('Acesso negado. Apenas gestores podem criar instâncias.');
+                    return;
                   }
+                  setShowAddModal(true);
+                  loadAvailableUsers();
                 }}
                 className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white shadow-lg hover:shadow-xl transition-all duration-200"
               >
@@ -918,16 +1055,58 @@ export function ConnectionsView() {
             </div>
             <h3 className="text-xl font-bold text-white mb-2">Nenhuma instância encontrada</h3>
             <p className="text-gray-400 mb-6">
-              Não há instâncias WhatsApp configuradas no momento. 
-              Clique no botão acima para adicionar uma nova instância.
+              {profile?.role === 'corretor' && !loadingInstanceCheck && userHasInstance === false
+                ? 'Você não possui uma instância WhatsApp. Solicite uma conexão para que um gestor possa criar uma instância para você.'
+                : 'Não há instâncias WhatsApp configuradas no momento. Clique no botão acima para adicionar uma nova instância.'
+              }
             </p>
-            <Button
-              onClick={() => setShowAddModal(true)}
-              className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Criar Primeira Instância
-            </Button>
+            {/* Botão solicitar para corretor sem instância e sem solicitação pendente */}
+            {profile?.role === 'corretor' && !loadingInstanceCheck && !loadingPendingCheck && userHasInstance === false && !hasPendingRequest ? (
+              <Button
+                onClick={handleRequestConnection}
+                disabled={requestingConnection}
+                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white"
+              >
+                {requestingConnection ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Enviando Solicitação...
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    Solicitar Conexão
+                  </>
+                )}
+              </Button>
+            ) : profile?.role === 'corretor' && !loadingInstanceCheck && !loadingPendingCheck && userHasInstance === false && hasPendingRequest ? (
+              /* Mensagem de aguardando para corretor com solicitação pendente */
+              <div className="bg-gradient-to-r from-yellow-600/20 to-yellow-700/20 border border-yellow-500/30 rounded-lg px-6 py-4 text-center">
+                <div className="flex items-center justify-center gap-3 mb-2">
+                  <Clock className="h-6 w-6 text-yellow-400" />
+                  <span className="text-lg font-semibold text-yellow-400">Aguardando Gestor</span>
+                </div>
+                <p className="text-yellow-300 text-sm">
+                  Sua solicitação foi enviada. Um gestor irá criar sua instância em breve.
+                </p>
+              </div>
+            ) : isManager && canCreateInstances && profile?.role !== 'corretor' ? (
+              <Button
+                onClick={() => {
+                  // Dupla verificação de segurança
+                  if (!isManager || profile?.role === 'corretor') {
+                    console.error('❌ BLOQUEIO: Tentativa de acesso negada ao modal de criação');
+                    alert('Acesso negado. Apenas gestores podem criar instâncias.');
+                    return;
+                  }
+                  setShowAddModal(true);
+                }}
+                className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Criar Primeira Instância
+              </Button>
+            ) : null}
           </div>
         </div>
       ) : (
@@ -1109,6 +1288,25 @@ export function ConnectionsView() {
               Nova Instância WhatsApp
             </DialogTitle>
           </DialogHeader>
+          
+          {/* BLOQUEIO DE SEGURANÇA: Verificar se usuário tem permissão */}
+          {!isManager || profile?.role === 'corretor' ? (
+            <div className="py-6 text-center">
+              <div className="text-red-400 mb-4">
+                <XCircle className="h-12 w-12 mx-auto mb-2" />
+                <h3 className="text-lg font-bold">Acesso Negado</h3>
+              </div>
+              <p className="text-gray-300 mb-4">
+                Apenas gestores e administradores podem criar instâncias WhatsApp.
+              </p>
+              <Button
+                onClick={() => setShowAddModal(false)}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                Fechar
+              </Button>
+            </div>
+          ) : (
           <div className="space-y-4 pt-4">
             <div>
               <Label htmlFor="instanceName" className="text-gray-300">Nome da Instância</Label>
@@ -1210,6 +1408,7 @@ export function ConnectionsView() {
               </Button>
             </div>
           </div>
+          )}
         </DialogContent>
       </Dialog>
 

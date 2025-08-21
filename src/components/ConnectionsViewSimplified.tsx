@@ -55,7 +55,7 @@ export function ConnectionsViewSimplified() {
     loading,
     error,
     createInstance,
-    requestConnection,  // Nova função integrada
+    // requestConnection,  // ❌ REMOVIDA - Usar createConnectionRequest do useNotifications
     updateInstanceStatus,
     deleteInstance,
     generateQrCode,
@@ -398,30 +398,29 @@ export function ConnectionsViewSimplified() {
   };
 
 
-  // Solicitar conexão ao gestor (novo método integrado)
+  // Solicitar conexão ao gestor (corrigido para usar apenas connection_requests)
   const handleRequestConnection = async () => {
     try {
       setRequestingConnection(true);
       
-      // Validar nome da instância
-      if (!newInstanceName.trim()) {
-        alert('Por favor, informe o nome da instância');
-        return;
-      }
+      // Criar mensagem personalizada com detalhes da solicitação
+      const message = `Solicitação de conexão WhatsApp de ${profile?.full_name} (${profile?.role})${
+        newInstanceName.trim() ? ` - Nome desejado: ${newInstanceName.trim()}` : ''
+      }${
+        newInstancePhone.trim() ? ` - Telefone: ${newInstancePhone.trim()}` : ''
+      }${
+        requestMessage.trim() ? ` - Observações: ${requestMessage.trim()}` : ''
+      }`;
       
-      // Usar o novo método integrado que cria a instância + notifica automaticamente
-      await requestConnection({
-        instance_name: newInstanceName.trim(),
-        phone_number: newInstancePhone.trim() || undefined,
-        message: requestMessage || undefined
-      });
+      // Usar createConnectionRequest que apenas cria entry em connection_requests
+      await createConnectionRequest(message);
       
       setShowRequestModal(false);
       setNewInstanceName("");
       setNewInstancePhone("");
       setRequestMessage("");
       
-      alert('Solicitação criada com sucesso! Os gestores foram notificados automaticamente.');
+      alert('Solicitação enviada com sucesso! Os gestores foram notificados.');
     } catch (error: any) {
       console.error('Erro ao solicitar conexão:', error);
       alert(error.message || 'Erro ao enviar solicitação. Tente novamente.');

@@ -614,6 +614,48 @@ export function useWhatsAppInstances() {
     }
   };
 
+  // Função auxiliar para tentar recriar instância no N8N
+  const retryCreateInstanceInN8N = async (instance: any): Promise<boolean> => {
+    try {
+      console.log('🔄 Tentando recriar instância no N8N:', instance.instance_name);
+      
+      const generateUUID = () => {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+          const r = Math.random() * 16 | 0;
+          const v = c == 'x' ? r : (r & 0x3 | 0x8);
+          return v.toString(16);
+        });
+      };
+
+      const sessionId = generateUUID();
+      const createResponse = await fetch('https://webhooklabz.n8nlabz.com.br/webhook/criar-instancia', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        mode: 'cors',
+        body: JSON.stringify({
+          instanceName: instance.instance_name,
+          phoneNumber: instance.phone_number,
+          sessionId: sessionId
+        }),
+      });
+
+      if (createResponse.ok) {
+        const createData = await createResponse.json();
+        console.log('✅ Instância recriada no N8N:', createData);
+        return true;
+      } else {
+        console.warn('❌ Falha ao recriar instância no N8N:', createResponse.status);
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ Erro ao tentar recriar instância no N8N:', error);
+      return false;
+    }
+  };
+
   // Gerar QR Code para conexão
   const generateQrCode = async (instanceId: string): Promise<string | null> => {
     try {
@@ -622,9 +664,9 @@ export function useWhatsAppInstances() {
         throw new Error('Instância não encontrada');
       }
 
-      console.log('📱 Chamando endpoint: POST /webhook/puxar-qrcode para', instance.instance_name);
+      console.log('📱 Tentativa 1: Chamando endpoint POST /webhook/puxar-qrcode para', instance.instance_name);
 
-      const response = await fetch(`https://webhooklabz.n8nlabz.com.br/webhook/puxar-qrcode`, {
+      let response = await fetch(`https://webhooklabz.n8nlabz.com.br/webhook/puxar-qrcode`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -644,11 +686,48 @@ export function useWhatsAppInstances() {
       }
 
       // Verificar se a resposta tem conteúdo
-      const responseText = await response.text();
-      console.log('📥 Resposta bruta do QR code:', responseText);
+      let responseText = await response.text();
+      console.log('📥 Resposta bruta do QR code (tentativa 1):', responseText);
 
+      // Se resposta vazia, tentar recriar instância no N8N e tentar novamente
       if (!responseText || responseText.trim() === '') {
-        throw new Error('Resposta vazia do servidor. A instância pode não ter sido criada corretamente.');
+        console.log('⚠️ Resposta vazia detectada. Tentando recriar instância no N8N...');
+        
+        const recreated = await retryCreateInstanceInN8N(instance);
+        if (!recreated) {
+          throw new Error('Não foi possível sincronizar a instância com o servidor. Tente deletar e criar novamente.');
+        }
+
+        // Aguardar um pouco para a instância ficar pronta
+        console.log('⏳ Aguardando instância ficar pronta...');
+        await new Promise(resolve => setTimeout(resolve, 3000));
+
+        // Tentar gerar QR code novamente
+        console.log('📱 Tentativa 2: Chamando endpoint POST /webhook/puxar-qrcode após recriar');
+        response = await fetch(`https://webhooklabz.n8nlabz.com.br/webhook/puxar-qrcode`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          mode: 'cors',
+          body: JSON.stringify({
+            instanceName: instance.instance_name
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.warn('❌ Erro HTTP na tentativa 2:', response.status, response.statusText);
+          throw new Error(`Sistema externo indisponível após retry (${response.status}).`);
+        }
+
+        responseText = await response.text();
+        console.log('📥 Resposta bruta do QR code (tentativa 2):', responseText);
+
+        if (!responseText || responseText.trim() === '') {
+          throw new Error('Instância foi recriada mas ainda não está pronta. Aguarde alguns minutos e tente novamente.');
+        }
       }
 
       let data;
@@ -955,76 +1034,15 @@ export function useWhatsAppInstances() {
     }
   };
 
-  // Solicitar conexão criando instância pendente (novo fluxo integrado)
+  // ❌ FUNÇÃO DEPRECIADA - NÃO USAR
+  // Esta função foi removida pois viola as policies RLS
+  // Use createConnectionRequest do hook useNotifications em vez disso
   const requestConnection = async (instanceData: {
     instance_name: string;
     phone_number?: string;
     message?: string;
   }) => {
-    try {
-      if (!profile?.id || !profile?.company_id) {
-        throw new Error('Perfil do usuário não encontrado');
-      }
-
-      console.log('🔄 Criando solicitação de conexão integrada...');
-
-      // Verificar se usuário já tem instância ou solicitação pendente
-      const { data: existingInstances, error: checkError } = await supabase
-        .from('whatsapp_instances')
-        .select('id, request_status, status')
-        .eq('requested_by', profile.id)
-        .or('request_status.eq.requested,status.in.(connected,qr_code,connecting)');
-
-      if (checkError) throw checkError;
-
-      if (existingInstances && existingInstances.length > 0) {
-        const pending = existingInstances.find(i => i.request_status === 'requested');
-        const active = existingInstances.find(i => ['connected', 'qr_code', 'connecting'].includes(i.status));
-        
-        if (pending) {
-          throw new Error('Você já possui uma solicitação pendente');
-        }
-        if (active) {
-          throw new Error('Você já possui uma instância ativa');
-        }
-      }
-
-      // Criar instância com status 'requested' - isso vai disparar o trigger automaticamente
-      const { data: newInstance, error: createError } = await supabase
-        .from('whatsapp_instances')
-        .insert({
-          user_id: profile.id,  // Será a instância final do usuário
-          company_id: profile.company_id,
-          instance_name: instanceData.instance_name,
-          phone_number: instanceData.phone_number,
-          request_status: 'requested',  // Status de solicitação
-          status: 'disconnected',       // Status técnico inicial
-          requested_by: profile.id,
-          requested_at: new Date().toISOString(),
-          request_message: instanceData.message || `Solicitação de ${profile.full_name}`,
-          webhook_url: `https://webhooklabz.n8nlabz.com.br/webhook/${instanceData.instance_name}`,
-          is_active: true
-        })
-        .select(`
-          *,
-          user_profile:user_profiles!whatsapp_instances_user_id_fkey(full_name, email, role),
-          requester_profile:user_profiles!whatsapp_instances_requested_by_fkey(full_name, email, role)
-        `)
-        .single();
-
-      if (createError) throw createError;
-
-      console.log('✅ Solicitação criada:', newInstance);
-      console.log('📬 Trigger automático irá notificar gestores');
-
-      // Atualizar lista local
-      setInstances(prev => [newInstance, ...prev]);
-
-      return newInstance;
-    } catch (error: any) {
-      console.error('❌ Erro ao criar solicitação integrada:', error);
-      throw error;
-    }
+    throw new Error('FUNÇÃO DEPRECIADA: Use createConnectionRequest do hook useNotifications para solicitar conexões');
   };
 
   // Aprovar solicitação (para gestores)
@@ -1201,7 +1219,7 @@ export function useWhatsAppInstances() {
     getInstanceStats,
     loadAllUsers,
     loadAvailableUsersForAssignment,  // Nova função centralizada
-    requestConnection,                // Nova função integrada de solicitação
+    // requestConnection,             // ❌ REMOVIDA - Use createConnectionRequest do useNotifications
     approveConnectionRequest,         // Aprovação de solicitação
     getPendingRequests,              // Obter solicitações pendentes
     refreshInstances: loadInstances,

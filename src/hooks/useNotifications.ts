@@ -151,9 +151,12 @@ export function useNotifications() {
         .in('role', ['gestor', 'admin'])
         .eq('is_active', true);
 
-      if (managersError) throw managersError;
+      if (managersError) {
+        console.error('❌ Erro ao buscar gestores:', managersError);
+        throw managersError;
+      }
 
-      console.log('👥 Gestores encontrados para notificar:', managers?.length);
+      console.log('👥 Gestores encontrados para notificar:', managers?.length, managers?.map(m => `${m.full_name} (${m.role})`));
 
       // 4. Criar notificações para cada gestor
       if (managers && managers.length > 0) {
@@ -161,7 +164,7 @@ export function useNotifications() {
           user_id: manager.id,
           company_id: profile.company_id,
           type: 'connection_request' as const,
-          title: 'Nova Solicitação de Conexão',
+          title: 'Nova Solicitação de Conexão WhatsApp',
           message: `${profile.full_name} (${profile.role}) solicitou uma conexão WhatsApp`,
           data: {
             request_id: request.id,
@@ -172,16 +175,21 @@ export function useNotifications() {
           }
         }));
 
-        const { error: notifyError } = await supabase
+        console.log('📝 Criando notificações:', notificationsToCreate.length, 'notificações');
+
+        const { data: notificationsResult, error: notifyError } = await supabase
           .from('notifications')
-          .insert(notificationsToCreate);
+          .insert(notificationsToCreate)
+          .select();
 
         if (notifyError) {
-          console.error('Erro ao criar notificações:', notifyError);
-          // Não falhar a operação, apenas logar o erro
+          console.error('❌ Erro ao criar notificações:', notifyError);
+          // Continuamos sem falhar a operação
         } else {
-          console.log('📬 Notificações criadas para gestores');
+          console.log('✅ Notificações criadas com sucesso:', notificationsResult?.length, 'notificações');
         }
+      } else {
+        console.warn('⚠️ Nenhum gestor encontrado para notificar');
       }
 
       return request;
