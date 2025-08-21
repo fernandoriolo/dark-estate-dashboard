@@ -25,7 +25,6 @@ import {
   Pause,
   Settings,
   MoreVertical,
-  Zap,
   TrendingUp,
   Eye,
   Monitor,
@@ -63,7 +62,7 @@ export function ConnectionsViewSimplified() {
     configureInstance,
     editInstanceConfig,
     getInstanceStats,
-    loadAllUsers,
+    loadAvailableUsersForAssignment,
     refreshInstances,
     canCreateInstances,
     connectInstance,
@@ -81,6 +80,9 @@ export function ConnectionsViewSimplified() {
   const [assignedUserId, setAssignedUserId] = useState<string>("self");
   const [availableUsers, setAvailableUsers] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  
+  // Debug resumido
+  console.log('🎯 ConnectionsView - Available users:', availableUsers.length);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [creating, setCreating] = useState(false);
   const [qrCode, setQrCode] = useState<string | null>(null);
@@ -111,6 +113,7 @@ export function ConnectionsViewSimplified() {
     readStatus: false
   });
 
+
   // Filtrar instâncias
   const filteredInstances = instances.filter(instance => {
     const matchesSearch = instance.instance_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -127,11 +130,16 @@ export function ConnectionsViewSimplified() {
   // Carregar usuários quando modal abrir (apenas para gestores/admin)
   useEffect(() => {
     if (showAddModal && canCreate) {
-      loadAllUsers().then(users => {
-        setAvailableUsers(users);
+      console.log('🔄 Carregando usuários disponíveis...');
+      loadAvailableUsersForAssignment().then(users => {
+        console.log('✅ Carregados', users?.length || 0, 'usuários disponíveis');
+        setAvailableUsers(users || []);
+      }).catch(error => {
+        console.error('❌ Erro ao carregar usuários:', error);
+        setAvailableUsers([]);
       });
     }
-  }, [showAddModal, canCreate]);
+  }, [showAddModal]);
 
   // Timer do QR Code (15 segundos)
   useEffect(() => {
@@ -389,6 +397,7 @@ export function ConnectionsViewSimplified() {
     }
   };
 
+
   // Solicitar conexão ao gestor (novo método integrado)
   const handleRequestConnection = async () => {
     try {
@@ -604,6 +613,8 @@ export function ConnectionsViewSimplified() {
             <RefreshCw className="mr-2 h-4 w-4" />
             Atualizar
           </Button>
+          
+          
           {canCreate ? (
             <Button 
               className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white"
@@ -1220,6 +1231,7 @@ export function ConnectionsViewSimplified() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
     </div>
   );
 } 

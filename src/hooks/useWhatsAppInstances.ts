@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logAudit } from '@/lib/audit/logger';
 import { useUserProfile } from './useUserProfile';
+import { n8nClient } from '@/lib/n8n/client';
 
 export interface WhatsAppInstance {
   id: string;
@@ -127,30 +128,17 @@ export function useWhatsAppInstances() {
       let externalInstances: any[] = [];
       
       try {
-        console.log('📡 Chamando endpoint: GET /webhook/whatsapp-instances');
+        console.log('📡 Chamando endpoint via n8nClient: whatsapp.instances');
         
-        const response = await fetch('https://webhooklabz.n8nlabz.com.br/webhook/whatsapp-instances', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          mode: 'cors',
-        });
+        // Usar n8nClient centralizado em vez de fetch hardcoded
+        const response = await n8nClient.getWhatsAppInstances();
 
-        if (response.ok) {
-          const responseData = await response.json();
-          console.log('✅ Resposta recebida do webhook:', responseData);
-          
-          // O endpoint retorna {success: true, data: [...]} direto
-          if (responseData.success && Array.isArray(responseData.data)) {
-            externalInstances = responseData.data || [];
-            console.log('📊 Total de instâncias no webhook:', externalInstances.length);
-          } else {
-            console.warn('⚠️ Formato de resposta inesperado:', responseData);
-          }
+        if (response.success && Array.isArray(response.data)) {
+          externalInstances = response.data || [];
+          console.log('✅ Resposta recebida via n8nClient:', response);
+          console.log('📊 Total de instâncias no webhook:', externalInstances.length);
         } else {
-          console.warn('❌ Erro no endpoint webhook:', response.status);
+          console.warn('⚠️ Formato de resposta inesperado via n8nClient:', response);
         }
       } catch (apiError) {
         console.warn('❌ Sistema externo indisponível:', apiError);
@@ -844,19 +832,40 @@ export function useWhatsAppInstances() {
   // Esta função é a fonte única de verdade para o dropdown "Atribuir Para"
   const loadAvailableUsersForAssignment = async () => {
     try {
-      if (!isManager) {
+      console.log('🔍 DEBUG: Verificação isManager:', isManager);
+      console.log('🔍 DEBUG: Profile role:', profile?.role);
+      
+      // Verificação robusta de permissões
+      const canLoadUsers = isManager || profile?.role === 'gestor' || profile?.role === 'admin';
+      console.log('🔍 DEBUG: Verificação de permissões:', {
+        isManager,
+        profileRole: profile?.role,
+        canLoadUsers
+      });
+      
+      if (!canLoadUsers) {
         console.warn('Apenas gestores podem carregar lista de usuários disponíveis');
         return [];
       }
 
       console.log('🔄 loadAvailableUsersForAssignment: Iniciando busca de usuários disponíveis');
+      console.log('🔍 Profile atual (será excluído):', {
+        id: profile?.id,
+        name: profile?.full_name,
+        role: profile?.role,
+        company_id: profile?.company_id
+      });
+      
+      if (!profile || !profile.company_id) {
+        console.warn('⚠️ Profile ou company_id não disponível ainda');
+        return [];
+      }
 
-      // Passo 1: Buscar usuários com instâncias ativas
+      // Passo 1: Buscar usuários que têm QUALQUER instância (ativa ou inativa)
       const { data: usersWithInstances, error: instancesError } = await supabase
         .from('whatsapp_instances')
         .select('user_id')
         .eq('company_id', profile?.company_id)
-        .eq('is_active', true)
         .not('user_id', 'is', null);
 
       if (instancesError) {
@@ -864,39 +873,79 @@ export function useWhatsAppInstances() {
         throw instancesError;
       }
 
-      // Extrair IDs dos usuários que já têm instâncias
+      // Extrair IDs dos usuários que já têm instâncias (de qualquer tipo)
       const userIdsWithInstances = (usersWithInstances || [])
         .map(instance => instance.user_id)
         .filter(Boolean);
 
-      console.log('🔍 DEBUG: Usuários com instâncias:', userIdsWithInstances);
+      console.log('🔍 Usuários que JA têm instâncias (serão excluídos):', userIdsWithInstances);
+      console.log('🔍 Total de usuários com instâncias:', userIdsWithInstances.length);
+      
+      // Debug: Mostrar quais IDs específicos serão excluídos
+      if (userIdsWithInstances.length > 0) {
+        console.log('🙅‍♂️ IDs que serão excluídos:', userIdsWithInstances);
+      }
 
       // Passo 2: Buscar usuários disponíveis (sem instâncias)
+      // Filtrar roles baseado no usuário logado
+      let allowedRoles: string[];
+      if (profile?.role === 'admin') {
+        // ADMIN pode atribuir para qualquer role
+        allowedRoles = ['corretor', 'gestor', 'admin'];
+        console.log('👑 Usuário ADMIN - pode atribuir para todas as roles:', allowedRoles);
+      } else if (profile?.role === 'gestor') {
+        // GESTOR pode atribuir apenas para gestores e corretores (não admins)
+        allowedRoles = ['corretor', 'gestor'];
+        console.log('👥 Usuário GESTOR - pode atribuir apenas para:', allowedRoles);
+      } else {
+        // CORRETOR não deveria estar criando instâncias, mas caso chegue aqui
+        allowedRoles = ['corretor'];
+        console.log('⚠️ Usuário CORRETOR - acesso limitado:', allowedRoles);
+      }
+
       let query = supabase
         .from('user_profiles')
         .select('id, full_name, email, role')
         .eq('company_id', profile?.company_id)  // Mesma empresa
         .eq('is_active', true)                  // Usuários ativos
-        .in('role', ['corretor', 'gestor'])     // Excluir ADMIN
+        .in('role', allowedRoles)               // Roles permitidas baseado no usuário logado
         .neq('id', profile?.id);                // Excluir usuário atual
 
       // Se há usuários com instâncias, excluí-los
       if (userIdsWithInstances.length > 0) {
-        query = query.not('id', 'in', `(${userIdsWithInstances.map(id => `"${id}"`).join(',')})`);
+        console.log('📝 Aplicando filtro NOT IN com IDs:', userIdsWithInstances);
+        // Formato correto PostgREST: (id1,id2,id3)
+        const formattedIds = `(${userIdsWithInstances.join(',')})`;
+        console.log('📝 IDs formatados para PostgREST:', formattedIds);
+        query = query.not('id', 'in', formattedIds);
+      } else {
+        console.log('ℹ️ Nenhum usuário com instância encontrado - todos serão mostrados');
       }
 
       const { data: availableUsers, error } = await query
         .order('role', { ascending: false })
         .order('full_name', { ascending: true });
+      
+      if (error) {
+        console.error('❌ ERRO DETALHADO na consulta de usuários:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+          userIdsWithInstances: userIdsWithInstances,
+          queryInfo: 'Tentando usar not.in com array de IDs'
+        });
+      }
 
       if (error) {
         console.error('❌ Erro ao buscar usuários disponíveis:', error);
         throw error;
       }
 
-      console.log('✅ Usuários disponíveis encontrados:', {
+      console.log('✅ Usuários DISPONÍVEIS para atribuição (SEM instâncias):', {
         count: availableUsers?.length || 0,
-        users: availableUsers?.map(u => `${u.full_name} (${u.role})`) || []
+        users: availableUsers?.map(u => `${u.full_name} (${u.role})`) || [],
+        excluidos: userIdsWithInstances.length
       });
 
       return availableUsers || [];

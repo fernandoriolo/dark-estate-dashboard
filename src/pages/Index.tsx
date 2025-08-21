@@ -100,6 +100,10 @@ const ConfigurationsView = createLazyComponent(
   () => import("@/components/ConfigurationsView").then(m => ({ default: m.ConfigurationsView })),
   "ConfigurationsView"
 );
+const N8NManagerView = createLazyComponent(
+  () => import("@/components/N8NManagerView").then(m => ({ default: m.default })),
+  "N8NManagerView"
+);
 
 import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
 import { useUserProfile } from "@/hooks/useUserProfile";
@@ -182,6 +186,8 @@ const Index = () => {
         return <InquilinatoView />;
       case "disparador":
         return <DisparadorView />;
+      case "n8n-manager":
+        return <N8NManagerView />;
       case "configurations":
         console.log('🔧 Renderizando ConfigurationsView...');
         

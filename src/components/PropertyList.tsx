@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, Suspense, lazy } from "react";
+import { n8nClient } from "@/lib/n8n/client";
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -378,7 +379,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
   const [editBanheiros, setEditBanheiros] = useState<string>("");
   const [editDescricao, setEditDescricao] = useState<string>("");
 
-  // Envio do XML para o endpoint do n8n
+  // Envio do XML para o endpoint do n8n via cliente centralizado
   const handleUploadVivaReal = async () => {
     try {
       if (!xmlFile) {
@@ -386,23 +387,34 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
         return;
       }
       setIsUploading(true);
-      const formData = new FormData();
-      formData.append("file", xmlFile, xmlFile.name);
-
-      const resp = await fetch("https://webhook.n8nlabz.com.br/webhook/vivareal", {
-        method: "POST",
-        body: formData,
+      
+      // Converter arquivo para base64 para enviar via n8nClient
+      const fileBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(xmlFile);
       });
 
-      if (!resp.ok) {
-        const text = await resp.text().catch(() => "");
-        throw new Error(`Falha no envio (${resp.status}) ${text}`);
+      // Usar n8nClient centralizado em vez de fetch hardcoded
+      const response = await n8nClient.call({
+        endpointKey: 'vivareal.upload',
+        payload: {
+          fileName: xmlFile.name,
+          fileData: fileBase64,
+          fileSize: xmlFile.size
+        }
+      });
+
+      if (!response.success) {
+        throw new Error(`Falha no envio: ${response.status}`);
       }
 
       toast({ title: "XML enviado com sucesso!", description: "O processamento será iniciado." });
       setIsVivaRealModalOpen(false);
       setXmlFile(null);
     } catch (err) {
+      console.error('❌ Erro ao enviar XML via n8nClient:', err);
       toast({ title: "Erro ao enviar XML", description: err instanceof Error ? err.message : "Tente novamente.", variant: "destructive" });
     } finally {
       setIsUploading(false);

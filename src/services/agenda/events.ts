@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { n8nClient } from "@/lib/n8n/client";
 
 // Tipagem compartilhada com AgendaView
 export interface AgendaEvent {
@@ -112,7 +113,7 @@ function mapWebhookItemToAgendaEvent(event: any, index: number, selectedAgenda?:
 export async function fetchAgendaMonth(reference: Date, selectedAgenda: string = "Todos"): Promise<AgendaEvent[]> {
 	const { startIso, endIso } = toLocalMonthRange(reference);
 
-	const body = {
+	const payload = {
 		data_inicial: startIso,
 		data_final: endIso,
 		mes: reference.getMonth() + 1,
@@ -123,23 +124,31 @@ export async function fetchAgendaMonth(reference: Date, selectedAgenda: string =
 		agenda: selectedAgenda
 	};
 
-	const response = await fetch('https://webhooklabz.n8nlabz.com.br/webhook/ver-agenda', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body)
-	});
+	try {
+		// Usar n8nClient centralizado em vez de fetch hardcoded
+		const response = await n8nClient.call({
+			endpointKey: 'agenda.list',
+			payload: payload
+		});
 
-	if (!response.ok) throw new Error(`Erro na API: ${response.status}`);
-	const json = await response.json();
-	const _ = WebhookResponseSchema.parse(json);
+		if (!response.success) {
+			throw new Error(`Erro na API N8N: ${response.status}`);
+		}
 
-	const data = Array.isArray(json) ? json : [];
-	const processed: AgendaEvent[] = data
-		.map((item, idx) => mapWebhookItemToAgendaEvent(item, idx, selectedAgenda))
-		.filter((e): e is AgendaEvent => Boolean(e));
+		const json = response.data;
+		const _ = WebhookResponseSchema.parse(json);
 
-	// validar campos essenciais
-	return processed.filter(e => e.id && e.date && e.property);
+		const data = Array.isArray(json) ? json : [];
+		const processed: AgendaEvent[] = data
+			.map((item, idx) => mapWebhookItemToAgendaEvent(item, idx, selectedAgenda))
+			.filter((e): e is AgendaEvent => Boolean(e));
+
+		// validar campos essenciais
+		return processed.filter(e => e.id && e.date && e.property);
+	} catch (error) {
+		console.error('❌ Erro ao buscar agenda via n8nClient:', error);
+		throw new Error(`Falha ao buscar agenda: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+	}
 }
 
 // Função para buscar eventos da tabela oncall_events

@@ -1,4 +1,4 @@
-import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare } from "lucide-react";
+import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare, Server } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
@@ -131,6 +131,13 @@ const secondaryItems = [
     permissionKey: "menu_permissions",
   },
   {
+    title: "N8N Manager",
+    url: "#",
+    icon: Server,
+    view: "n8n-manager" as const,
+    permissionKey: "menu_n8n_manager",
+  },
+  {
     title: "Configurações",
     url: "#",
     icon: Settings,
@@ -141,7 +148,7 @@ const secondaryItems = [
 
 interface AppSidebarProps {
   currentView: string;
-  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "plantao" | "reports" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "disparador" | "chats" | "configurations" | "profile") => void;
+  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "plantao" | "reports" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "disparador" | "chats" | "n8n-manager" | "configurations" | "profile") => void;
 }
 
 export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {

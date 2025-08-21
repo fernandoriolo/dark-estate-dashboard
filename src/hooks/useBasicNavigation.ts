@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 export type View = 
   | "dashboard" | "properties" | "contracts" | "agenda" | "plantao" 
   | "reports" | "clients" | "clients-crm" | "connections" | "users" 
-  | "permissions" | "inquilinato" | "disparador" | "chats" | "profile";
+  | "permissions" | "inquilinato" | "disparador" | "chats" | "n8n-manager" | "configurations" | "profile";
 
 /**
  * Hook ULTRA-SIMPLIFICADO de navegação
