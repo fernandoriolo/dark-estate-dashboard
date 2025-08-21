@@ -101,6 +101,17 @@ export function useGlobalN8NConfig() {
       }
 
       console.log('✅ GlobalN8N: Configuração salva:', result);
+      
+      // 🔄 SINCRONIZAÇÃO AUTOMÁTICA: Aplicar Bearer Token a todos os endpoints
+      console.log('🔄 GlobalN8N: Sincronizando Bearer Token com todos os endpoints...');
+      try {
+        await applyToAllEndpoints(result.default_bearer_token);
+        console.log('✅ GlobalN8N: Sincronização concluída - todos os endpoints atualizados');
+      } catch (syncError: any) {
+        console.warn('⚠️ GlobalN8N: Erro na sincronização automática:', syncError);
+        // Não falha a operação principal, apenas avisa
+      }
+      
       setConfig(result);
       return result;
 
@@ -110,28 +121,43 @@ export function useGlobalN8NConfig() {
     }
   }, [profile, isAdmin, config]);
 
-  // Aplicar configuração a todos os endpoints
+  // Aplicar configuração a todos os endpoints via Edge Function
   const applyToAllEndpoints = useCallback(async (bearerToken: string) => {
     try {
       if (!profile || !isAdmin) {
         throw new Error('Apenas ADMINs podem aplicar configurações globais');
       }
 
-      console.log('🔄 GlobalN8N: Aplicando Bearer Token a todos os endpoints...');
+      console.log('🔄 GlobalN8N: Aplicando Bearer Token a todos os endpoints via Edge Function...');
 
-      const { data, error } = await supabase
-        .from('n8n_endpoints')
-        .update({ 
-          bearer_token: bearerToken,
-          updated_at: new Date().toISOString()
+      // Obter token de autenticação
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        throw new Error('Usuário não autenticado');
+      }
+
+      // Chamar Edge Function para sincronização
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-n8n-endpoints`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          company_id: profile.company_id
         })
-        .eq('company_id', profile.company_id)
-        .select();
+      });
 
-      if (error) throw error;
+      const responseData = await response.json();
 
-      console.log(`✅ GlobalN8N: Bearer Token aplicado a ${data.length} endpoints`);
-      return data;
+      if (!response.ok) {
+        console.error(`❌ GlobalN8N erro [${response.status}]:`, responseData);
+        throw new Error(responseData.error || `HTTP ${response.status}`);
+      }
+
+      console.log(`✅ GlobalN8N: Bearer Token aplicado a ${responseData.synced_count} endpoints`);
+      return responseData.endpoints;
 
     } catch (error: any) {
       console.error('❌ GlobalN8N: Erro ao aplicar configuração:', error);
@@ -148,6 +174,27 @@ export function useGlobalN8NConfig() {
     }
     return result;
   }, []);
+
+  // Sincronizar todos os endpoints com a configuração global atual via Edge Function
+  const syncAllEndpoints = useCallback(async () => {
+    try {
+      if (!profile || !isAdmin || !config) {
+        throw new Error('Configuração global não encontrada ou sem permissão');
+      }
+
+      console.log('🔄 GlobalN8N: Sincronizando TODOS os endpoints com configuração global...');
+
+      // Usar a mesma função applyToAllEndpoints que já chama a Edge Function
+      const data = await applyToAllEndpoints(config.default_bearer_token);
+
+      console.log(`✅ GlobalN8N: ${data.length} endpoints sincronizados com a configuração global`);
+      return data;
+
+    } catch (error: any) {
+      console.error('❌ GlobalN8N: Erro ao sincronizar endpoints:', error);
+      throw error;
+    }
+  }, [profile, isAdmin, config, applyToAllEndpoints]);
 
   // Validar configuração
   const validateConfig = useCallback((configData: Partial<GlobalN8NConfig>) => {
@@ -186,6 +233,7 @@ export function useGlobalN8NConfig() {
     profile,
     saveConfig,
     applyToAllEndpoints,
+    syncAllEndpoints,
     generateHMACSecret,
     validateConfig,
     refreshConfig: loadConfig

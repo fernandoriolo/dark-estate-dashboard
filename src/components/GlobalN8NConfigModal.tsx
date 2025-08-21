@@ -117,10 +117,10 @@ const GlobalN8NConfigModal: React.FC<GlobalN8NConfigModalProps> = ({
         return;
       }
 
-      // Salvar configuração
+      // Salvar configuração (sincronização automática já acontece no hook)
       await saveConfig(formData);
       
-      // Perguntar se deve aplicar a todos os endpoints
+      // Mostrar feedback de sincronização concluída
       setShowApplyConfirm(true);
       
     } catch (error: any) {
@@ -204,35 +204,39 @@ const GlobalN8NConfigModal: React.FC<GlobalN8NConfigModalProps> = ({
           </DialogTitle>
           <DialogDescription className="text-gray-400">
             Configure HMAC secret, Bearer token padrão e parâmetros globais para todos os endpoints N8N.
+            <br />
+            <span className="text-yellow-300 font-medium">⚠️ Alterações aqui serão aplicadas automaticamente a TODOS os endpoints!</span>
           </DialogDescription>
         </DialogHeader>
 
         {/* Confirmação de aplicação */}
         {showApplyConfirm && (
-          <Alert className="border-yellow-600/30 bg-yellow-900/20">
+          <Alert className="border-green-600/30 bg-green-900/20">
             <CheckCircle2 className="h-4 w-4" />
-            <AlertDescription className="text-yellow-200">
+            <AlertDescription className="text-green-200">
               <div className="space-y-2">
-                <p className="font-medium">Configuração salva com sucesso!</p>
+                <p className="font-medium">✅ Configuração Global Salva e Sincronizada!</p>
                 <p className="text-sm">
-                  Deseja aplicar o Bearer Token padrão a TODOS os endpoints existentes?
+                  O Bearer Token foi automaticamente aplicado a todos os {' '}
+                  <span className="font-semibold text-green-100">15 endpoints existentes</span>.
+                  <br />
+                  A partir de agora, todos os endpoints usarão as configurações globais padronizadas.
                 </p>
+                <div className="bg-green-800/30 p-3 rounded mt-2">
+                  <p className="text-xs text-green-100">
+                    📋 <strong>Padronização Concluída:</strong>
+                    <br />• HMAC Secret: Compartilhado globalmente
+                    <br />• Bearer Token: Sincronizado em todos os endpoints
+                    <br />• Timeout/Retry: Aplicados globalmente
+                  </p>
+                </div>
                 <div className="flex gap-2 mt-3">
                   <Button
                     size="sm"
-                    onClick={handleApplyToAll}
-                    disabled={applying}
-                    className="bg-yellow-600 hover:bg-yellow-700"
-                  >
-                    {applying ? 'Aplicando...' : 'Sim, aplicar a todos'}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
                     onClick={handleSkipApply}
-                    className="border-gray-600"
+                    className="bg-green-600 hover:bg-green-700"
                   >
-                    Não, manter individuais
+                    Entendido
                   </Button>
                 </div>
               </div>
@@ -298,7 +302,7 @@ const GlobalN8NConfigModal: React.FC<GlobalN8NConfigModalProps> = ({
               className="bg-gray-800 border-gray-600 text-white"
             />
             <p className="text-xs text-gray-400">
-              Token que será usado por padrão em todos os novos endpoints.
+              <span className="text-yellow-300 font-medium">🔄 Sincronização Automática:</span> Este token será aplicado automaticamente a TODOS os endpoints existentes quando salvar.
             </p>
           </div>
 

@@ -24,11 +24,29 @@ import { useN8NEndpoints } from '@/hooks/useN8NEndpoints';
 const N8NManagerView: React.FC = () => {
   const [showGlobalConfig, setShowGlobalConfig] = useState(false);
   const [showEndpointTester, setShowEndpointTester] = useState(false);
-  const { config: globalConfig, loading: globalLoading, isAdmin } = useGlobalN8NConfig();
+  const [syncing, setSyncing] = useState(false);
+  const { config: globalConfig, loading: globalLoading, isAdmin, syncAllEndpoints } = useGlobalN8NConfig();
   const { endpoints, loading: endpointsLoading } = useN8NEndpoints();
   
   const totalEndpoints = endpoints.length;
   const activeEndpoints = endpoints.filter(e => e.is_active).length;
+  
+  // Verificar sincronização de Bearer Tokens
+  const syncedEndpoints = globalConfig ? 
+    endpoints.filter(e => e.bearer_token === globalConfig.default_bearer_token).length : 0;
+  const unsyncedEndpoints = totalEndpoints - syncedEndpoints;
+
+  const handleSyncEndpoints = async () => {
+    try {
+      setSyncing(true);
+      await syncAllEndpoints();
+      console.log('✅ Sincronização manual concluída');
+    } catch (error: any) {
+      console.error('❌ Erro na sincronização manual:', error);
+    } finally {
+      setSyncing(false);
+    }
+  };
   
   return (
     <div className="space-y-6">
@@ -61,6 +79,17 @@ const N8NManagerView: React.FC = () => {
             <Settings className="mr-2 h-4 w-4" />
             Testar Endpoints
           </Button>
+          {unsyncedEndpoints > 0 && (
+            <Button 
+              onClick={handleSyncEndpoints}
+              variant="outline"
+              className="border-red-600 text-red-400 hover:bg-red-600/20"
+              disabled={!isAdmin || syncing}
+            >
+              <Shield className="mr-2 h-4 w-4" />
+              {syncing ? 'Sincronizando...' : `Sincronizar ${unsyncedEndpoints} Endpoints`}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -85,6 +114,10 @@ const N8NManagerView: React.FC = () => {
                 <li>• Bearer Token Padrão: {globalConfig?.default_bearer_token ? '✅ Definido' : '❌ Não definido'}</li>
                 <li>• Timeout: {globalConfig?.default_timeout_ms || 30000}ms</li>
                 <li>• Retry Attempts: {globalConfig?.retry_attempts || 3}</li>
+                <li>• <span className={syncedEndpoints === totalEndpoints ? 'text-green-300' : 'text-red-300'}>
+                  Sincronização: {syncedEndpoints}/{totalEndpoints} endpoints 
+                  {syncedEndpoints === totalEndpoints ? ' ✅' : ' ⚠️'}
+                </span></li>
               </ul>
             </div>
 
@@ -130,42 +163,122 @@ const N8NManagerView: React.FC = () => {
                 <Zap className="h-4 w-4" />
                 Fluxo de Autenticação Segura
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="flex flex-col items-center space-y-2">
+              
+              {/* Fluxo Visual */}
+              <div className="flex items-center justify-center gap-2 mb-6">
+                <div className="flex flex-col items-center space-y-2 flex-1 max-w-32">
                   <div className="bg-blue-600/20 p-3 rounded-full border border-blue-500/30">
                     <Globe className="h-6 w-6 text-blue-400" />
                   </div>
                   <div className="text-center">
                     <div className="text-sm font-medium text-blue-300">1. Frontend</div>
-                    <div className="text-xs text-gray-400">React App envia dados</div>
+                    <div className="text-xs text-gray-400">React App</div>
                   </div>
                 </div>
                 
-                <div className="hidden md:flex items-center justify-center">
-                  <ArrowRight className="h-5 w-5 text-gray-500" />
-                </div>
+                <ArrowRight className="h-5 w-5 text-gray-500 flex-shrink-0" />
                 
-                <div className="flex flex-col items-center space-y-2">
+                <div className="flex flex-col items-center space-y-2 flex-1 max-w-32">
                   <div className="bg-green-600/20 p-3 rounded-full border border-green-500/30">
                     <Server className="h-6 w-6 text-green-400" />
                   </div>
                   <div className="text-center">
                     <div className="text-sm font-medium text-green-300">2. Edge Function</div>
-                    <div className="text-xs text-gray-400">Processa & assina</div>
+                    <div className="text-xs text-gray-400">Supabase</div>
                   </div>
                 </div>
                 
-                <div className="hidden md:flex items-center justify-center">
-                  <ArrowRight className="h-5 w-5 text-gray-500" />
-                </div>
+                <ArrowRight className="h-5 w-5 text-gray-500 flex-shrink-0" />
                 
-                <div className="flex flex-col items-center space-y-2">
+                <div className="flex flex-col items-center space-y-2 flex-1 max-w-32">
                   <div className="bg-orange-600/20 p-3 rounded-full border border-orange-500/30">
                     <Settings className="h-6 w-6 text-orange-400" />
                   </div>
                   <div className="text-center">
                     <div className="text-sm font-medium text-orange-300">3. N8N Webhook</div>
-                    <div className="text-xs text-gray-400">Recebe & valida</div>
+                    <div className="text-xs text-gray-400">Automação</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Detalhamento do Fluxo */}
+              <div className="space-y-4 bg-gray-900/40 rounded-lg p-4">
+                <h4 className="text-purple-200 font-medium mb-3 flex items-center gap-2">
+                  <Activity className="h-4 w-4" />
+                  Como Funciona o Fluxo Completo
+                </h4>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="flex flex-col items-center text-center space-y-3">
+                    <div className="bg-blue-600/20 w-8 h-8 rounded-full flex items-center justify-center">
+                      <span className="text-blue-400 text-sm font-bold">1</span>
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-blue-300 mb-2">Frontend (React)</div>
+                      <div className="text-xs text-gray-400 leading-relaxed text-left">
+                        • Usuário interage com a aplicação (ex: cadastra cliente)<br/>
+                        • Frontend coleta dados do formulário<br/>
+                        • Chama função do Supabase Edge Functions<br/>
+                        • <span className="text-yellow-300">Nunca manipula secrets diretamente</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-col items-center text-center space-y-3">
+                    <div className="bg-green-600/20 w-8 h-8 rounded-full flex items-center justify-center">
+                      <span className="text-green-400 text-sm font-bold">2</span>
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-green-300 mb-2">Edge Function (Supabase)</div>
+                      <div className="text-xs text-gray-400 leading-relaxed text-left">
+                        • Recebe payload do frontend<br/>
+                        • Busca configuração HMAC/Bearer no banco<br/>
+                        • Monta evento padronizado N8N com <code className="bg-gray-800/50 px-1 rounded">idempotencyKey</code><br/>
+                        • Gera assinatura HMAC-SHA256 do payload<br/>
+                        • <span className="text-yellow-300">Adiciona headers de autenticação</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-col items-center text-center space-y-3">
+                    <div className="bg-orange-600/20 w-8 h-8 rounded-full flex items-center justify-center">
+                      <span className="text-orange-400 text-sm font-bold">3</span>
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-orange-300 mb-2">N8N Webhook</div>
+                      <div className="text-xs text-gray-400 leading-relaxed text-left">
+                        • Recebe requisição HTTP com headers<br/>
+                        • Valida Bearer token (autorização)<br/>
+                        • Recalcula HMAC do payload recebido<br/>
+                        • Compara assinaturas (integridade)<br/>
+                        • <span className="text-yellow-300">Processa automação apenas se válido</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-purple-900/20 border border-purple-600/20 rounded-lg p-3 mt-4">
+                  <div className="text-sm font-medium text-purple-300 mb-2 flex items-center gap-2">
+                    <Shield className="h-4 w-4" />
+                    Segurança em Camadas
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-gray-300">
+                    <div>
+                      <div className="text-purple-200 font-medium mb-1">🔐 Autenticação</div>
+                      <div>Bearer Token identifica quem está enviando</div>
+                    </div>
+                    <div>
+                      <div className="text-purple-200 font-medium mb-1">🛡️ Integridade</div>
+                      <div>HMAC garante que dados não foram alterados</div>
+                    </div>
+                    <div>
+                      <div className="text-purple-200 font-medium mb-1">🔄 Idempotência</div>
+                      <div>Evita processamento duplicado de eventos</div>
+                    </div>
+                    <div>
+                      <div className="text-purple-200 font-medium mb-1">⚡ Performance</div>
+                      <div>Edge Functions próximas ao usuário</div>
+                    </div>
                   </div>
                 </div>
               </div>
