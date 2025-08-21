@@ -350,6 +350,24 @@ export function AppointmentCalendar({
     }
   };
 
+  // Função para extrair o nome correto do corretor
+  const getCorrectBrokerName = (appointment: Appointment) => {
+    // Primeiro, tentar extrair do texto do cliente se houver "corretor responsável:"
+    const clientText = appointment.client;
+    const corretorMatch = clientText.match(/corretor responsável:\s*(.+?)$/i);
+    
+    if (corretorMatch) {
+      return corretorMatch[1].trim();
+    }
+    
+    // Se não encontrou no texto do cliente, usar o campo corretor
+    if (appointment.corretor) {
+      return appointment.corretor.replace(/📋|📝/g, '').trim();
+    }
+    
+    return null;
+  };
+
   // Função para deletar evento
   const handleDeleteEvent = (appointment: Appointment) => {
     const message = `Tem certeza que deseja deletar este evento?\n\nCliente: ${appointment.client}\nImóvel: ${appointment.property}\nData: ${appointment.date.toLocaleDateString('pt-BR')} às ${appointment.date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}\n\nEsta ação não pode ser desfeita!`;
@@ -918,27 +936,36 @@ export function AppointmentCalendar({
                       </div>
                     </div>
                     
-                    {/* Corretor - sempre no canto direito quando "Todos" estiver selecionado */}
-                    {selectedAgenda === "Todos" && appointment.corretor && (
-                      <div className={`px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm hover:shadow-md transition-all duration-200 ${
-                        appointment.corretor === 'Isis' ? 'bg-pink-500/25 text-pink-200 border border-pink-400/50 hover:bg-pink-500/35' :
-                        appointment.corretor === 'Arthur' ? 'bg-indigo-500/25 text-indigo-200 border border-indigo-400/50 hover:bg-indigo-500/35' :
-                        'bg-gray-500/25 text-gray-200 border border-gray-400/50 hover:bg-gray-500/35'
-                      }`}>
-                        <span className="text-lg animate-pulse">
-                          {appointment.corretor === 'Isis' ? '👩‍💼' : 
-                           appointment.corretor === 'Arthur' ? '👨‍💼' : '👤'}
-                        </span>
-                        <span className="font-bold tracking-wide">{appointment.corretor}</span>
-                      </div>
-                    )}
+                    {/* Corretor - sempre no canto direito */}
+                    {(() => {
+                      const correctBrokerName = getCorrectBrokerName(appointment);
+                      return correctBrokerName && (
+                        <div className={`px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm hover:shadow-md transition-all duration-200 ${
+                          correctBrokerName.includes('Isis') ? 'bg-pink-500/25 text-pink-200 border border-pink-400/50 hover:bg-pink-500/35' :
+                          correctBrokerName.includes('Arthur') ? 'bg-indigo-500/25 text-indigo-200 border border-indigo-400/50 hover:bg-indigo-500/35' :
+                          correctBrokerName.includes('Tiago') ? 'bg-blue-500/25 text-blue-200 border border-blue-400/50 hover:bg-blue-500/35' :
+                          'bg-gray-500/25 text-gray-200 border border-gray-400/50 hover:bg-gray-500/35'
+                        }`}>
+                          <span className="text-lg animate-pulse">
+                            {correctBrokerName.includes('Isis') ? '👩‍💼' : 
+                             correctBrokerName.includes('Arthur') ? '👨‍💼' :
+                             correctBrokerName.includes('Tiago') ? '👨‍💼' : '👤'}
+                          </span>
+                          <span className="font-bold tracking-wide">
+                            {correctBrokerName}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
                    
                   {/* Nome do cliente */}
                   <div className="mb-3">
                     <div className="flex items-center gap-2">
                       <User className="h-4 w-4 text-emerald-400" />
-                      <span className="text-white font-medium text-lg">{appointment.client}</span>
+                      <span className="text-white font-medium text-lg">
+                        {appointment.client.replace(/\.\s*corretor responsável:.*$/i, '').trim()}
+                      </span>
                     </div>
                   </div>
                    
