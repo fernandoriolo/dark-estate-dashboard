@@ -224,15 +224,14 @@ export async function fetchHeatmapAtividades() {
 
 /**
  * Busca dados de conversas dos corretores para o heatmap
- * Baseado em timestamps reais das mensagens WhatsApp (from_me = true)
- * Relacionamento: whatsapp_messages -> whatsapp_instances -> user_profiles
+ * Baseado na nova arquitetura imobipro_messages (type = 'ai')
+ * Relacionamento: imobipro_messages -> whatsapp_instances -> user_profiles
  * @returns Matriz 7x24 (dias da semana x horas) com total de mensagens enviadas pelos corretores
  */
 export async function fetchHeatmapConversas() {
-	// TEMPORÁRIO: Usando view base para desenvolvimento (sem RLS)
-	// TODO: Voltar para vw_segura_heatmap_conversas_corretores quando autenticação estiver funcionando
+	// Usando nova view baseada em imobipro_messages
 	const { data, error } = await supabase
-		.from('vw_metricas_heatmap_conversas_corretores')
+		.from('vw_imobipro_heatmap_conversas_corretores')
 		.select('dia_semana, hora, total_mensagens');
 	
 	if (error) {
@@ -279,7 +278,7 @@ export async function fetchHeatmapConversas() {
 }
 
 /**
- * Busca lista de corretores (role='corretor') que têm conversas no WhatsApp
+ * Busca lista de corretores (role='corretor') que têm conversas no sistema imobipro
  * Para popular o filtro do heatmap
  */
 export async function fetchCorretoresComConversas() {
@@ -297,11 +296,11 @@ export async function fetchCorretoresComConversas() {
 	
 	if (!brokers || brokers.length === 0) return [];
 	
-	// Verificar quais corretores têm conversas
+	// Verificar quais corretores têm conversas na nova arquitetura
 	const brokerIds = brokers.map(b => b.id);
 	
 	const { data: conversas, error: conversasError } = await supabase
-		.from('vw_metricas_heatmap_conversas_corretores')
+		.from('vw_imobipro_heatmap_conversas_corretores')
 		.select('user_id')
 		.in('user_id', brokerIds);
 	
@@ -323,6 +322,7 @@ export async function fetchCorretoresComConversas() {
 
 /**
  * Busca dados de conversas filtrados por corretor específico
+ * Baseado na nova arquitetura imobipro_messages
  */
 export async function fetchHeatmapConversasPorCorretor(brokerId?: string) {
 	if (!brokerId) {
@@ -331,7 +331,7 @@ export async function fetchHeatmapConversasPorCorretor(brokerId?: string) {
 	}
 	
 	const { data, error } = await supabase
-		.from('vw_metricas_heatmap_conversas_corretores')
+		.from('vw_imobipro_heatmap_conversas_corretores')
 		.select('dia_semana, hora, total_mensagens')
 		.eq('user_id', brokerId);
 	

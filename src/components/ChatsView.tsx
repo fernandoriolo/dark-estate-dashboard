@@ -1,14 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { useChatsDataSimple as useChatsData } from '@/hooks/useChatsDataSimple';
+import { useImobiproChats } from '@/hooks/useImobiproChats';
 import { useUserProfile } from '@/hooks/useUserProfile';
-import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { 
   Users, 
@@ -39,27 +37,38 @@ export function ChatsView() {
   const { profile } = useUserProfile();
   const location = useLocation();
   
-  console.log('🎬 ChatsView renderizado. Profile:', profile);
+  console.log('🎬 ChatsView renderizado com nova arquitetura. Profile:', profile);
   
   const {
+    // Estados de loading
     loading,
-    error,
-    messagesLoading,
-    corretoresLoading,
+    instanciasLoading,
     conversasLoading,
-    corretores,
-    selectedCorretor,
-    setSelectedCorretor,
+    mensagensLoading,
+    
+    // Estados de erro
+    error,
+    
+    // Dados
+    instancias,
     conversas,
-    selectedChat,
-    setSelectedChat,
-    messages,
-    sendMessage
-  } = useChatsData();
+    mensagens,
+    
+    // Seleções
+    selectedInstancia,
+    selectedSession,
+    searchTerm,
+    
+    // Ações
+    setSelectedInstancia,
+    setSelectedSession,
+    setSearchTerm,
+    sendMessage,
+    refreshData
+  } = useImobiproChats();
 
   const [messageInput, setMessageInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
   const [crmNavigationInfo, setCrmNavigationInfo] = useState<{leadName: string; leadPhone: string} | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
@@ -72,72 +81,52 @@ export function ChatsView() {
     }
   }, [location.state]);
 
-  // Efeito para buscar automaticamente qual corretor tem a conversa do lead
+  // Efeito para buscar automaticamente qual instância tem a conversa do lead
   useEffect(() => {
     if (!crmNavigationInfo) return;
     
-    // Para gestores/admins: buscar qual corretor tem a conversa
+    // Para gestores/admins: buscar qual instância tem a conversa
     const isManager = profile?.role === 'admin' || profile?.role === 'gestor';
     
-    if (isManager && !selectedCorretor && corretores.length > 0) {
-      console.log('🔍 Buscando corretor que possui conversa com o lead...');
+    if (isManager && !selectedInstancia && instancias.length > 0) {
+      console.log('🔍 Buscando instância que possui conversa com o lead...');
       
-      const findCorretorWithConversation = async () => {
+      const findInstanciaWithConversation = async () => {
         const normalizePhone = (phone: string) => phone.replace(/\D/g, '');
         const targetPhone = normalizePhone(crmNavigationInfo.leadPhone);
         
         try {
-          // Buscar em todas as conversas qual corretor tem o telefone
-          const { data: chats, error } = await supabase
-            .from('whatsapp_chats')
-            .select('user_id, contact_phone, lead_id')
-            .not('user_id', 'is', null);
-
-          if (error) {
-            console.error('Erro ao buscar conversas:', error);
-            return;
-          }
-
-          // Encontrar chat que corresponde ao telefone
-          const matchingChat = chats?.find(chat => {
-            const contactPhone = normalizePhone(chat.contact_phone || '');
-            return contactPhone.includes(targetPhone.slice(-9));
-          });
-
-          if (matchingChat && matchingChat.user_id) {
-            const corretor = corretores.find(c => c.corretor_id === matchingChat.user_id);
-            if (corretor) {
-              console.log('✅ Corretor encontrado automaticamente:', corretor.corretor_nome);
-              setSelectedCorretor(matchingChat.user_id);
+          // Verificar cada instância para encontrar conversas que correspondam
+          for (const instancia of instancias) {
+            // Simular busca nas conversas da instância (seria feito via API)
+            console.log(`🔍 Verificando instância: ${instancia.instancia}`);
+            
+            // TODO: Implementar busca real por telefone quando tivermos dados estruturados
+            // Por ora, selecionar SDR como fallback
+            if (instancia.is_sdr) {
+              console.log('✅ Selecionando SDR como instância padrão');
+              setSelectedInstancia(instancia.instancia);
+              break;
             }
-          } else if (chats?.some(chat => chat.user_id === null)) {
-            // Verificar se está nas conversas do SDR Agent
-            const sdrAgent = corretores.find(c => c.corretor_id === 'sdr-agent');
-            if (sdrAgent) {
-              console.log('✅ Conversa encontrada no SDR Agent');
-              setSelectedCorretor('sdr-agent');
-            }
-          } else {
-            console.log('❌ Nenhum corretor encontrado com conversa para este telefone');
           }
         } catch (error) {
-          console.error('Erro ao buscar corretor:', error);
+          console.error('Erro ao buscar instância:', error);
         }
       };
 
-      findCorretorWithConversation();
+      findInstanciaWithConversation();
     }
-  }, [crmNavigationInfo, profile?.role, selectedCorretor, corretores, setSelectedCorretor]);
+  }, [crmNavigationInfo, profile?.role, selectedInstancia, instancias, setSelectedInstancia]);
 
-  // Efeito separado para buscar conversa quando conversas estão disponíveis
+  // Efeito para buscar conversa quando conversas estão disponíveis
   useEffect(() => {
     if (!crmNavigationInfo) return;
     
-    // Para gestores/admins: precisa aguardar seleção de corretor para carregar conversas
-    const isManagerAwaitingSelection = (profile?.role === 'admin' || profile?.role === 'gestor') && !selectedCorretor;
+    // Para gestores/admins: precisa aguardar seleção de instância para carregar conversas
+    const isManagerAwaitingSelection = (profile?.role === 'admin' || profile?.role === 'gestor') && !selectedInstancia;
     
     if (isManagerAwaitingSelection) {
-      console.log('👑 Gestor/Admin: aguardando seleção de corretor para buscar conversa');
+      console.log('👑 Gestor/Admin: aguardando seleção de instância para buscar conversa');
       return;
     }
     
@@ -158,30 +147,30 @@ export function ChatsView() {
       const normalizePhone = (phone: string) => phone.replace(/\D/g, '');
       const targetPhone = normalizePhone(crmNavigationInfo.leadPhone);
       
-      // Buscar conversa que corresponda ao telefone
+      // Buscar conversa por nome do cliente (extraído da primeira mensagem)
       const matchingChat = conversas.find(conversa => {
-        const contactPhone = normalizePhone(conversa.contact_phone || '');
-        const leadPhone = normalizePhone(conversa.lead_phone || '');
-        return contactPhone.includes(targetPhone.slice(-9)) || leadPhone.includes(targetPhone.slice(-9));
+        const clienteNome = conversa.cliente_nome?.toLowerCase() || '';
+        const leadName = crmNavigationInfo.leadName.toLowerCase();
+        
+        // Tentar match por nome ou por session_id se tiver formato específico
+        return clienteNome.includes(leadName) || 
+               leadName.includes(clienteNome) ||
+               conversa.primeiro_contato?.toLowerCase().includes(leadName);
       });
       
       if (matchingChat) {
         console.log('✅ Conversa encontrada:', matchingChat);
-        setSelectedChat(matchingChat.chat_id);
-        // Se tiver corretor específico, selecionar também
-        if (matchingChat.corretor_id && selectedCorretor !== matchingChat.corretor_id) {
-          setSelectedCorretor(matchingChat.corretor_id);
-        }
+        setSelectedSession(matchingChat.session_id);
         // Limpar info de navegação já que encontrou
         setCrmNavigationInfo(null);
       } else {
-        console.log('❌ Nenhuma conversa encontrada para o telefone:', crmNavigationInfo.leadPhone);
+        console.log('❌ Nenhuma conversa encontrada para:', crmNavigationInfo.leadName);
         // Manter info para mostrar aviso ao usuário
       }
     };
     
     findAndSelectChat();
-  }, [crmNavigationInfo, conversas, conversasLoading, selectedCorretor, profile?.role, setSelectedChat, setSelectedCorretor]);
+  }, [crmNavigationInfo, conversas, conversasLoading, selectedInstancia, profile?.role, setSelectedSession]);
 
   // Scroll para o final das mensagens
   const scrollToBottom = () => {
@@ -190,21 +179,17 @@ export function ChatsView() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [mensagens]);
 
-  // Filtrar conversas por termo de busca
-  const filteredConversas = conversas.filter(conversa =>
-    conversa.lead_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    conversa.contact_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (conversa.last_message && conversa.last_message.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // Filtrar conversas já é feito pelo hook através do searchTerm
+  const filteredConversas = conversas;
 
   // Enviar mensagem
   const handleSendMessage = async () => {
-    if (!messageInput.trim() || !selectedChat || sendingMessage) return;
+    if (!messageInput.trim() || !selectedSession || sendingMessage) return;
 
     setSendingMessage(true);
-    const success = await sendMessage(selectedChat, messageInput);
+    const success = await sendMessage(selectedSession, messageInput);
     
     if (success) {
       setMessageInput('');
@@ -224,8 +209,8 @@ export function ChatsView() {
     }
   };
 
-  // Renderizar lista de corretores (para gestores)
-  const renderCorretoresList = () => (
+  // Renderizar lista de instâncias/corretores (para gestores)
+  const renderInstanciasList = () => (
     <div className="w-80 border-r border-gray-700/50 bg-gradient-to-b from-gray-900 to-gray-950 flex flex-col shadow-xl">
       <div className="relative p-6 border-b border-gray-700/50 bg-gradient-to-r from-gray-900/90 to-gray-850">
         <div className="absolute inset-0 bg-gradient-to-r from-blue-600/5 to-purple-600/5"></div>
@@ -233,32 +218,32 @@ export function ChatsView() {
           <div className="p-2 bg-blue-600/20 rounded-lg border border-blue-500/30">
             <Users className="h-5 w-5 text-blue-400" />
           </div>
-          <h2 className="text-lg font-semibold text-white">Corretores</h2>
+          <h2 className="text-lg font-semibold text-white">Instâncias/Corretores</h2>
         </div>
         <div className="text-sm text-gray-400 bg-gray-800/50 px-3 py-2 rounded-lg border border-gray-700/50">
-          {corretores.length} corretor(es) ativo(s)
+          {instancias.length} instância(s) ativa(s)
         </div>
       </div>
 
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-3">
-          {corretoresLoading && corretores.length === 0 ? (
+          {instanciasLoading && instancias.length === 0 ? (
             <div className="text-center py-8">
               <div className="relative mx-auto mb-4 w-6 h-6">
                 <div className="absolute inset-0 border-2 border-blue-500/30 rounded-full"></div>
                 <div className="absolute inset-0 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
               </div>
-              <div className="text-gray-400 text-sm">Carregando corretores...</div>
+              <div className="text-gray-400 text-sm">Carregando instâncias...</div>
             </div>
           ) : (
-            corretores.map((corretor) => (
+            instancias.map((instancia) => (
             <Card
-              key={corretor.corretor_id}
+              key={instancia.instancia}
               className={cn(
                 "cursor-pointer transition-all duration-300 bg-gradient-to-r from-gray-900/90 to-gray-950/90 border-gray-700/50 hover:from-gray-800/95 hover:to-gray-900/95 hover:shadow-lg hover:border-gray-600/50 backdrop-blur-sm",
-                selectedCorretor === corretor.corretor_id && "from-gray-950/95 to-black/90 border-green-600/80 shadow-lg shadow-green-500/30 ring-1 ring-green-500/20"
+                selectedInstancia === instancia.instancia && "from-gray-950/95 to-black/90 border-green-600/80 shadow-lg shadow-green-500/30 ring-1 ring-green-500/20"
               )}
-              onClick={() => setSelectedCorretor(corretor.corretor_id)}
+              onClick={() => setSelectedInstancia(instancia.instancia)}
             >
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
@@ -266,48 +251,56 @@ export function ChatsView() {
                     <Avatar className="w-12 h-12">
                       <AvatarFallback className={cn(
                         "text-white font-semibold border-2",
-                        corretor.corretor_id === 'sdr-agent' 
+                        instancia.is_sdr 
                           ? "bg-gradient-to-br from-purple-600 to-purple-700 border-purple-500/30" 
                           : "bg-gradient-to-br from-blue-600 to-blue-700 border-blue-500/30"
                       )}>
-                        {getInitials(corretor.corretor_nome)}
+                        {instancia.is_sdr ? 'SDR' : getInitials(instancia.corretor_nome || instancia.instancia)}
                       </AvatarFallback>
                     </Avatar>
                     <div className={cn(
                       "absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-gray-900",
-                      corretor.corretor_id === 'sdr-agent' ? "bg-purple-500" : "bg-green-500"
+                      instancia.is_sdr ? "bg-purple-500" : "bg-green-500"
                     )}></div>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-white truncate flex items-center gap-2 mb-1">
-                      {corretor.corretor_nome}
-                      {corretor.corretor_id === 'sdr-agent' && (
+                      {instancia.instance_display_name}
+                      {instancia.is_sdr && (
                         <Badge className="bg-gradient-to-r from-purple-600 to-purple-700 text-white text-xs border border-purple-500/30">
                           SDR
                         </Badge>
                       )}
                     </div>
+                    {instancia.corretor_nome && !instancia.is_sdr && (
+                      <div className="text-xs text-gray-400 truncate mb-1">
+                        {instancia.corretor_nome}
+                      </div>
+                    )}
                     <div className={cn(
                       "text-xs flex items-center gap-2",
-                      selectedCorretor === corretor.corretor_id ? "text-gray-200" : "text-gray-400"
+                      selectedInstancia === instancia.instancia ? "text-gray-200" : "text-gray-400"
                     )}>
                       <div className="flex items-center gap-1">
                         <MessageSquare className="h-3 w-3" />
-                        <span>{corretor.total_conversas} conversa(s)</span>
+                        <span>{instancia.total_conversas} conversa(s)</span>
                       </div>
-                      {corretor.corretor_id === 'sdr-agent' && (
+                      {instancia.status && (
                         <>
                           <div className="w-1 h-1 bg-gray-600 rounded-full"></div>
-                          <span className={cn(
-                            selectedCorretor === corretor.corretor_id ? "text-purple-300" : "text-purple-400"
-                          )}>Sistema</span>
+                          <Badge 
+                            variant={instancia.is_active ? "default" : "secondary"}
+                            className="text-xs"
+                          >
+                            {instancia.status}
+                          </Badge>
                         </>
                       )}
                     </div>
                   </div>
                   <ChevronRight className={cn(
                     "h-4 w-4 transition-transform duration-200",
-                    selectedCorretor === corretor.corretor_id ? "text-green-400 transform rotate-90" : "text-gray-400"
+                    selectedInstancia === instancia.instancia ? "text-green-400 transform rotate-90" : "text-gray-400"
                   )} />
                 </div>
               </CardContent>
@@ -351,9 +344,9 @@ export function ChatsView() {
           <div className="text-sm text-gray-400 bg-gray-800/50 px-3 py-2 rounded-lg border border-gray-700/50">
             {filteredConversas.length} conversa(s)
           </div>
-          {profile?.role !== 'corretor' && selectedCorretor && (
+          {profile?.role !== 'corretor' && selectedInstancia && (
             <div className="text-xs text-blue-400 bg-blue-600/10 px-2 py-1 rounded-full border border-blue-500/30">
-              {corretores.find(c => c.corretor_id === selectedCorretor)?.corretor_nome}
+              {instancias.find(i => i.instancia === selectedInstancia)?.instance_display_name}
             </div>
           )}
         </div>
@@ -372,12 +365,12 @@ export function ChatsView() {
           ) : (
             filteredConversas.map((conversa) => (
             <Card
-              key={conversa.chat_id}
+              key={conversa.session_id}
               className={cn(
                 "cursor-pointer transition-all duration-300 bg-gradient-to-r from-gray-900/90 to-gray-950/90 border-gray-700/50 hover:from-gray-800/95 hover:to-gray-900/95 hover:shadow-lg hover:border-gray-600/50 backdrop-blur-sm h-32 min-h-32 max-h-32",
-                selectedChat === conversa.chat_id && "from-gray-950/95 to-black/90 border-green-600/80 shadow-lg shadow-green-500/30 ring-1 ring-green-500/20"
+                selectedSession === conversa.session_id && "from-gray-950/95 to-black/90 border-green-600/80 shadow-lg shadow-green-500/30 ring-1 ring-green-500/20"
               )}
-              onClick={() => setSelectedChat(conversa.chat_id)}
+              onClick={() => setSelectedSession(conversa.session_id)}
             >
               <CardContent className="p-4 h-full">
                 <div className="flex items-start gap-3 h-full">
@@ -386,26 +379,26 @@ export function ChatsView() {
                     <Avatar className="w-12 h-12 border-2 border-gray-600/30">
                       <AvatarFallback className={cn(
                         "text-white font-semibold",
-                        conversa.corretor_id === 'sdr-agent' 
+                        conversa.instancia === 'sdr' 
                           ? "bg-gradient-to-br from-purple-600 to-purple-700" 
                           : "bg-gradient-to-br from-green-600 to-green-700"
                       )}>
-                        {getInitials(conversa.lead_name)}
+                        {getInitials(conversa.cliente_nome || 'Cliente')}
                       </AvatarFallback>
                     </Avatar>
-                    {conversa.unread_count > 0 && (
+                    {conversa.has_unread && (
                       <div className="absolute -top-1 -right-1 w-5 h-5 bg-gradient-to-r from-red-500 to-red-600 rounded-full border-2 border-gray-900 flex items-center justify-center">
-                        <span className="text-xs text-white font-bold">{conversa.unread_count}</span>
+                        <span className="text-xs text-white font-bold">!</span>
                       </div>
                     )}
                   </div>
                   
                   <div className="flex-1 min-w-0 flex flex-col justify-between h-full">
                     <div>
-                      {/* Nome do Lead */}
+                      {/* Nome do Cliente */}
                       <div className="font-medium text-white truncate mb-2 flex items-center gap-2">
-                        {conversa.lead_name}
-                        {conversa.corretor_id === 'sdr-agent' && (
+                        {conversa.cliente_nome || 'Cliente'}
+                        {conversa.instancia === 'sdr' && (
                           <Badge className="bg-gradient-to-r from-purple-600 to-purple-700 text-white text-xs border border-purple-500/30">
                             SDR
                           </Badge>
@@ -415,12 +408,12 @@ export function ChatsView() {
                       {/* Última mensagem */}
                       <div className={cn(
                         "text-sm leading-relaxed line-clamp-2 overflow-hidden mb-2",
-                        selectedChat === conversa.chat_id ? "text-gray-100" : "text-gray-300"
+                        selectedSession === conversa.session_id ? "text-gray-100" : "text-gray-300"
                       )}>
-                        {conversa.last_message || (
+                        {conversa.ultima_mensagem || (
                           <span className={cn(
                             "italic",
-                            selectedChat === conversa.chat_id ? "text-gray-300" : "text-gray-500"
+                            selectedSession === conversa.session_id ? "text-gray-300" : "text-gray-500"
                           )}>Nenhuma mensagem</span>
                         )}
                       </div>
@@ -429,31 +422,29 @@ export function ChatsView() {
                     {/* Informações adicionais */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        {conversa.lead_phone && (
-                          <div className={cn(
-                            "flex items-center gap-1.5 text-xs px-2 py-1 rounded-md",
-                            selectedChat === conversa.chat_id 
-                              ? "text-gray-200 bg-gray-800/70" 
-                              : "text-gray-400 bg-gray-700/50"
-                          )}>
-                            <Phone className="h-3 w-3 text-blue-400" />
-                            <span className="truncate max-w-20 font-medium">
-                              {conversa.lead_phone}
-                            </span>
-                          </div>
-                        )}
+                        <div className={cn(
+                          "flex items-center gap-1.5 text-xs px-2 py-1 rounded-md",
+                          selectedSession === conversa.session_id 
+                            ? "text-gray-200 bg-gray-800/70" 
+                            : "text-gray-400 bg-gray-700/50"
+                        )}>
+                          <MessageSquare className="h-3 w-3 text-blue-400" />
+                          <span className="font-medium">
+                            {conversa.total_mensagens} msgs
+                          </span>
+                        </div>
                       </div>
                       
                       <div className="flex items-center gap-2">
-                        {conversa.last_message_time && (
+                        {conversa.ultima_mensagem_time && (
                           <div className={cn(
                             "text-xs px-2 py-1 rounded-md flex items-center gap-1",
-                            selectedChat === conversa.chat_id 
+                            selectedSession === conversa.session_id 
                               ? "text-gray-200 bg-gray-800/70" 
                               : "text-gray-500 bg-gray-800/50"
                           )}>
                             <Clock className="h-3 w-3" />
-                            {formatMessageTime(conversa.last_message_time)}
+                            {formatMessageTime(conversa.ultima_mensagem_time)}
                           </div>
                         )}
                       </div>
@@ -486,9 +477,9 @@ export function ChatsView() {
 
   // Renderizar área de mensagens
   const renderMessagesArea = () => {
-    const selectedConversa = conversas.find(c => c.chat_id === selectedChat);
+    const selectedConversa = conversas.find(c => c.session_id === selectedSession);
     
-    if (!selectedChat || !selectedConversa) {
+    if (!selectedSession || !selectedConversa) {
       return (
         <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-gray-800 via-gray-850 to-gray-900 border-l border-gray-700/50">
           <div className="text-center text-gray-400">
@@ -500,7 +491,7 @@ export function ChatsView() {
             <div className="text-sm max-w-xs">
               {profile?.role === 'corretor' 
                 ? 'Escolha uma conversa para visualizar as mensagens'
-                : 'Selecione um corretor e depois uma conversa'
+                : 'Selecione uma instância e depois uma conversa'
               }
             </div>
           </div>
@@ -518,26 +509,26 @@ export function ChatsView() {
               <div className="absolute inset-0 bg-gradient-to-br from-green-500 to-green-600 rounded-full blur-sm opacity-50"></div>
               <Avatar className="relative w-12 h-12 border-2 border-green-500/30">
                 <AvatarFallback className="bg-gradient-to-br from-green-600 to-green-700 text-white font-semibold">
-                  {getInitials(selectedConversa.lead_name)}
+                  {getInitials(selectedConversa.cliente_nome || 'Cliente')}
                 </AvatarFallback>
               </Avatar>
               <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-gray-900"></div>
             </div>
             <div className="flex-1">
               <div className="font-semibold text-white text-lg mb-1">
-                {selectedConversa.lead_name}
+                {selectedConversa.cliente_nome || 'Cliente'}
               </div>
               <div className="text-sm text-gray-300 flex items-center gap-3">
                 <div className="flex items-center gap-1.5">
-                  <Phone className="h-3.5 w-3.5 text-blue-400" />
-                  <span className="font-medium">{selectedConversa.lead_phone}</span>
+                  <MessageSquare className="h-3.5 w-3.5 text-blue-400" />
+                  <span className="font-medium">Sessão: {selectedConversa.session_id.slice(0, 8)}...</span>
                 </div>
                 {profile?.role !== 'corretor' && (
                   <>
                     <div className="w-1 h-1 bg-gray-500 rounded-full"></div>
                     <div className="flex items-center gap-1.5">
                       <User className="h-3.5 w-3.5 text-purple-400" />
-                      <span>{selectedConversa.corretor_nome}</span>
+                      <span>{selectedConversa.instancia}</span>
                     </div>
                   </>
                 )}
@@ -553,7 +544,7 @@ export function ChatsView() {
         {/* Área de mensagens - Design Moderno */}
         <ScrollArea className="flex-1 p-6 bg-gradient-to-b from-gray-850/50 to-gray-900/50">
           <div className="space-y-6">
-            {messagesLoading ? (
+            {mensagensLoading ? (
               <div className="text-center py-12">
                 <div className="relative mx-auto mb-4 w-8 h-8">
                   <div className="absolute inset-0 border-3 border-blue-500/30 rounded-full"></div>
@@ -561,7 +552,7 @@ export function ChatsView() {
                 </div>
                 <div className="text-gray-300 font-medium">Carregando mensagens...</div>
               </div>
-            ) : messages.length === 0 ? (
+            ) : mensagens.length === 0 ? (
               <div className="text-center py-12">
                 <div className="relative mb-6">
                   <div className="absolute inset-0 bg-gradient-to-r from-blue-600/20 to-purple-600/20 rounded-full blur-xl"></div>
@@ -573,18 +564,18 @@ export function ChatsView() {
                 </div>
               </div>
             ) : (
-              messages.map((message, index) => (
+              mensagens.map((message, index) => (
                 <div
                   key={message.id}
                   className={cn(
                     "flex items-end gap-3 group",
-                    message.from_me ? "justify-end" : "justify-start"
+                    !message.is_from_client ? "justify-end" : "justify-start"
                   )}
                 >
-                  {!message.from_me && (
+                  {message.is_from_client && (
                     <Avatar className="w-8 h-8 opacity-80 group-hover:opacity-100 transition-opacity">
                       <AvatarFallback className="bg-gradient-to-br from-green-600 to-green-700 text-white text-xs">
-                        {getInitials(selectedConversa.lead_name)}
+                        {getInitials(selectedConversa.cliente_nome || 'Cliente')}
                       </AvatarFallback>
                     </Avatar>
                   )}
@@ -592,38 +583,35 @@ export function ChatsView() {
                   <div
                     className={cn(
                       "relative max-w-xs lg:max-w-md px-4 py-3 rounded-2xl shadow-lg transition-all duration-200 group-hover:shadow-xl",
-                      message.from_me
+                      !message.is_from_client
                         ? "bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-br-md border border-blue-500/30"
                         : "bg-gradient-to-br from-gray-700 to-gray-750 text-gray-100 rounded-bl-md border border-gray-600/50"
                     )}
                   >
-                    {/* Indicador de mensagem anterior */}
-                    {index > 0 && messages[index - 1].from_me !== message.from_me && (
-                      <div className={cn(
-                        "absolute w-3 h-3 rotate-45 border-l border-t",
-                        message.from_me 
-                          ? "-bottom-1.5 right-4 bg-gradient-to-br from-blue-600 to-blue-700 border-blue-500/30"
-                          : "-bottom-1.5 left-4 bg-gradient-to-br from-gray-700 to-gray-750 border-gray-600/50"
-                      )}></div>
-                    )}
-                    
                     <div className="text-sm leading-relaxed">{message.content}</div>
                     <div className={cn(
                       "text-xs mt-2 flex items-center gap-1",
-                      message.from_me ? "text-blue-100/80 justify-end" : "text-gray-400"
+                      !message.is_from_client ? "text-blue-100/80 justify-end" : "text-gray-400"
                     )}>
                       <Clock className="h-3 w-3 opacity-60" />
                       {formatMessageTime(message.timestamp)}
-                      {message.from_me && (
+                      {!message.is_from_client && (
                         <div className="w-1 h-1 bg-blue-300 rounded-full ml-1"></div>
                       )}
                     </div>
+                    {message.has_tool_calls && (
+                      <div className="mt-2">
+                        <Badge variant="secondary" className="text-xs">
+                          Tool Call
+                        </Badge>
+                      </div>
+                    )}
                   </div>
                   
-                  {message.from_me && (
+                  {!message.is_from_client && (
                     <Avatar className="w-8 h-8 opacity-80 group-hover:opacity-100 transition-opacity">
                       <AvatarFallback className="bg-gradient-to-br from-blue-600 to-blue-700 text-white text-xs">
-                        {profile?.nome ? getInitials(profile.nome) : 'EU'}
+                        {selectedConversa.instancia === 'sdr' ? 'SDR' : (profile?.nome ? getInitials(profile.nome) : 'AI')}
                       </AvatarFallback>
                     </Avatar>
                   )}
@@ -725,12 +713,20 @@ export function ChatsView() {
           <div className="text-sm text-gray-400 bg-gray-800/50 p-4 rounded-lg border border-red-500/20">
             {error}
           </div>
-          <button 
-            onClick={() => window.location.reload()} 
-            className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-          >
-            Tentar novamente
-          </button>
+          <div className="flex gap-2 mt-4">
+            <button 
+              onClick={() => window.location.reload()} 
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+            >
+              Recarregar
+            </button>
+            <button 
+              onClick={() => refreshData()} 
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+            >
+              Tentar novamente
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -746,7 +742,7 @@ export function ChatsView() {
               <MessageSquare className="h-6 w-6 text-green-400" />
             </div>
             <CardTitle className="text-xl font-bold text-white">
-              Sistema de Mensagens
+              Sistema de Mensagens - Nova Arquitetura
             </CardTitle>
             <div className="ml-auto flex items-center gap-2">
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
@@ -767,18 +763,18 @@ export function ChatsView() {
                 <p className="text-xs text-yellow-400/80 mt-1">
                   {(() => {
                     const isManager = profile?.role === 'admin' || profile?.role === 'gestor';
-                    const isManagerAwaitingSelection = isManager && !selectedCorretor;
+                    const isManagerAwaitingSelection = isManager && !selectedInstancia;
                     
-                    if (isManagerAwaitingSelection && corretores.length === 0) {
-                      return "Carregando lista de corretores...";
+                    if (isManagerAwaitingSelection && instancias.length === 0) {
+                      return "Carregando lista de instâncias...";
                     } else if (isManagerAwaitingSelection) {
-                      return "Buscando automaticamente qual corretor possui conversa com este lead...";
+                      return "Buscando automaticamente qual instância possui conversa com este lead...";
                     } else if (conversasLoading) {
                       return "Aguardando carregamento das conversas...";
                     } else if (conversas.length === 0) {
-                      return "Nenhuma conversa disponível para o corretor selecionado.";
+                      return "Nenhuma conversa disponível para a instância selecionada.";
                     } else {
-                      return "Nenhuma conversa encontrada com este telefone. Verifique se existe um chat ativo para este lead.";
+                      return "Nenhuma conversa encontrada com este nome. Verifique se existe um chat ativo para este lead.";
                     }
                   })()}
                 </p>
@@ -802,11 +798,11 @@ export function ChatsView() {
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.1)_1px,transparent_0)] bg-[size:20px_20px]"></div>
             </div>
             
-            {/* Lista de corretores (apenas para gestores/admins) */}
-            {profile?.role !== 'corretor' && renderCorretoresList()}
+            {/* Lista de instâncias/corretores (apenas para gestores/admins) */}
+            {profile?.role !== 'corretor' && renderInstanciasList()}
             
             {/* Lista de conversas */}
-            {(profile?.role === 'corretor' || selectedCorretor) && renderConversasList()}
+            {(profile?.role === 'corretor' || selectedInstancia) && renderConversasList()}
             
             {/* Área de mensagens */}
             {renderMessagesArea()}

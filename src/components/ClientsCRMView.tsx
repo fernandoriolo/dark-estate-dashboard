@@ -140,12 +140,15 @@ export function ClientsCRMView() {
         // Pegar lista de IDs dos leads atuais
         const leadIds = leads.map(lead => lead.id);
         
-        // Buscar conversas apenas para os leads atuais
-        const { data: chats, error } = await supabase
-          .from('whatsapp_chats')
-          .select('lead_id')
-          .not('lead_id', 'is', null)
-          .in('lead_id', leadIds);
+        // Buscar conversas na nova arquitetura baseada em imobipro_messages
+        // Como não temos link direto lead_id, vamos buscar por nome do cliente
+        const leadNames = leads.map(lead => lead.nome.toLowerCase());
+        
+        const { data: conversas, error } = await supabase
+          .from('imobipro_messages')
+          .select('session_id, message')
+          .eq('message->>type', 'human') // Primeira mensagem do cliente
+          .not('message->>content', 'is', null);
 
         if (error) {
           console.error('Erro ao buscar chats:', error);
@@ -154,15 +157,25 @@ export function ClientsCRMView() {
 
         if (cancelled) return;
 
-        // Criar set com os IDs dos leads que têm conversas
-        const leadsWithChatsSet = new Set(
-          (chats || [])
-            .map(chat => chat.lead_id)
-            .filter(Boolean)
-        );
+        // Processar conversas para encontrar matches com leads por nome
+        const leadsWithChatsSet = new Set<string>();
+        
+        if (conversas && conversas.length > 0) {
+          conversas.forEach(conversa => {
+            const messageContent = conversa.message?.content || '';
+            
+            // Tentar encontrar qual lead corresponde analisando o conteúdo da mensagem
+            leadNames.forEach((leadName, index) => {
+              if (messageContent.toLowerCase().includes(leadName) || 
+                  leadName.includes(messageContent.toLowerCase().substring(0, 20))) {
+                leadsWithChatsSet.add(leadIds[index]);
+              }
+            });
+          });
+        }
         
         setLeadsWithChats(leadsWithChatsSet);
-        console.log('📱 Leads com conversas WhatsApp:', leadsWithChatsSet.size, 'de', leads.length, 'leads');
+        console.log('📱 Leads com conversas Imobipro:', leadsWithChatsSet.size, 'de', leads.length, 'leads');
       } catch (error) {
         console.error('Erro ao verificar conversas dos leads:', error);
       }
