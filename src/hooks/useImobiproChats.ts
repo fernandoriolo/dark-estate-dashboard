@@ -17,6 +17,7 @@ import type {
 import {
   buscarInstanciasCorretores,
   buscarConversasPorInstancia,
+  buscarLeadsPorInstancia,
   buscarMensagensDaSessao,
   enviarMensagem
 } from '@/services/imobiproQueries';
@@ -257,11 +258,29 @@ export function useImobiproChats(): UseImobiproChatsReturn {
     try {
       cancelPendingRequests();
 
-      const conversas = await buscarConversasPorInstancia({
+      // Buscar conversas da instância (sempre buscar conversas reais primeiro)
+      let conversas = await buscarConversasPorInstancia({
         instancia,
         searchTerm: state.searchTerm || undefined,
         limit: 50 // Limite padrão
       });
+
+      console.log('📊 Conversas reais encontradas:', conversas.length);
+
+      // Se não há conversas reais, tentar buscar leads como fallback
+      if (conversas.length === 0) {
+        console.log('🔄 Nenhuma conversa real encontrada, buscando leads como fallback...');
+        try {
+          conversas = await buscarLeadsPorInstancia({
+            instancia,
+            searchTerm: state.searchTerm || undefined,
+            limit: 50
+          });
+          console.log('👥 Leads encontrados como fallback:', conversas.length);
+        } catch (leadError) {
+          console.warn('⚠️ Não foi possível carregar leads também:', leadError);
+        }
+      }
 
       updateState({
         conversas,
@@ -271,7 +290,7 @@ export function useImobiproChats(): UseImobiproChatsReturn {
         selectedSession: conversas.find(c => c.session_id === state.selectedSession)?.session_id || null
       });
 
-      console.log('✅ Conversas carregadas:', conversas.length);
+      console.log('✅ Total de conversas/leads carregados:', conversas.length);
 
     } catch (error) {
       console.error('❌ Erro ao carregar conversas:', error);
@@ -329,7 +348,7 @@ export function useImobiproChats(): UseImobiproChatsReturn {
     }
   }, [updateState, cancelPendingRequests]);
 
-  // 4. Enviar mensagem
+  // 4. Enviar mensagem (adaptado para leads)
   const sendMessage = useCallback(async (sessionId: string, content: string): Promise<boolean> => {
     if (!sessionId || !content.trim()) {
       console.warn('🚫 Dados insuficientes para enviar mensagem');
@@ -344,6 +363,43 @@ export function useImobiproChats(): UseImobiproChatsReturn {
       return false;
     }
 
+    // Verificar se é um lead (formato: lead_${id})
+    if (sessionId.startsWith('lead_')) {
+      console.log('📤 Enviando mensagem para lead...');
+      
+      try {
+        // Para leads, criar uma nova sessão de conversa real
+        const realSessionId = `chat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        const novaMensagem = await enviarMensagem({
+          sessionId: realSessionId,
+          content: content.trim(),
+          instancia: state.selectedInstancia,
+          userId: profile.id,
+          type: 'ai' // Sempre 'ai' quando enviado pelo corretor
+        });
+
+        console.log('✅ Mensagem para lead enviada com sucesso');
+        toast.success('Mensagem enviada para o lead');
+
+        // Recarregar mensagens para mostrar a nova mensagem
+        await loadMensagens(sessionId);
+        
+        return true;
+
+      } catch (error) {
+        console.error('❌ Erro ao enviar mensagem para lead:', error);
+        const errorMsg = error instanceof Error ? error.message : 'Erro desconhecido';
+        
+        toast.error('Erro ao enviar mensagem para lead', {
+          description: errorMsg
+        });
+
+        return false;
+      }
+    }
+
+    // Código original para sessões normais
     console.log('📤 Enviando mensagem...');
 
     try {
@@ -371,7 +427,7 @@ export function useImobiproChats(): UseImobiproChatsReturn {
 
       return false;
     }
-  }, [profile, state.selectedInstancia, updateState]);
+  }, [profile, state.selectedInstancia, loadMensagens]);
 
   // 5. Seleções
   const setSelectedInstancia = useCallback((instancia: string | null) => {

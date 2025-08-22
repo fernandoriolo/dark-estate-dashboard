@@ -189,12 +189,49 @@ if (useNewChatArchitecture) {
 
 ## 🎯 PRÓXIMOS PASSOS IMEDIATOS
 
-1. **AGORA**: Remover `useChatsDataSimple.ts` e dependências diretas
-2. **HOJE**: Atualizar `services/metrics.ts` para usar nova arquitetura
-3. **AMANHÃ**: Validar `ClientsCRMView.tsx` e corrigir se necessário
-4. **ESTA SEMANA**: Teste completo em staging before produção
+1. ✅ ~~**AGORA**: Remover `useChatsDataSimple.ts` e dependências diretas~~
+2. ✅ ~~**HOJE**: Atualizar `services/metrics.ts` para usar nova arquitetura~~
+3. ✅ ~~**AMANHÃ**: Validar `ClientsCRMView.tsx` e corrigir se necessário~~
+4. 🔄 **ESTA SEMANA**: Teste completo em staging before produção
+
+---
+
+## 🧹 LIMPEZA REALIZADA - RELATÓRIO FINAL
+
+### **Arquivos Removidos** ✅
+- ✅ `src/hooks/useChatsDataSimple.ts` (580+ linhas)
+- ✅ `src/hooks/useChatsData.ts` (hook fantasma adicional encontrado)
+
+### **Dependentes Externos Identificados** 🔍
+**Procedures SQL que ainda usam tabelas antigas:**
+- `get_corretores_com_conversas` → usa whatsapp_chats
+- `update_lead_corretor_vinculacao` → usa whatsapp_chats  
+- `get_corretores_conversas_dev` → usa whatsapp_chats
+- `get_whatsapp_stats` → usa whatsapp_chats + whatsapp_messages
+
+**Views SQL que ainda usam tabelas antigas:**
+- `vw_chat_corretor_leads` → usa whatsapp_chats
+- `vw_chat_messages_seguras` → usa whatsapp_messages + whatsapp_chats
+- `vw_chat_conversas_dev` → usa whatsapp_chats  
+- `vw_chat_messages_dev` → usa whatsapp_messages + whatsapp_chats
+- `vw_metricas_heatmap_conversas_corretores` → usa whatsapp_messages + whatsapp_chats
+
+### **Arquivos Verificados e Já Atualizados** ✅
+- ✅ `src/services/metrics.ts` → já usa `vw_imobipro_heatmap_conversas_corretores`
+- ✅ `src/components/ClientsCRMView.tsx` → já usa `imobipro_messages`
+- ✅ `src/components/ChatsView.tsx` → migrado para `useImobiproChats`
+
+### **Tipos TypeScript** ⚠️
+- ⚠️ `WhatsAppChat` e `WhatsAppMessage` em `useWhatsAppInstances.ts` → **MANTIDOS** (ainda usados por 4 componentes de conexões)
+- ✅ `WhatsAppMessagePayload` em `whatsappWebhook.ts` → **CORRETO** (tipo específico de webhook)
+
+### **Próximas Ações Recomendadas** 📋
+1. **Migrar procedures SQL** para usar `imobipro_messages` (risco médio)
+2. **Atualizar views antigas** para nova arquitetura (risco médio)  
+3. **Validar testes em staging** antes de remover views/procedures
+4. **Considerar manter tabelas antigas** para histórico/backup por período determinado
 
 ---
 
 *Documento gerado automaticamente durante migração para nova arquitetura imobipro_messages*
-*Última atualização: $(date)*
+*Limpeza concluída em: 22/08/2025*

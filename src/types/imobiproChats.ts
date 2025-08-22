@@ -46,17 +46,22 @@ export interface InstanciaCorretorInfo {
 
 /**
  * Dados de uma conversa/sessão para 2ª coluna
+ * ALTERAÇÃO: Agora representa leads vinculados ao corretor
  */
 export interface ConversaSessionInfo {
-  session_id: string; // identificador único da conversa
+  session_id: string; // identificador único da conversa (formato: lead_${id})
   instancia: string; // nome da instância
-  cliente_nome: string | null; // extraído da primeira mensagem humana
-  primeiro_contato: string | null; // primeira mensagem completa do cliente
-  ultima_mensagem: string | null; // conteúdo da última mensagem
-  ultima_mensagem_time: string; // timestamp da última mensagem
-  total_mensagens: number; // total de mensagens na conversa
-  primeira_mensagem_time: string; // timestamp da primeira mensagem
+  cliente_nome: string | null; // nome do lead
+  primeiro_contato: string | null; // informações do lead
+  ultima_mensagem: string | null; // email ou informações adicionais
+  ultima_mensagem_time: string; // timestamp de criação do lead
+  total_mensagens: number; // sempre 1 para leads
+  primeira_mensagem_time: string; // timestamp de criação do lead
   has_unread?: boolean; // pode ser implementado futuramente
+  // Novos campos para leads
+  lead_id?: number; // ID do lead na tabela leads
+  lead_phone?: string; // telefone do lead
+  lead_email?: string; // email do lead
 }
 
 /**
@@ -143,6 +148,12 @@ export interface ImobiproChatsState {
   
   // Busca
   searchTerm: string;
+  
+  // Paginação
+  conversasHasMore: boolean;
+  mensagensHasMore: boolean;
+  conversasCursor: string | null;
+  mensagensCursor: { data: string; id: number } | null;
 }
 
 /**
@@ -156,8 +167,13 @@ export interface ImobiproChatsActions {
   
   // Carregamento de dados
   loadInstancias: () => Promise<void>;
-  loadConversas: (instancia: string) => Promise<void>;
-  loadMensagens: (sessionId: string) => Promise<void>;
+  loadConversas: (instancia: string, resetPagination?: boolean) => Promise<void>;
+  loadMensagens: (sessionId: string, resetPagination?: boolean) => Promise<void>;
+  
+  // Paginação
+  loadMoreConversas: () => Promise<void>;
+  loadMoreMensagens: () => Promise<void>;
+  loadOlderMensagens: () => Promise<void>;
   
   // Envio de mensagem
   sendMessage: (sessionId: string, content: string) => Promise<boolean>;
@@ -188,22 +204,25 @@ export interface BuscarInstanciasParams {
 }
 
 /**
- * Parâmetros para buscar conversas
+ * Parâmetros para buscar conversas com paginação keyset
  */
 export interface BuscarConversasParams {
   instancia: string;
   searchTerm?: string;
   limit?: number;
-  offset?: number;
+  cursorTime?: string; // Para keyset pagination
+  cursorSession?: string; // Para keyset pagination
 }
 
 /**
- * Parâmetros para buscar mensagens
+ * Parâmetros para buscar mensagens com paginação keyset
  */
 export interface BuscarMensagensParams {
   sessionId: string;
   limit?: number;
-  offset?: number;
+  cursorData?: string; // Para keyset pagination
+  cursorId?: number; // Para keyset pagination
+  ascending?: boolean; // Direção da ordenação
 }
 
 /**
