@@ -73,7 +73,8 @@ export function AgendaView() {
   const [isConnected, setIsConnected] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [isAddEventModalOpen, setIsAddEventModalOpen] = useState(false);
-  const [selectedAgenda, setSelectedAgenda] = useState<string>("Todos"); // Nova agenda selecionada
+  const [selectedAgenda, setSelectedAgenda] = useState<string>("Todos"); // ID do calendário selecionado ou 'Todos'
+  const [selectedAgendaName, setSelectedAgendaName] = useState<string>("Todos os calendários");
   const [corretores, setCorretores] = useState<{ id: string; full_name: string }[]>([]);
   const [loadingCorretores, setLoadingCorretores] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -81,39 +82,50 @@ export function AgendaView() {
   // Buscar propriedades e clientes existentes
   const { properties } = useProperties();
   const { clients } = useClients();
-  const { getCompanyUsers } = useUserProfile();
+  const { getCompanyUsers, profile } = useUserProfile();
 
-  // Função para carregar todos os corretores do sistema
+  // Função para carregar calendários (mesma fonte do Plantão > Calendários)
   const loadCorretores = async () => {
     try {
       setLoadingCorretores(true);
-      console.log('🔍 Carregando todos os corretores do sistema...');
-      
-      const { data: corretoresData, error } = await supabase
-        .from('user_profiles')
-        .select('id, full_name, email')
-        .eq('role', 'corretor')
-        .order('full_name', { ascending: true });
-      
-      if (error) {
-        console.error('❌ Erro ao carregar corretores:', error);
-        throw error;
+      console.log('🔍 Carregando calendários da Agenda (Plantão > Calendários)...');
+
+      const resp = await fetch("https://webhooklabz.n8nlabz.com.br/webhook/id_agendas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ funcao: "leitura" }),
+      });
+
+      if (!resp.ok) {
+        throw new Error(`Erro na API: ${resp.status} - ${resp.statusText}`);
       }
-      
-      const corretoresFormatados = (corretoresData || []).map(corretor => ({
-        id: corretor.id,
-        full_name: corretor.full_name || corretor.email || 'Nome não disponível'
+
+      const data = await resp.json();
+      let list: any[] = [];
+      if (Array.isArray(data)) {
+        if (data.length > 0 && (Array.isArray((data[0] as any)?.Calendars) || Array.isArray((data[0] as any)?.calendars))) {
+          list = (data as any[]).flatMap((item: any) => item.Calendars || item.calendars || []);
+        } else {
+          list = data;
+        }
+      } else if (Array.isArray((data as any)?.Calendars) || Array.isArray((data as any)?.calendars)) {
+        list = (data as any).Calendars || (data as any).calendars;
+      } else if (Array.isArray((data as any)?.events)) {
+        list = (data as any).events;
+      } else {
+        list = [];
+      }
+
+      const normalized = list.map((item: any) => ({
+        id: item?.["Calendar ID"] ?? item?.id ?? "",
+        full_name: item?.["Calendar Name"] ?? item?.name ?? "Sem nome",
       }));
-      
-      console.log(`✅ Encontrados ${corretoresFormatados.length} corretores:`, corretoresFormatados.map(c => c.full_name));
-      setCorretores(corretoresFormatados);
+
+      console.log(`✅ Encontrados ${normalized.length} calendários.`);
+      setCorretores(normalized);
     } catch (error) {
-      console.error('❌ Erro ao buscar corretores:', error);
-      // Fallback para corretores hardcoded em caso de erro
-      setCorretores([
-        { id: 'isis', full_name: 'Isis' },
-        { id: 'arthur', full_name: 'Arthur' }
-      ]);
+      console.error('❌ Erro ao carregar calendários:', error);
+      setCorretores([]);
     } finally {
       setLoadingCorretores(false);
     }
@@ -291,147 +303,10 @@ export function AgendaView() {
     }
   };
   
-  // Função otimizada para carregar eventos da tabela oncall_events
-  const loadOncallEvents = async (startDate: Date, endDate: Date): Promise<AgendaEvent[]> => {
-    try {
-      console.log('📥 Carregando eventos da tabela oncall_events...');
-      
-      const { data: events, error } = await supabase
-        .from('oncall_events')
-        .select(`
-          id,
-          title,
-          description,
-          starts_at,
-          ends_at,
-          client_name,
-          client_email,
-          property_title,
-          address,
-          type,
-          status,
-          assigned_user_id,
-          google_event_id,
-          webhook_source
-        `)
-        .gte('starts_at', startDate.toISOString())
-        .lte('starts_at', endDate.toISOString())
-        .order('starts_at', { ascending: true });
-        
-      if (error) {
-        console.error('❌ Erro ao carregar eventos da oncall_events:', error);
-        return [];
-      }
-      
-      // Buscar nomes dos corretores separadamente se necessário
-      const oncallEvents: AgendaEvent[] = [];
-      
-      if (events && events.length > 0) {
-        for (const event of events) {
-          let corretorNome = 'Corretor não informado';
-          
-          // Se tem assigned_user_id, buscar o nome
-          if (event.assigned_user_id) {
-            try {
-              const { data: userProfile } = await supabase
-                .from('user_profiles')
-                .select('full_name')
-                .eq('id', event.assigned_user_id)
-                .single();
-              
-              if (userProfile?.full_name) {
-                corretorNome = userProfile.full_name;
-              }
-            } catch (err) {
-              console.log('⚠️ Erro ao buscar nome do corretor:', err);
-            }
-          }
-          
-          oncallEvents.push({
-            id: event.id,
-            date: new Date(event.starts_at),
-            client: event.client_name || 'Cliente não informado',
-            property: event.property_title || event.title,
-            address: event.address || 'Local não informado',
-            type: event.type || 'Evento',
-            status: event.status || 'Aguardando confirmação',
-            corretor: corretorNome
-          });
-        }
-      }
-      
-      console.log(`✅ ${oncallEvents.length} eventos carregados da tabela oncall_events`);
-      return oncallEvents;
-    } catch (error) {
-      console.error('❌ Erro ao carregar eventos da oncall_events:', error);
-      return [];
-    }
-  };
+  // REMOVIDO: leitura e mescla de eventos locais (oncall_events) para simplificar a Agenda
+  // Conforme solicitado, manteremos apenas a consulta ao endpoint ver-agenda
 
-  // Função para carregar eventos salvos localmente (das notas dos clientes) - mantida para compatibilidade
-  const loadLocalEvents = async (): Promise<AgendaEvent[]> => {
-    try {
-      const { data: leads, error } = await supabase
-        .from('leads')
-        .select('id, name, notes')
-        .not('notes', 'is', null)
-        .ilike('notes', '%[EVENTO AGENDADO]%');
-        
-      if (error) {
-        console.error('Erro ao carregar eventos locais:', error);
-        return [];
-      }
-      
-      const localEvents: AgendaEvent[] = [];
-      
-      leads?.forEach(lead => {
-        if (!lead.notes) return;
-        
-        // Extrair eventos das notas usando regex
-        const eventMatches = lead.notes.match(/\[EVENTO AGENDADO\].*?🆔 ID: ([^\\n]+)/gs);
-        
-        eventMatches?.forEach(match => {
-          try {
-            const idMatch = match.match(/🆔 ID: ([^\\n]+)/);
-            const typeMatch = match.match(/\[EVENTO AGENDADO\] ([^-]+) -/);
-            const summaryMatch = match.match(/- ([^\\n]+)/);
-            const dateMatch = match.match(/📅 Data: ([^\\n]+)/);
-            const locationMatch = match.match(/📍 Local: ([^\\n]+)/);
-            const corretorMatch = match.match(/👤 Corretor: ([^\\n]+)/);
-            
-            if (idMatch && dateMatch) {
-              const eventDate = new Date(dateMatch[1]);
-              
-              // Só incluir eventos futuros ou recentes (últimos 7 dias)
-              const weekAgo = new Date();
-              weekAgo.setDate(weekAgo.getDate() - 7);
-              
-              if (eventDate >= weekAgo) {
-                localEvents.push({
-                  id: idMatch[1],
-                  date: eventDate,
-                  client: lead.name,
-                  property: summaryMatch?.[1] || 'Imóvel não informado',
-                  address: locationMatch?.[1] || 'Local não informado',
-                  type: typeMatch?.[1]?.trim() || 'Evento',
-                  status: 'confirmada',
-                  corretor: corretorMatch?.[1] || 'Corretor não informado'
-                });
-              }
-            }
-          } catch (parseError) {
-            console.error('Erro ao fazer parse do evento:', parseError);
-          }
-        });
-      });
-      
-      console.log(`📋 ${localEvents.length} eventos locais carregados das notas dos clientes`);
-      return localEvents;
-    } catch (error) {
-      console.error('Erro ao carregar eventos locais:', error);
-      return [];
-    }
-  };
+  // REMOVIDO: leitura de eventos a partir de notas locais para simplificação
 
   const fetchAgendaEvents = async (date: Date, isAutoUpdate = false) => {
     try {
@@ -456,16 +331,24 @@ export function AgendaView() {
       const dataInicialFormatada = new Date(dataInicial.getTime() - (dataInicial.getTimezoneOffset() * 60000)).toISOString();
       const dataFinalFormatada = new Date(dataFinal.getTime() - (dataFinal.getTimezoneOffset() * 60000)).toISOString();
 
+      // Montar body conforme regra: tipo_busca e agenda_ids
+      const isTodos = selectedAgenda === 'Todos';
+      const agendaIds = isTodos
+        ? corretores.map(c => c.id)
+        : [selectedAgenda];
+
       const requestBody = {
         data_inicial: dataInicialFormatada,
         data_final: dataFinalFormatada,
-        mes: month + 1, // Mês 1-12
+        mes: month + 1,
         ano: year,
         data_inicial_formatada: dataInicial.toLocaleDateString('pt-BR') + ' 00:01',
         data_final_formatada: dataFinal.toLocaleDateString('pt-BR') + ' 23:59',
         periodo: `${dataInicial.toLocaleDateString('pt-BR')} até ${dataFinal.toLocaleDateString('pt-BR')}`,
-        agenda: selectedAgenda // Adicionar agenda selecionada
-      };
+        agenda: selectedAgenda,
+        tipo_busca: isTodos ? 'todos' : 'individual',
+        agenda_ids: agendaIds
+      } as any;
 
       if (!isAutoUpdate) {
         console.log('📤 Buscando eventos via webhook para:', requestBody.periodo);
@@ -694,77 +577,11 @@ export function AgendaView() {
         return true;
       });
 
-      // SINCRONIZAÇÃO INTELIGENTE: Combinar eventos das diferentes fontes
-      const oncallEvents = await loadOncallEvents(dataInicial, dataFinal);
-      const localEvents = await loadLocalEvents();
-      
-      // Começar com eventos do Google Calendar
-      const allEvents = [...validEvents];
-      
-      // Adicionar eventos da tabela oncall_events que não são duplicatas
-      oncallEvents.forEach(oncallEvent => {
-        const isDuplicate = validEvents.some(gcalEvent => {
-          // Verificação mais rigorosa de duplicatas
-          if (gcalEvent.id === oncallEvent.id) return true;
-          
-          // Se evento local tem google_event_id, verificar se coincide
-          const oncallEventFull = oncallEvents.find(e => e.id === oncallEvent.id);
-          if (oncallEventFull && (oncallEventFull as any).google_event_id === gcalEvent.id) return true;
-          
-          // Verificação por similaridade (cliente + data próxima)
-          const timeDiff = Math.abs(gcalEvent.date.getTime() - oncallEvent.date.getTime());
-          const clientMatch = gcalEvent.client.toLowerCase().includes(oncallEvent.client.toLowerCase()) ||
-                             oncallEvent.client.toLowerCase().includes(gcalEvent.client.toLowerCase());
-          
-          return clientMatch && timeDiff < 60000; // 1 minuto de tolerância
-        });
-        
-        if (!isDuplicate) {
-          // Marcar origem do evento
-          allEvents.push({
-            ...oncallEvent,
-            corretor: oncallEvent.corretor + ' 📋' // Indicador de evento local
-          });
-        }
-      });
-      
-      // Adicionar eventos das notas (somente se não existem nas outras fontes)
-      localEvents.forEach(localEvent => {
-        const isDuplicate = allEvents.some(existingEvent => {
-          if (existingEvent.id === localEvent.id) return true;
-          
-          const timeDiff = Math.abs(existingEvent.date.getTime() - localEvent.date.getTime());
-          const clientMatch = existingEvent.client.toLowerCase().includes(localEvent.client.toLowerCase()) ||
-                             localEvent.client.toLowerCase().includes(existingEvent.client.toLowerCase());
-          
-          return clientMatch && timeDiff < 60000;
-        });
-        
-        if (!isDuplicate) {
-          // Marcar como evento de compatibilidade
-          allEvents.push({
-            ...localEvent,
-            corretor: localEvent.corretor + ' 📝' // Indicador de evento das notas
-          });
-        }
-      });
-      
-      if (allEvents.length > 0) {
-        if (!isAutoUpdate) {
-          console.log(`✅ Total de eventos carregados: ${allEvents.length}`);
-          console.log(`  - Google Calendar: ${validEvents.length}`);
-          console.log(`  - Locais: ${allEvents.length - validEvents.length}`);
-        }
-        setEvents(allEvents);
-        setIsConnected(true);
-        setLastUpdate(new Date());
-        if (!isAutoUpdate) console.log('✅ Agenda atualizada com sucesso');
-      } else {
-        if (!isAutoUpdate) console.log('📭 Nenhum evento encontrado');
-        setEvents([]); // Limpar agenda se não há eventos válidos
-        setIsConnected(true);
-        setLastUpdate(new Date());
-      }
+      // Usar somente os eventos retornados pelo endpoint (sem mesclas adicionais)
+      setEvents(validEvents);
+      setIsConnected(true);
+      setLastUpdate(new Date());
+      if (!isAutoUpdate) console.log('✅ Agenda atualizada com sucesso (ver-agenda)');
 
     } catch (error) {
       console.log('⚠️ Webhook indisponível, mantendo dados de exemplo:', error);
@@ -789,9 +606,36 @@ export function AgendaView() {
     console.log('👤 Agenda selecionada:', selectedAgenda);
     console.log('🕐 Timestamp:', new Date().toISOString());
     
-    // Chamar o webhook para buscar todos os eventos do mês
-    fetchAgendaEvents(currentMonth);
-  }, [currentMonth, selectedAgenda]); // Executa quando currentMonth ou selectedAgenda mudar
+    (async () => {
+      try {
+        // Para corretor: se ainda estiver em "Todos", detectar agenda vinculada e NÃO buscar ainda
+        if (profile?.role === 'corretor' && selectedAgenda === 'Todos') {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user?.id) {
+            const { data: schedules } = await supabase
+              .from('oncall_schedules')
+              .select('calendar_id, calendar_name')
+              .eq('assigned_user_id', user.id);
+            if (schedules && schedules.length > 0 && schedules[0]?.calendar_id) {
+              setSelectedAgenda(schedules[0].calendar_id);
+              setSelectedAgendaName(schedules[0].calendar_name || 'Minha agenda');
+              return; // aguardar re-execução com selectedAgenda definido
+            } else {
+              console.warn('⚠️ Corretor sem agenda vinculada. Não exibindo eventos.');
+              setEvents([]);
+              setIsConnected(true);
+              setLastUpdate(new Date());
+              return;
+            }
+          }
+        }
+        // Para gestor/admin ou corretor já com agenda definida: buscar eventos normalmente
+        await fetchAgendaEvents(currentMonth);
+      } catch (e) {
+        console.warn('⚠️ Falha ao processar carregamento da agenda:', e);
+      }
+    })();
+  }, [currentMonth, selectedAgenda, profile?.role]);
 
   // TEMPORARIAMENTE DESABILITADO: UseEffect para atualização automática
   // Estava causando loop infinito e esgotamento de recursos
@@ -1343,39 +1187,47 @@ export function AgendaView() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Seletor de Corretor */}
+          {/* Seletor de Calendário (desabilitado para corretor) */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-gray-300">Corretor</label>
-            <Select value={selectedAgenda} onValueChange={setSelectedAgenda}>
+            <Select value={selectedAgenda} disabled={profile?.role === 'corretor'} onValueChange={(val) => {
+              setSelectedAgenda(val);
+              if (val === 'Todos') {
+                setSelectedAgendaName('Todos os calendários');
+              } else {
+                const found = corretores.find(c => c.id === val);
+                setSelectedAgendaName(found?.full_name || 'Calendário');
+              }
+            }}>
               <SelectTrigger className="bg-gray-700 border-gray-600 text-white hover:bg-gray-600 transition-colors">
-                <SelectValue placeholder={loadingCorretores ? "Carregando corretores..." : "Selecione o corretor"} />
+                <SelectValue placeholder={loadingCorretores ? "Carregando calendários..." : "Selecione o calendário"} />
               </SelectTrigger>
               <SelectContent className="bg-gray-800 border-gray-600">
                 <SelectItem value="Todos" className="text-white hover:bg-gray-700 focus:bg-gray-700">
                   <div className="flex items-center gap-2">
                     <span className="text-lg">📋</span>
-                    <span>Todos os corretores</span>
+                    <span>Todos os calendários</span>
                   </div>
                 </SelectItem>
                 {loadingCorretores ? (
                   <SelectItem value="loading" disabled className="text-gray-400">
                     <div className="flex items-center gap-2">
                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
-                      <span>Carregando corretores...</span>
+                      <span>Carregando calendários...</span>
                     </div>
                   </SelectItem>
                 ) : corretores.length === 0 ? (
                   <SelectItem value="no-corretores" disabled className="text-gray-400">
                     <div className="flex items-center gap-2">
                       <span className="text-lg">⚠️</span>
-                      <span>Nenhum corretor encontrado</span>
+                      <span>Nenhum calendário encontrado</span>
                     </div>
                   </SelectItem>
                 ) : (
                   corretores.map((corretor) => (
                     <SelectItem 
                       key={corretor.id} 
-                      value={corretor.full_name} 
+                      value={corretor.id} 
                       className="text-white hover:bg-gray-700 focus:bg-gray-700"
                     >
                       <div className="flex items-center gap-2">
@@ -1398,8 +1250,8 @@ export function AgendaView() {
               }`}></div>
               <span className="text-sm text-gray-300">
                 {selectedAgenda === 'Todos' 
-                  ? `Visualizando todos (${events.length} eventos)` 
-                  : `Agenda de ${selectedAgenda} (${events.filter(e => e.corretor === selectedAgenda || e.corretor?.includes(selectedAgenda)).length} eventos)`
+                  ? `Visualizando todos os calendários (${events.length} eventos)` 
+                  : `Calendário: ${selectedAgendaName} (${events.length} eventos)`
                 }
               </span>
             </div>
@@ -1442,6 +1294,7 @@ export function AgendaView() {
         selectedDate={selectedDate}
         currentMonth={currentMonth}
         selectedAgenda={selectedAgenda}
+        selectedAgendaName={selectedAgendaName}
       />
 
       {/* Modal de Adicionar Evento */}

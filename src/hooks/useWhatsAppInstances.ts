@@ -101,9 +101,11 @@ export function useWhatsAppInstances() {
           requester_profile:user_profiles!whatsapp_instances_requested_by_fkey(full_name, email, role)
         `);
 
-      // Se for corretor, buscar apenas suas instâncias
+      // Se for corretor, buscar apenas suas instâncias ATIVAS (não solicitações pendentes)
       if (profile.role === 'corretor') {
-        query = query.eq('user_id', profile.id);
+        query = query
+          .eq('user_id', profile.id)
+          .neq('request_status', 'requested'); // Excluir solicitações pendentes
       } 
       // Se for gestor/admin, buscar todas as instâncias (sem filtro extra)
       else if (isManager) {
@@ -208,6 +210,41 @@ export function useWhatsAppInstances() {
             api_key: externalData.token
           };
         });
+
+        // Upsert: manter tabela whatsapp_instances sincronizada quando gestor abre Conexões
+        try {
+          console.log('📝 Sincronizando whatsapp_instances via upsert (gestor/admin)...');
+          const rowsToUpsert = instancesWithRealTimeData.map((row: any) => ({
+            instance_name: row.instance_name,
+            company_id: profile.company_id, // guarda no escopo da empresa do gestor
+            user_id: row.user_id || null,
+            phone_number: row.phone_number,
+            profile_name: row.profile_name,
+            profile_pic_url: row.profile_pic_url,
+            status: row.status,
+            webhook_url: row.webhook_url,
+            api_key: row.api_key,
+            last_seen: row.last_seen,
+            message_count: row.message_count,
+            contact_count: row.contact_count,
+            chat_count: row.chat_count,
+            is_active: true,
+            // Não mexer em request_status aqui
+          }));
+
+          // Realiza upsert por instance_name + company_id
+          const { error: upsertError } = await supabase
+            .from('whatsapp_instances')
+            .upsert(rowsToUpsert, { onConflict: 'instance_name,company_id' });
+
+          if (upsertError) {
+            console.warn('⚠️ Falha ao sincronizar whatsapp_instances (upsert):', upsertError);
+          } else {
+            console.log('✅ Sincronização de whatsapp_instances concluída');
+          }
+        } catch (syncError: any) {
+          console.warn('⚠️ Erro inesperado na sincronização de whatsapp_instances:', syncError);
+        }
         
       } else {
         // CORRETORES: Combinar apenas suas instâncias locais com dados do webhook
@@ -917,63 +954,108 @@ export function useWhatsAppInstances() {
         throw new Error('Perfil do usuário não encontrado');
       }
 
-      console.log('🔄 Criando solicitação de conexão integrada...');
+      console.log('🔄 Criando solicitação de conexão...');
 
-      // Verificar se usuário já tem instância ou solicitação pendente
-      const { data: existingInstances, error: checkError } = await supabase
-        .from('whatsapp_instances')
-        .select('id, request_status, status')
-        .eq('requested_by', profile.id)
-        .or('request_status.eq.requested,status.in.(connected,qr_code,connecting)');
+      // Verificar se usuário já tem solicitação pendente
+      const { data: existingRequests, error: checkError } = await supabase
+        .from('connection_requests')
+        .select('id, status')
+        .eq('user_id', profile.id)
+        .eq('status', 'pending');
 
       if (checkError) throw checkError;
 
-      if (existingInstances && existingInstances.length > 0) {
-        const pending = existingInstances.find(i => i.request_status === 'requested');
-        const active = existingInstances.find(i => ['connected', 'qr_code', 'connecting'].includes(i.status));
-        
-        if (pending) {
-          throw new Error('Você já possui uma solicitação pendente');
-        }
-        if (active) {
-          throw new Error('Você já possui uma instância ativa');
-        }
+      if (existingRequests && existingRequests.length > 0) {
+        throw new Error('Você já possui uma solicitação pendente');
       }
 
-      // Criar instância com status 'requested' - isso vai disparar o trigger automaticamente
-      const { data: newInstance, error: createError } = await supabase
+      // Verificar se usuário já tem instância ativa
+      const { data: existingInstances, error: instanceError } = await supabase
         .from('whatsapp_instances')
+        .select('id, status')
+        .eq('user_id', profile.id)
+        .in('status', ['connected', 'qr_code', 'connecting']);
+
+      if (instanceError) throw instanceError;
+
+      if (existingInstances && existingInstances.length > 0) {
+        throw new Error('Você já possui uma instância ativa');
+      }
+
+      // Criar solicitação na tabela connection_requests (NÃO em whatsapp_instances)
+      const { data: newRequest, error: createError } = await supabase
+        .from('connection_requests')
         .insert({
-          user_id: profile.id,  // Será a instância final do usuário
+          user_id: profile.id,
           company_id: profile.company_id,
           instance_name: instanceData.instance_name,
           phone_number: instanceData.phone_number,
-          request_status: 'requested',  // Status de solicitação
-          status: 'disconnected',       // Status técnico inicial
-          requested_by: profile.id,
-          requested_at: new Date().toISOString(),
-          request_message: instanceData.message || `Solicitação de ${profile.full_name}`,
-          webhook_url: `https://webhooklabz.n8nlabz.com.br/webhook/${instanceData.instance_name}`,
-          is_active: true
+          message: instanceData.message || `Solicitação de conexão WhatsApp de ${profile.full_name}`,
+          status: 'pending'
         })
         .select(`
           *,
-          user_profile:user_profiles!whatsapp_instances_user_id_fkey(full_name, email, role),
-          requester_profile:user_profiles!whatsapp_instances_requested_by_fkey(full_name, email, role)
+          user_profile:user_profiles!connection_requests_user_id_fkey(full_name, email, role)
         `)
         .single();
 
       if (createError) throw createError;
 
-      console.log('✅ Solicitação criada:', newInstance);
-      console.log('📬 Trigger automático irá notificar gestores');
+      console.log('✅ Solicitação criada:', newRequest);
 
-      // Atualizar lista local
-      setInstances(prev => [newInstance, ...prev]);
+      // Buscar todos os gestores da empresa para notificar
+      console.log('🔍 Buscando gestores para company_id:', profile.company_id);
+      const { data: managers, error: managersError } = await supabase
+        .from('user_profiles')
+        .select('id, full_name, email, role')
+        .eq('company_id', profile.company_id)
+        .in('role', ['gestor', 'admin'])
+        .eq('is_active', true);
 
-      return newInstance;
+      if (managersError) {
+        console.error('❌ Erro ao buscar gestores:', managersError);
+        throw managersError;
+      }
+
+      console.log('👥 Gestores encontrados:', managers?.length, managers);
+
+      // Criar notificações para cada gestor
+      if (managers && managers.length > 0) {
+        const notifications = managers.map(manager => ({
+          user_id: manager.id,
+          company_id: profile.company_id,
+          type: 'connection_request',
+          title: 'Nova Solicitação de Conexão WhatsApp',
+          message: `${profile.full_name} (${profile.role}) solicitou uma conexão WhatsApp`,
+          data: {
+            request_id: newRequest.id,
+            instance_name: instanceData.instance_name,
+            phone_number: instanceData.phone_number,
+            requester_id: profile.id,
+            requester_name: profile.full_name,
+            requester_email: profile.email,
+            requester_role: profile.role,
+            request_message: instanceData.message
+          }
+        }));
+
+        console.log('📬 Criando notificações:', notifications);
+        
+        const { error: notifyError } = await supabase
+          .from('notifications')
+          .insert(notifications);
+
+        if (notifyError) {
+          console.error('❌ Erro ao notificar gestores:', notifyError);
+          // Não fazer throw aqui para não quebrar o fluxo principal
+        } else {
+          console.log('✅ Gestores notificados com sucesso:', managers.length);
+        }
+      }
+
+      return newRequest;
     } catch (error: any) {
-      console.error('❌ Erro ao criar solicitação integrada:', error);
+      console.error('❌ Erro ao criar solicitação:', error);
       throw error;
     }
   };

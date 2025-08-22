@@ -66,9 +66,9 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: "Requester profile not found" }, 403);
     }
 
-    // Verificar permissões: apenas admin pode deletar usuários
-    if (requesterProfile.role !== "admin") {
-      return jsonResponse({ error: "Forbidden: only admin can delete users" }, 403);
+    // Verificar permissões: admin e gestor podem deletar usuários
+    if (requesterProfile.role !== "admin" && requesterProfile.role !== "gestor") {
+      return jsonResponse({ error: "Forbidden: only admin or gestor can delete users" }, 403);
     }
 
     const payload = (await req.json()) as DeleteUserPayload;

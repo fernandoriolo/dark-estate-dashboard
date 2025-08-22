@@ -1,8 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-import { useChatsDataSimple as useChatsData } from '@/hooks/useChatsDataSimple';
+import { useChatUI as useChatsData } from '@/hooks/useChatUI';
 import { useUserProfile } from '@/hooks/useUserProfile';
-import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -37,7 +35,6 @@ const getInitials = (name: string) => {
 
 export function ChatsView() {
   const { profile } = useUserProfile();
-  const location = useLocation();
   
   console.log('🎬 ChatsView renderizado. Profile:', profile);
   
@@ -54,134 +51,53 @@ export function ChatsView() {
     selectedChat,
     setSelectedChat,
     messages,
-    sendMessage
+    sendMessage,
+    loadCorretores,
+    loadConversas,
+    loadMessages
   } = useChatsData();
 
   const [messageInput, setMessageInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [crmNavigationInfo, setCrmNavigationInfo] = useState<{leadName: string; leadPhone: string} | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
-  // Processar parâmetros de navegação vindos do CRM
+  // Estado: corretor sem instância atribuída
+  const isCorretorWithoutInstance = profile?.role === 'corretor' && !(profile as any)?.chat_instance;
+
+  // Carregar instâncias (corretores) ao montar
   useEffect(() => {
-    const state = location.state as { leadPhone?: string; leadName?: string } | null;
-    if (state?.leadPhone && state?.leadName) {
-      console.log('📞 Navegação do CRM detectada:', { phone: state.leadPhone, name: state.leadName });
-      setCrmNavigationInfo({ leadName: state.leadName, leadPhone: state.leadPhone });
+    if (profile?.role === 'corretor') {
+      // Corretor: carregar diretamente as conversas da instância atribuída
+      loadConversas();
+    } else {
+      // Gestor/Admin: carregar lista de instâncias (corretores)
+      loadCorretores();
     }
-  }, [location.state]);
+  }, [profile?.role]);
 
-  // Efeito para buscar automaticamente qual corretor tem a conversa do lead
+  // Carregar conversas ao selecionar instância
   useEffect(() => {
-    if (!crmNavigationInfo) return;
-    
-    // Para gestores/admins: buscar qual corretor tem a conversa
-    const isManager = profile?.role === 'admin' || profile?.role === 'gestor';
-    
-    if (isManager && !selectedCorretor && corretores.length > 0) {
-      console.log('🔍 Buscando corretor que possui conversa com o lead...');
-      
-      const findCorretorWithConversation = async () => {
-        const normalizePhone = (phone: string) => phone.replace(/\D/g, '');
-        const targetPhone = normalizePhone(crmNavigationInfo.leadPhone);
-        
-        try {
-          // Buscar em todas as conversas qual corretor tem o telefone
-          const { data: chats, error } = await supabase
-            .from('whatsapp_chats')
-            .select('user_id, contact_phone, lead_id')
-            .not('user_id', 'is', null);
-
-          if (error) {
-            console.error('Erro ao buscar conversas:', error);
-            return;
-          }
-
-          // Encontrar chat que corresponde ao telefone
-          const matchingChat = chats?.find(chat => {
-            const contactPhone = normalizePhone(chat.contact_phone || '');
-            return contactPhone.includes(targetPhone.slice(-9));
-          });
-
-          if (matchingChat && matchingChat.user_id) {
-            const corretor = corretores.find(c => c.corretor_id === matchingChat.user_id);
-            if (corretor) {
-              console.log('✅ Corretor encontrado automaticamente:', corretor.corretor_nome);
-              setSelectedCorretor(matchingChat.user_id);
-            }
-          } else if (chats?.some(chat => chat.user_id === null)) {
-            // Verificar se está nas conversas do SDR Agent
-            const sdrAgent = corretores.find(c => c.corretor_id === 'sdr-agent');
-            if (sdrAgent) {
-              console.log('✅ Conversa encontrada no SDR Agent');
-              setSelectedCorretor('sdr-agent');
-            }
-          } else {
-            console.log('❌ Nenhum corretor encontrado com conversa para este telefone');
-          }
-        } catch (error) {
-          console.error('Erro ao buscar corretor:', error);
-        }
-      };
-
-      findCorretorWithConversation();
+    if (selectedCorretor) {
+      loadConversas(selectedCorretor);
     }
-  }, [crmNavigationInfo, profile?.role, selectedCorretor, corretores, setSelectedCorretor]);
+  }, [selectedCorretor]);
 
-  // Efeito separado para buscar conversa quando conversas estão disponíveis
+  // Reagir quando a instância do corretor ficar disponível no perfil
   useEffect(() => {
-    if (!crmNavigationInfo) return;
-    
-    // Para gestores/admins: precisa aguardar seleção de corretor para carregar conversas
-    const isManagerAwaitingSelection = (profile?.role === 'admin' || profile?.role === 'gestor') && !selectedCorretor;
-    
-    if (isManagerAwaitingSelection) {
-      console.log('👑 Gestor/Admin: aguardando seleção de corretor para buscar conversa');
-      return;
+    if (profile?.role === 'corretor') {
+      loadConversas();
     }
-    
-    // Aguardar conversas serem carregadas
-    if (conversasLoading) {
-      console.log('⏳ Aguardando carregamento das conversas...');
-      return;
+  }, [profile?.role, (profile as any)?.chat_instance]);
+
+  // Carregar mensagens ao selecionar conversa
+  useEffect(() => {
+    if (selectedChat) {
+      loadMessages(selectedChat);
     }
-    
-    if (!conversas.length) {
-      console.log('📭 Nenhuma conversa disponível ainda');
-      return;
-    }
-    
-    // Buscar conversa correspondente ao telefone do lead
-    const findAndSelectChat = () => {
-      // Normalizar telefone removendo caracteres especiais
-      const normalizePhone = (phone: string) => phone.replace(/\D/g, '');
-      const targetPhone = normalizePhone(crmNavigationInfo.leadPhone);
-      
-      // Buscar conversa que corresponda ao telefone
-      const matchingChat = conversas.find(conversa => {
-        const contactPhone = normalizePhone(conversa.contact_phone || '');
-        const leadPhone = normalizePhone(conversa.lead_phone || '');
-        return contactPhone.includes(targetPhone.slice(-9)) || leadPhone.includes(targetPhone.slice(-9));
-      });
-      
-      if (matchingChat) {
-        console.log('✅ Conversa encontrada:', matchingChat);
-        setSelectedChat(matchingChat.chat_id);
-        // Se tiver corretor específico, selecionar também
-        if (matchingChat.corretor_id && selectedCorretor !== matchingChat.corretor_id) {
-          setSelectedCorretor(matchingChat.corretor_id);
-        }
-        // Limpar info de navegação já que encontrou
-        setCrmNavigationInfo(null);
-      } else {
-        console.log('❌ Nenhuma conversa encontrada para o telefone:', crmNavigationInfo.leadPhone);
-        // Manter info para mostrar aviso ao usuário
-      }
-    };
-    
-    findAndSelectChat();
-  }, [crmNavigationInfo, conversas, conversasLoading, selectedCorretor, profile?.role, setSelectedChat, setSelectedCorretor]);
+  }, [selectedChat]);
+
+  // UI pura: sem efeitos de CRM/Supabase
 
   // Scroll para o final das mensagens
   const scrollToBottom = () => {
@@ -226,7 +142,7 @@ export function ChatsView() {
 
   // Renderizar lista de corretores (para gestores)
   const renderCorretoresList = () => (
-    <div className="w-80 border-r border-gray-700/50 bg-gradient-to-b from-gray-900 to-gray-950 flex flex-col shadow-xl">
+    <div className="w-72 border-r border-gray-700/50 bg-gradient-to-b from-gray-900 to-gray-950 flex flex-col shadow-xl">
       <div className="relative p-6 border-b border-gray-700/50 bg-gradient-to-r from-gray-900/90 to-gray-850">
         <div className="absolute inset-0 bg-gradient-to-r from-blue-600/5 to-purple-600/5"></div>
         <div className="relative flex items-center gap-3 mb-4">
@@ -322,8 +238,8 @@ export function ChatsView() {
   // Renderizar lista de conversas
   const renderConversasList = () => (
     <div className={cn(
-      "border-r border-gray-700/50 bg-gradient-to-b from-gray-900 to-gray-950 flex flex-col shadow-xl",
-      profile?.role === 'corretor' ? "w-80" : "w-96"
+      "border-r border-gray-700/50 bg-gradient-to-b from-gray-900 to-gray-950 flex flex-col shadow-xl min-w-0 overflow-hidden",
+      profile?.role === 'corretor' ? "w-[28rem]" : "w-96"
     )}>
       <div className="relative p-6 border-b border-gray-700/50 bg-gradient-to-r from-gray-900/90 to-gray-850">
         <div className="absolute inset-0 bg-gradient-to-r from-green-600/5 to-blue-600/5"></div>
@@ -353,14 +269,14 @@ export function ChatsView() {
           </div>
           {profile?.role !== 'corretor' && selectedCorretor && (
             <div className="text-xs text-blue-400 bg-blue-600/10 px-2 py-1 rounded-full border border-blue-500/30">
-              {corretores.find(c => c.corretor_id === selectedCorretor)?.corretor_nome}
+              {corretores.find(c => c.corretor_id === selectedCorretor)?.corretor_nome || selectedCorretor}
             </div>
           )}
         </div>
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="p-4 space-y-3">
+      <ScrollArea className="flex-1 min-w-0">
+        <div className="p-4 space-y-3 min-w-0">
           {conversasLoading && conversas.length === 0 ? (
             <div className="text-center py-8">
               <div className="relative mx-auto mb-4 w-6 h-6">
@@ -374,13 +290,13 @@ export function ChatsView() {
             <Card
               key={conversa.chat_id}
               className={cn(
-                "cursor-pointer transition-all duration-300 bg-gradient-to-r from-gray-900/90 to-gray-950/90 border-gray-700/50 hover:from-gray-800/95 hover:to-gray-900/95 hover:shadow-lg hover:border-gray-600/50 backdrop-blur-sm h-32 min-h-32 max-h-32",
+                "cursor-pointer transition-all duration-300 bg-gradient-to-r from-gray-900/90 to-gray-950/90 border-gray-700/50 hover:from-gray-800/95 hover:to-gray-900/95 hover:shadow-lg hover:border-gray-600/50 backdrop-blur-sm h-32 min-h-32 max-h-32 w-[90%] overflow-hidden",
                 selectedChat === conversa.chat_id && "from-gray-950/95 to-black/90 border-green-600/80 shadow-lg shadow-green-500/30 ring-1 ring-green-500/20"
               )}
               onClick={() => setSelectedChat(conversa.chat_id)}
             >
-              <CardContent className="p-4 h-full">
-                <div className="flex items-start gap-3 h-full">
+              <CardContent className="p-4 h-full min-w-0 w-full">
+                <div className="flex items-start gap-3 h-full min-w-0">
                   {/* Avatar do Lead Premium */}
                   <div className="relative">
                     <Avatar className="w-12 h-12 border-2 border-gray-600/30">
@@ -414,7 +330,7 @@ export function ChatsView() {
                       
                       {/* Última mensagem */}
                       <div className={cn(
-                        "text-sm leading-relaxed line-clamp-2 overflow-hidden mb-2",
+                        "text-sm leading-relaxed overflow-hidden break-words line-clamp-2 mb-2",
                         selectedChat === conversa.chat_id ? "text-gray-100" : "text-gray-300"
                       )}>
                         {conversa.last_message || (
@@ -437,7 +353,7 @@ export function ChatsView() {
                               : "text-gray-400 bg-gray-700/50"
                           )}>
                             <Phone className="h-3 w-3 text-blue-400" />
-                            <span className="truncate max-w-20 font-medium">
+                            <span className="truncate max-w-[8rem] font-medium">
                               {conversa.lead_phone}
                             </span>
                           </div>
@@ -713,6 +629,24 @@ export function ChatsView() {
     );
   }
 
+  // Corretores sem instância atribuída: mensagem clara
+  if (isCorretorWithoutInstance) {
+    return (
+      <div className="h-full flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-850 to-gray-900">
+        <div className="text-center max-w-md">
+          <div className="relative mb-6">
+            <div className="absolute inset-0 bg-gradient-to-r from-amber-600/20 to-orange-600/20 rounded-full blur-xl"></div>
+            <AlertCircle className="relative h-16 w-16 mx-auto text-amber-400" />
+          </div>
+          <div className="text-lg font-medium mb-3 text-amber-300">Nenhuma instância atribuída</div>
+          <div className="text-sm text-gray-300 bg-gray-800/50 p-4 rounded-lg border border-amber-500/20">
+            Peça a um gestor para atribuir uma instância ao seu usuário para visualizar as conversas.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (error) {
     return (
       <div className="h-full flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-850 to-gray-900">
@@ -755,45 +689,7 @@ export function ChatsView() {
           </div>
         </CardHeader>
         
-        {/* Notificação de navegação do CRM */}
-        {crmNavigationInfo && (
-          <div className="px-6 py-3 bg-yellow-900/20 border-b border-yellow-600/30">
-            <div className="flex items-center gap-3">
-              <AlertCircle className="h-5 w-5 text-yellow-400" />
-              <div className="flex-1">
-                <p className="text-sm text-yellow-300">
-                  Navegação do CRM: Buscando conversa para <strong>{crmNavigationInfo.leadName}</strong> ({crmNavigationInfo.leadPhone})
-                </p>
-                <p className="text-xs text-yellow-400/80 mt-1">
-                  {(() => {
-                    const isManager = profile?.role === 'admin' || profile?.role === 'gestor';
-                    const isManagerAwaitingSelection = isManager && !selectedCorretor;
-                    
-                    if (isManagerAwaitingSelection && corretores.length === 0) {
-                      return "Carregando lista de corretores...";
-                    } else if (isManagerAwaitingSelection) {
-                      return "Buscando automaticamente qual corretor possui conversa com este lead...";
-                    } else if (conversasLoading) {
-                      return "Aguardando carregamento das conversas...";
-                    } else if (conversas.length === 0) {
-                      return "Nenhuma conversa disponível para o corretor selecionado.";
-                    } else {
-                      return "Nenhuma conversa encontrada com este telefone. Verifique se existe um chat ativo para este lead.";
-                    }
-                  })()}
-                </p>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setCrmNavigationInfo(null)}
-                className="text-yellow-400 hover:text-yellow-300 hover:bg-yellow-900/30"
-              >
-                ✕
-              </Button>
-            </div>
-          </div>
-        )}
+        {/* Banner de CRM removido (UI pura) */}
         
         <CardContent className="p-0 h-[calc(100%-5rem)] overflow-hidden">
           <div className="h-full flex bg-gradient-to-br from-gray-800/50 via-gray-850/50 to-gray-900/50 text-white relative">

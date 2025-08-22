@@ -26,6 +26,7 @@ interface AppointmentCalendarProps {
   selectedDate?: Date;
   currentMonth?: Date;
   selectedAgenda?: string;
+  selectedAgendaName?: string;
 }
 
 // Mock data para agendamentos (fallback)
@@ -88,7 +89,8 @@ export function AppointmentCalendar({
   onMonthChange,
   selectedDate: externalSelectedDate,
   currentMonth: externalCurrentMonth,
-  selectedAgenda = "Todos"
+  selectedAgenda = "Todos",
+  selectedAgendaName
 }: AppointmentCalendarProps) {
   const [internalCurrentDate, setInternalCurrentDate] = useState(new Date());
   const [internalSelectedDate, setInternalSelectedDate] = useState(new Date());
@@ -652,10 +654,9 @@ export function AppointmentCalendar({
             <div className="flex flex-col">
               <span className="text-xl font-semibold">Calendário</span>
               <span className="text-sm font-normal text-gray-400">
-                {selectedAgenda === "Todos" ? "📋 Todos os corretores" : 
-                 selectedAgenda === "Isis" ? "👩‍💼 Agenda da Isis" :
-                 selectedAgenda === "Arthur" ? "👨‍💼 Agenda do Arthur" :
-                 `Corretor: ${selectedAgenda}`}
+                {selectedAgenda === "Todos" 
+                  ? "📋 Todos os calendários" 
+                  : `Calendário: ${selectedAgendaName || selectedAgenda}`}
               </span>
             </div>
           </CardTitle>

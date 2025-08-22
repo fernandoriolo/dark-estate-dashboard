@@ -578,3 +578,14 @@ Próximos passos sugeridos:
   - **Fácil manutenção**: Padrão conhecido da equipe
   - **Responsividade nativa**: Adaptação automática a diferentes tamanhos
 - **Resultado**: Layout otimizado, dados corretos, alinhamento perfeito, visual profissional, dupla visualização de leads e sem erros de compilação
+
+## 2025-01-20 — Permissões de usuários: gestores podem desativar/excluir
+- **Problema**: Apenas admins podiam desativar, ativar e excluir usuários no módulo de gerenciamento
+- **Solução implementada**:
+  - **useUserProfile.ts**: Alteradas funções `deactivateUser`, `activateUser` e `deleteUser` de `isAdmin` para `isManager`
+  - **UserManagementView.tsx**: Ajustada condição de exclusão de `isAdmin` para `(isAdmin || isManager)` na linha 632
+  - **RLS validada**: Políticas do banco já permitiam gestores gerenciarem usuários da mesma empresa
+  - **Edge Function corrigida**: `admin-delete-user` atualizada para permitir role `gestor` (linha 70-72)
+  - **Deploy realizado**: Edge Function versão 3 deployada com sucesso
+- **Erro resolvido**: 403 Forbidden na exclusão de usuários por gestores corrigido
+- **Resultado**: Gestores agora podem desativar, reativar e excluir usuários corretores, mantendo segurança por empresa

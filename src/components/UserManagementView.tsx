@@ -25,13 +25,15 @@ import {
   AlertTriangle,
   MoreVertical,
   UserX,
-  RefreshCw
+  RefreshCw,
+  Settings
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { useUserProfile, UserProfile } from '@/hooks/useUserProfile';
 import { supabase } from '@/integrations/supabase/client';
+import { invokeEdge } from '@/integrations/supabase/invoke';
 import { logAudit } from '@/lib/audit/logger';
 import { toast } from 'sonner';
 
@@ -71,6 +73,9 @@ export function UserManagementView() {
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [editForm, setEditForm] = useState<{ full_name: string; email: string; phone: string; role: 'corretor' | 'gestor' | 'admin' } | null>(null);
   const [createLoading, setCreateLoading] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [settingsForm, setSettingsForm] = useState<{ chat_instance: string } | null>(null);
+  const [instances, setInstances] = useState<{ label: string; key: string }[]>([]);
   
   // Dados do formulário de criação
   const [createForm, setCreateForm] = useState({
@@ -135,12 +140,7 @@ export function UserManagementView() {
       const token = sessionData.session?.access_token;
       if (!token) throw new Error('Sessão inválida para atualizar usuário');
 
-      const { data: fnData, error: fnError } = await supabase.functions.invoke('admin-update-user', {
-        body: updates,
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
+      const { data: fnData, error: fnError } = await invokeEdge<typeof updates, any>('admin-update-user', { body: updates });
 
       if (fnError) {
         throw new Error(fnError.message || 'Falha ao atualizar usuário');
@@ -175,6 +175,65 @@ export function UserManagementView() {
         description: e.message || 'Erro ao salvar alterações'
       });
       setError(e.message || 'Erro ao salvar alterações');
+    }
+  };
+
+  // Carregar instâncias de chat disponíveis (views normalizadas)
+  const loadChatInstances = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('vw_imobipro_instances')
+        .select('instancia_label, instancia_key')
+        .order('instancia_label', { ascending: true });
+      if (error) throw error;
+      setInstances((data || []).map((r: any) => ({ label: r.instancia_label, key: r.instancia_key })));
+    } catch (e) {
+      console.error('Erro ao carregar instâncias de chat:', e);
+      setInstances([]);
+    }
+  };
+
+  // Abrir modal de definições
+  const openSettings = async (user: any) => {
+    setSelectedUser(user);
+    // Normalizar valor salvo (pode ter sido rótulo). Tentar mapear para a key
+    await loadChatInstances();
+    const raw = (user.chat_instance || '').toString();
+    const normalized = raw.trim().toLowerCase();
+    const match = instances.find(i => i.key === normalized || i.label.trim().toLowerCase() === normalized);
+    setSettingsForm({ chat_instance: match ? match.key : '' });
+    setShowSettingsModal(true);
+  };
+
+  // Salvar definições (chat_instance)
+  const handleSaveSettings = async () => {
+    if (!selectedUser || !settingsForm) return;
+    const loadingToast = toast.loading('Salvando definições...');
+    try {
+      const updatePayload = { chat_instance: settingsForm.chat_instance || null } as any;
+      let { data: upd1, error: err1 } = await supabase
+        .from('user_profiles')
+        .update(updatePayload)
+        .eq('id', selectedUser.id)
+        .select('id');
+      if (err1) throw err1;
+      if (!upd1 || upd1.length === 0) {
+        let { data: upd2, error: err2 } = await supabase
+          .from('user_profiles')
+          .update(updatePayload)
+          .eq('user_id', selectedUser.id)
+          .select('user_id');
+        if (err2) throw err2;
+      }
+
+      try { await logAudit({ action: 'user.settings_updated', resource: 'user_profile', resourceId: selectedUser.id, meta: { chat_instance: settingsForm.chat_instance } }); } catch {}
+      await fetchUsers(searchTerm, roleFilter);
+      toast.dismiss(loadingToast);
+      toast.success('✅ Definições salvas!', { description: 'Instância de chat atribuída com sucesso.' });
+      setShowSettingsModal(false);
+    } catch (e: any) {
+      toast.dismiss(loadingToast);
+      toast.error('❌ Erro ao salvar definições', { description: e.message || 'Falha ao salvar' });
     }
   };
 
@@ -387,7 +446,7 @@ export function UserManagementView() {
         </div>
         
         <div className="flex items-center gap-3">
-          {isAdmin && (
+          {(isAdmin || isManager) && (
             <Button 
               onClick={() => setShowCreateModal(true)}
               className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
@@ -602,6 +661,10 @@ export function UserManagementView() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => openSettings(user)}>
+                    <Settings className="h-4 w-4 mr-2" />
+                    Definições
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => {
                     setSelectedUser(user);
                     setEditForm({
@@ -633,7 +696,7 @@ export function UserManagementView() {
                                       <RefreshCw className="h-4 w-4 mr-2" />
                                       Reativar
                                     </DropdownMenuItem>
-                                    {isAdmin && (
+                                    {(isAdmin || isManager) && (
                                       <DropdownMenuItem 
                                         onClick={() => handleDeleteUser(user.id, user.full_name)}
                                         className="text-red-600 hover:text-red-500"
@@ -804,9 +867,15 @@ export function UserManagementView() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="corretor">Corretor</SelectItem>
-                  <SelectItem value="gestor">Gestor</SelectItem>
-                  {isAdmin && <SelectItem value="admin">Administrador</SelectItem>}
+                  {/* Gestor só pode criar corretores */}
+                  {!isAdmin && <SelectItem value="corretor">Corretor</SelectItem>}
+                  {isAdmin && (
+                    <>
+                      <SelectItem value="corretor">Corretor</SelectItem>
+                      <SelectItem value="gestor">Gestor</SelectItem>
+                      <SelectItem value="admin">Administrador</SelectItem>
+                    </>
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -866,6 +935,57 @@ export function UserManagementView() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal Definições de Usuário */}
+      <Dialog open={showSettingsModal} onOpenChange={setShowSettingsModal}>
+        <DialogContent className="bg-gray-900 border-gray-700 max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-white">Definições do Usuário</DialogTitle>
+            <DialogDescription className="text-gray-400">
+              Atribua instância de chat e outras integrações
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label className="text-gray-300">Instância de Chat</Label>
+              <Select 
+                value={settingsForm?.chat_instance || ''}
+                onValueChange={(v) => setSettingsForm(prev => prev ? { ...prev, chat_instance: v } : prev)}
+              >
+                <SelectTrigger className="bg-gray-800/50 border-gray-600 text-white mt-1">
+                  <SelectValue placeholder="Selecione uma instância" />
+                </SelectTrigger>
+                <SelectContent>
+                  {instances.map(inst => (
+                    <SelectItem key={inst.key} value={inst.key}>{inst.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="text-xs text-gray-500 border-t border-gray-700 pt-3">
+              Em breve: atribuição de conexões, agendas e outras integrações.
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 mt-6">
+            <Button 
+              variant="outline" 
+              onClick={() => setShowSettingsModal(false)}
+              className="border-gray-600 text-red-500 hover:bg-gray-800 hover:text-red-400"
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleSaveSettings}
+              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+            >
+              Salvar
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

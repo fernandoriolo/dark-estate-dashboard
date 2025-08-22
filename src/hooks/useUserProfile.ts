@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { invokeEdge } from '@/integrations/supabase/invoke';
 import { User } from '@supabase/supabase-js';
 import { useAuthManager } from './useAuthManager';
 
@@ -49,6 +50,18 @@ export function useUserProfile() {
   // Verificar se é admin
   const isAdmin = profile?.role === 'admin';
 
+  function isJwtExpiredError(err: any): boolean {
+    const msg = (err?.message || '').toString().toLowerCase();
+    const name = (err?.name || '').toString().toLowerCase();
+    const status = err?.status || err?.statusCode || err?.code;
+    return (
+      msg.includes('jwt') ||
+      msg.includes('token') ||
+      name.includes('jwt') ||
+      status === 401
+    ) && (msg.includes('expired') || msg.includes('invalid'));
+  }
+
   // Carregar dados do usuário com proteção contra carregamentos múltiplos
   const loadUserData = useCallback(async (force = false) => {
     const now = Date.now();
@@ -84,10 +97,17 @@ export function useUserProfile() {
       }
       setError(null);
 
-      // Obter usuário autenticado
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      // Obter usuário autenticado (com fallback de refresh se necessário)
+      let { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError) {
-        throw userError;
+        if (isJwtExpiredError(userError)) {
+          try { await supabase.auth.refreshSession(); } catch {}
+          const retryUser = await supabase.auth.getUser();
+          user = retryUser.data.user;
+          if (retryUser.error) throw retryUser.error;
+        } else {
+          throw userError;
+        }
       }
 
       // Verificar se o componente ainda está montado antes de continuar
@@ -104,12 +124,29 @@ export function useUserProfile() {
 
       setUser(user);
 
-      // Buscar perfil do usuário
-      const { data: profileData, error: profileError } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
+      // Buscar perfil do usuário (com retry após refresh em caso de JWT expirado)
+      let profileData: any = null;
+      let profileError: any = null;
+      {
+        const resp = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+        profileData = resp.data;
+        profileError = resp.error;
+      }
+
+      if (profileError && isJwtExpiredError(profileError)) {
+        try { await supabase.auth.refreshSession(); } catch {}
+        const retry = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+        profileData = retry.data;
+        profileError = retry.error;
+      }
 
       // Verificar se o componente ainda está montado antes de continuar
       if (!mountedRef.current) {
@@ -252,10 +289,10 @@ export function useUserProfile() {
     }
   };
 
-  // Desativar usuário (apenas para admins)
+  // Desativar usuário (para admins e gestores)
   const deactivateUser = async (userId: string) => {
     try {
-      if (!isAdmin) {
+      if (!isManager) {
         throw new Error('Sem permissão para desativar usuários');
       }
 
@@ -275,10 +312,10 @@ export function useUserProfile() {
     }
   };
 
-  // Reativar usuário (apenas para admins)
+  // Reativar usuário (para admins e gestores)
   const activateUser = async (userId: string) => {
     try {
-      if (!isAdmin) {
+      if (!isManager) {
         throw new Error('Sem permissão para reativar usuários');
       }
 
@@ -298,10 +335,10 @@ export function useUserProfile() {
     }
   };
 
-  // Deletar usuário completamente (apenas para admins, apenas se inativo)
+  // Deletar usuário completamente (para admins e gestores, apenas se inativo)
   const deleteUser = async (userId: string) => {
     try {
-      if (!isAdmin) {
+      if (!isManager) {
         throw new Error('Sem permissão para deletar usuários');
       }
 
@@ -310,11 +347,8 @@ export function useUserProfile() {
       const token = sessionData.session?.access_token;
       if (!token) throw new Error('Sessão inválida para deletar usuário');
 
-      const { data: fnData, error: fnError } = await supabase.functions.invoke('admin-delete-user', {
-        body: { user_id: userId },
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+      const { data: fnData, error: fnError } = await invokeEdge<{ user_id: string }, any>('admin-delete-user', {
+        body: { user_id: userId }
       });
 
       if (fnError) {
@@ -331,7 +365,7 @@ export function useUserProfile() {
     }
   };
 
-  // Criar convite para novo usuário (apenas para admins)
+  // Criar novo usuário (admins podem criar qualquer role; gestores apenas corretores)
   const createNewUser = async (userData: {
     email: string;
     password: string;
@@ -341,8 +375,14 @@ export function useUserProfile() {
     phone?: string;
   }) => {
     try {
-      if (!isAdmin) {
+      // Permitir gestores e admins
+      if (!isManager) {
         throw new Error('Sem permissão para criar usuários');
+      }
+
+      // Gestor só pode criar corretores
+      if (profile?.role === 'gestor' && userData.role !== 'corretor') {
+        throw new Error('Gestor pode criar apenas usuários com role corretor');
       }
 
       // Preferir criação via Edge Function com service_role (invocação direta via supabase.functions)
@@ -350,16 +390,13 @@ export function useUserProfile() {
       const token = sessionData.session?.access_token;
       if (!token) throw new Error('Sessão inválida para criar usuário');
 
-      const { data: fnData, error: fnError } = await supabase.functions.invoke('admin-create-user', {
+      const { data: fnData, error: fnError } = await invokeEdge<any, any>('admin-create-user', {
         body: {
           email: userData.email,
           password: userData.password,
           full_name: userData.full_name,
           role: userData.role,
           phone: userData.phone || undefined,
-        },
-        headers: {
-          Authorization: `Bearer ${token}`
         }
       });
 

@@ -97,6 +97,144 @@ export function ConnectionsViewSimplified() {
   const [qrExpired, setQrExpired] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [connectedInstanceName, setConnectedInstanceName] = useState("");
+  
+  // Estados para gestão de solicitações pendentes (apenas gestores)
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+
+  // Carregar solicitações pendentes (apenas para gestores)
+  const loadPendingRequests = async () => {
+    if (!isManager || !profile?.company_id) return;
+    
+    try {
+      setLoadingRequests(true);
+      const { data, error } = await supabase
+        .from('connection_requests')
+        .select(`
+          *,
+          user_profile:user_profiles!connection_requests_user_id_fkey(full_name, email, role)
+        `)
+        .eq('company_id', profile.company_id)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setPendingRequests(data || []);
+    } catch (error) {
+      console.error('Erro ao carregar solicitações pendentes:', error);
+    } finally {
+      setLoadingRequests(false);
+    }
+  };
+
+  // Aprovar solicitação
+  const handleApproveRequest = async (requestId: string) => {
+    try {
+      const request = pendingRequests.find(req => req.id === requestId);
+      if (!request) return;
+
+      // 1. Marcar solicitação como aprovada
+      const { error: updateError } = await supabase
+        .from('connection_requests')
+        .update({
+          status: 'approved',
+          approved_by: profile?.id,
+          approved_at: new Date().toISOString()
+        })
+        .eq('id', requestId);
+
+      if (updateError) throw updateError;
+
+      // 2. Criar a instância WhatsApp AGORA (só quando aprovada)
+      const { data: newInstance, error: instanceError } = await supabase
+        .from('whatsapp_instances')
+        .insert({
+          user_id: request.user_id,
+          company_id: request.company_id,
+          instance_name: request.instance_name,
+          phone_number: request.phone_number,
+          request_status: 'approved',
+          status: 'qr_code', // Pronto para gerar QR
+          webhook_url: `https://webhooklabz.n8nlabz.com.br/webhook/${request.instance_name}`,
+          is_active: true
+        })
+        .select()
+        .single();
+
+      if (instanceError) throw instanceError;
+
+      // 3. Criar notificação para o solicitante
+      await supabase
+        .from('notifications')
+        .insert({
+          user_id: request.user_id,
+          company_id: request.company_id,
+          type: 'connection_approved',
+          title: 'Solicitação Aprovada! 🎉',
+          message: `Sua solicitação de conexão "${request.instance_name}" foi aprovada! Você pode gerar o QR code agora.`,
+          data: {
+            instance_id: newInstance.id,
+            instance_name: request.instance_name,
+            approved_by: profile?.id,
+            approved_by_name: profile?.full_name
+          }
+        });
+
+      // 4. Remover da lista de pendentes e atualizar instâncias
+      setPendingRequests(prev => prev.filter(req => req.id !== requestId));
+      refreshInstances();
+      
+      alert('Solicitação aprovada com sucesso! Instância criada.');
+    } catch (error) {
+      console.error('Erro ao aprovar solicitação:', error);
+      alert('Erro ao aprovar solicitação. Tente novamente.');
+    }
+  };
+
+  // Rejeitar solicitação
+  const handleRejectRequest = async (requestId: string) => {
+    try {
+      const request = pendingRequests.find(req => req.id === requestId);
+      if (!request) return;
+
+      // Marcar solicitação como rejeitada (não deletar, manter histórico)
+      const { error } = await supabase
+        .from('connection_requests')
+        .update({
+          status: 'rejected',
+          rejected_by: profile?.id,
+          rejected_at: new Date().toISOString()
+        })
+        .eq('id', requestId);
+
+      if (error) throw error;
+
+      // Criar notificação para o solicitante
+      await supabase
+        .from('notifications')
+        .insert({
+          user_id: request.user_id,
+          company_id: request.company_id,
+          type: 'connection_rejected',
+          title: 'Solicitação Rejeitada',
+          message: `Sua solicitação de conexão "${request.instance_name}" foi rejeitada.`,
+          data: {
+            request_id: requestId,
+            instance_name: request.instance_name,
+            rejected_by: profile?.id,
+            rejected_by_name: profile?.full_name
+          }
+        });
+
+      // Remover da lista de pendentes
+      setPendingRequests(prev => prev.filter(req => req.id !== requestId));
+      
+      alert('Solicitação rejeitada.');
+    } catch (error) {
+      console.error('Erro ao rejeitar solicitação:', error);
+      alert('Erro ao rejeitar solicitação. Tente novamente.');
+    }
+  };
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [selectedConfigInstance, setSelectedConfigInstance] = useState<WhatsAppInstance | null>(null);
   const [loadingConfig, setLoadingConfig] = useState(false);
@@ -132,6 +270,13 @@ export function ConnectionsViewSimplified() {
       });
     }
   }, [showAddModal, canCreate]);
+
+  // Carregar solicitações pendentes quando for gestor
+  useEffect(() => {
+    if (isManager && profile?.company_id) {
+      loadPendingRequests();
+    }
+  }, [isManager, profile?.company_id]);
 
   // Timer do QR Code (15 segundos)
   useEffect(() => {
@@ -424,9 +569,24 @@ export function ConnectionsViewSimplified() {
   // Componente para exibir instância
   const InstanceCard = ({ instance }: { instance: WhatsAppInstance }) => {
     const isConnected = instance.status === 'connected';
+    const isPendingRequest = instance.request_status === 'requested';
+    const isApproved = instance.request_status === 'approved';
 
     return (
-      <Card className="bg-gray-800 border-gray-700 p-6">
+      <Card className={`p-6 ${isPendingRequest ? 'bg-yellow-900/20 border-yellow-500/50' : 'bg-gray-800 border-gray-700'}`}>
+        {/* Cabeçalho de solicitação pendente */}
+        {isPendingRequest && (
+          <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+            <div className="flex items-center gap-2 text-yellow-400">
+              <Clock className="h-4 w-4" />
+              <span className="text-sm font-medium">Solicitação Pendente</span>
+            </div>
+            <p className="text-xs text-yellow-300/80 mt-1">
+              Aguardando aprovação do gestor para ativação
+            </p>
+          </div>
+        )}
+        
         {/* Header com foto, nome e status */}
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
@@ -453,7 +613,10 @@ export function ConnectionsViewSimplified() {
                 </div>
               )}
               {/* Status indicator */}
-              <div className={`absolute -bottom-1 -right-1 h-3 w-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-gray-500'} border-2 border-gray-800`} />
+              <div className={`absolute -bottom-1 -right-1 h-3 w-3 rounded-full ${
+                isPendingRequest ? 'bg-yellow-500' : 
+                isConnected ? 'bg-green-500' : 'bg-gray-500'
+              } border-2 border-gray-800`} />
             </div>
 
             {/* Nome e status */}
@@ -462,12 +625,17 @@ export function ConnectionsViewSimplified() {
                 <h3 className="text-white font-medium">
                   {instance.profile_name || instance.instance_name}
                 </h3>
-                {isConnected && (
+                {isPendingRequest ? (
+                  <span className="text-yellow-500 text-sm flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    Pendente
+                  </span>
+                ) : isConnected ? (
                   <span className="text-green-500 text-sm flex items-center gap-1">
                     <Check className="h-3 w-3" />
                     Online
                   </span>
-                )}
+                ) : null}
               </div>
               <p className="text-gray-400 text-sm">Instância: {instance.instance_name}</p>
             </div>
@@ -479,7 +647,8 @@ export function ConnectionsViewSimplified() {
               size="icon"
               variant="ghost"
               onClick={() => handleShowConfig(instance)}
-              className="h-8 w-8 text-gray-400 hover:text-white hover:bg-gray-700"
+              disabled={isPendingRequest}
+              className={`h-8 w-8 ${isPendingRequest ? 'text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
             >
               <Settings className="h-4 w-4" />
             </Button>
@@ -487,7 +656,8 @@ export function ConnectionsViewSimplified() {
               size="icon"
               variant="ghost"
               onClick={() => handleDeleteInstance(instance.id)}
-              className="h-8 w-8 text-gray-400 hover:text-red-400 hover:bg-red-900/20"
+              disabled={isPendingRequest}
+              className={`h-8 w-8 ${isPendingRequest ? 'text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:text-red-400 hover:bg-red-900/20'}`}
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -508,11 +678,12 @@ export function ConnectionsViewSimplified() {
         </div>
 
         {/* Estatísticas */}
-        <div className="grid grid-cols-3 gap-3 mb-4">
-          <div className="bg-blue-900/30 rounded-lg p-3 text-center">
-            <div className="text-2xl font-bold text-blue-400">
-              {instance.message_count.toLocaleString('pt-BR')}
-            </div>
+        {!isPendingRequest && (
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="bg-blue-900/30 rounded-lg p-3 text-center">
+              <div className="text-2xl font-bold text-blue-400">
+                {instance.message_count.toLocaleString('pt-BR')}
+              </div>
             <div className="text-xs text-gray-400">Mensagens</div>
           </div>
           <div className="bg-green-900/30 rounded-lg p-3 text-center">
@@ -528,6 +699,7 @@ export function ConnectionsViewSimplified() {
             <div className="text-xs text-gray-400">Chats</div>
           </div>
         </div>
+        )}
 
         {/* Botões de ação principais */}
         <div className="flex gap-2">
@@ -535,11 +707,11 @@ export function ConnectionsViewSimplified() {
             size="sm"
             variant="outline"
             onClick={() => handleGenerateQrCode(instance)}
-            disabled={generatingQr || isConnected}
-            className="flex-1 border-gray-600 text-gray-300 hover:bg-gray-700"
+            disabled={generatingQr || isConnected || isPendingRequest}
+            className="flex-1 border-gray-600 text-gray-300 hover:bg-gray-700 disabled:opacity-50"
           >
             <QrCode className="h-4 w-4 mr-2" />
-            {generatingQr ? 'Gerando...' : 'Gerar QR Code'}
+            {isPendingRequest ? 'Aguardando Aprovação' : generatingQr ? 'Gerando...' : 'Gerar QR Code'}
           </Button>
 
           {isConnected ? (
@@ -694,8 +866,82 @@ export function ConnectionsViewSimplified() {
         </div>
       </div>
 
+      {/* Solicitações Pendentes (apenas para gestores) */}
+      {isManager && pendingRequests.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Clock className="h-5 w-5 text-yellow-400" />
+            <h2 className="text-xl font-semibold text-white">Solicitações Pendentes</h2>
+            <span className="bg-yellow-500/20 text-yellow-300 px-2 py-1 rounded-full text-xs">
+              {pendingRequests.length}
+            </span>
+          </div>
+          
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {pendingRequests.map((request) => (
+              <Card key={request.id} className="bg-yellow-900/20 border-yellow-500/50">
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <h3 className="font-medium text-white mb-1">
+                        {request.instance_name}
+                      </h3>
+                      <p className="text-sm text-yellow-300">
+                        Solicitado por: {request.user_profile?.full_name}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {new Date(request.created_at).toLocaleString('pt-BR')}
+                      </p>
+                    </div>
+                    <div className="bg-yellow-500/20 p-1 rounded">
+                      <Clock className="h-4 w-4 text-yellow-400" />
+                    </div>
+                  </div>
+                  
+                  {request.message && (
+                    <div className="bg-yellow-500/10 border border-yellow-500/30 rounded p-2 mb-3">
+                      <p className="text-xs text-yellow-200">
+                        "{request.message}"
+                      </p>
+                    </div>
+                  )}
+                  
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => handleApproveRequest(request.id)}
+                      className="flex-1 bg-green-600 hover:bg-green-700"
+                    >
+                      <Check className="h-3 w-3 mr-1" />
+                      Aprovar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleRejectRequest(request.id)}
+                      className="flex-1 border-red-500 text-red-400 hover:bg-red-500/10"
+                    >
+                      <XCircle className="h-3 w-3 mr-1" />
+                      Rejeitar
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Instances Grid */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <div className="space-y-4">
+        {isManager && (
+          <div className="flex items-center gap-2">
+            <Smartphone className="h-5 w-5 text-blue-400" />
+            <h2 className="text-xl font-semibold text-white">Instâncias Ativas</h2>
+          </div>
+        )}
+        
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {filteredInstances.map((instance, index) => (
           <div
             key={instance.id}
@@ -703,6 +949,7 @@ export function ConnectionsViewSimplified() {
             <InstanceCard instance={instance} />
           </div>
         ))}
+        </div>
       </div>
 
       {/* Empty State */}
