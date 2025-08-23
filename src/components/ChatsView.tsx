@@ -18,8 +18,12 @@ import {
   AlertCircle,
   ChevronRight,
   User,
-  FileText
+  FileText,
+  Mic,
+  Square
 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from '@/hooks/use-toast';
 import { 
   Dialog,
   DialogContent,
@@ -67,6 +71,9 @@ export function ChatsView() {
 
   const [messageInput, setMessageInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<BlobPart[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isSummaryOpen, setIsSummaryOpen] = useState(false);
@@ -129,16 +136,151 @@ export function ChatsView() {
   );
 
   // Enviar mensagem
+  const getLeadPhone = async (sessionId: string): Promise<string | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('leads')
+        .select('phone')
+        .eq('id', sessionId)
+        .maybeSingle();
+      if (error) throw error;
+      const phone = (data as any)?.phone || null;
+      return phone ? String(phone) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const postEnviarMensagem = async (payload: any) => {
+    try {
+      await fetch('https://webhooklabz.n8nlabz.com.br/webhook/enviar_mensagem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } catch (err) {
+      console.error('Falha ao enviar para webhook enviar_mensagem', err);
+    }
+  };
+
   const handleSendMessage = async () => {
     if (!messageInput.trim() || !selectedChat || sendingMessage) return;
 
     setSendingMessage(true);
     const success = await sendMessage(selectedChat, messageInput);
+    // Disparo ao webhook externo com número do cliente
+    try {
+      const phone = await getLeadPhone(selectedChat);
+      await postEnviarMensagem({
+        session_id: selectedChat,
+        phone: phone,
+        content: messageInput.trim(),
+        type: 'text'
+      });
+    } catch {}
     
     if (success) {
       setMessageInput('');
     }
     setSendingMessage(false);
+  };
+
+  const getBestAudioMimeType = (): string | undefined => {
+    const candidates = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/ogg;codecs=opus',
+      'audio/ogg',
+      'audio/mp4'
+    ];
+    for (const type of candidates) {
+      // @ts-expect-error - MediaRecorder may be undefined in some browsers
+      if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported?.(type)) return type;
+    }
+    return undefined;
+  };
+
+  const startRecording = async () => {
+    if (isRecording) return;
+    try {
+      if (!window.isSecureContext && !['localhost', '127.0.0.1'].includes(window.location.hostname)) {
+        toast({
+          title: 'Conexão não segura',
+          description: 'A gravação de áudio requer HTTPS. Acesse por HTTPS ou localhost.'
+        });
+        return;
+      }
+      toast({ title: 'Microfone', description: 'Solicitando permissão do microfone...' });
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
+        toast({
+          title: 'Gravação não suportada',
+          description: 'Seu navegador não suporta gravação de áudio. Use um navegador atualizado com suporte a microfone.'
+        });
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const options: MediaRecorderOptions = {} as any;
+      const preferred = getBestAudioMimeType();
+      if (preferred) (options as any).mimeType = preferred;
+      const recorder = new MediaRecorder(stream, options);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+      recorder.onerror = (e: any) => {
+        console.error('Erro do MediaRecorder', e);
+        toast({ title: 'Erro na gravação', description: 'Não foi possível gravar o áudio.' });
+        try { stream.getTracks().forEach(t => t.stop()); } catch {}
+        setIsRecording(false);
+      };
+      recorder.onstart = () => {
+        toast({ title: 'Gravando áudio', description: 'Toque novamente no botão para parar.' });
+      };
+      recorder.onstop = async () => {
+        const type = preferred || 'audio/webm';
+        const blob = new Blob(audioChunksRef.current, { type });
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          const base64 = reader.result as string; // data URL
+          if (selectedChat) {
+            // Atualiza UI rapidamente
+            await sendMessage(selectedChat, '[Áudio enviado]');
+            const phone = await getLeadPhone(selectedChat);
+            await postEnviarMensagem({
+              session_id: selectedChat,
+              phone: phone,
+              content: '[Audio]',
+              type: 'audio',
+              audio_base64: base64
+            });
+          }
+        };
+        reader.readAsDataURL(blob);
+        setIsRecording(false);
+        // parar tracks do stream
+        stream.getTracks().forEach(t => t.stop());
+      };
+      mediaRecorderRef.current = recorder;
+      // Passar timeslice garante eventos de dataavailable em alguns browsers
+      recorder.start(250);
+      setIsRecording(true);
+    } catch (err) {
+      console.error('Erro ao iniciar gravação de áudio', err);
+      toast({
+        title: 'Erro ao acessar o microfone',
+        description: 'Verifique as permissões do navegador para o microfone e tente novamente.'
+      });
+      setIsRecording(false);
+    }
+  };
+
+  const stopRecording = () => {
+    const rec = mediaRecorderRef.current;
+    if (rec && isRecording) {
+      rec.stop();
+    } else {
+      toast({ title: 'Nada para parar', description: 'Inicie uma gravação antes de parar.' });
+    }
   };
 
   // Gerar resumo via n8n
@@ -953,66 +1095,66 @@ export function ChatsView() {
           </div>
         </ScrollArea>
 
-        {/* Área de envio - Design Premium */}
-        {profile?.role === 'corretor' && (
-          <div className="relative p-6 border-t border-gray-700/50 bg-gradient-to-r from-gray-900/90 via-gray-850 to-gray-900/90 backdrop-blur-sm">
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-600/3 to-purple-600/3"></div>
-            <div className="relative flex gap-3">
-              <div className="flex-1 relative">
-                <Input
-                  placeholder="Digite sua mensagem..."
-                  value={messageInput}
-                  onChange={(e) => setMessageInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendMessage();
-                    }
-                  }}
-                  className="bg-gray-800/80 border-gray-600/50 text-white placeholder-gray-400 rounded-xl px-4 py-3 pr-12 backdrop-blur-sm shadow-lg focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20"
-                  disabled={sendingMessage}
-                />
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">
-                  <MessageSquare className="h-4 w-4" />
-                </div>
+        {/* Área de envio - universal (texto e áudio) */}
+        <div className="relative p-6 border-t border-gray-700/50 bg-gradient-to-r from-gray-900/90 via-gray-850 to-gray-900/90 backdrop-blur-sm">
+          <div className="absolute inset-0 bg-gradient-to-r from-blue-600/3 to-purple-600/3"></div>
+          <div className="relative flex gap-3">
+            <div className="flex-1 relative">
+              <Input
+                placeholder="Digite sua mensagem..."
+                value={messageInput}
+                onChange={(e) => setMessageInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendMessage();
+                  }
+                }}
+                className="bg-gray-800/80 border-gray-600/50 text-white placeholder-gray-400 rounded-xl px-4 py-3 pr-12 backdrop-blur-sm shadow-lg focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20"
+                disabled={sendingMessage}
+              />
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">
+                <MessageSquare className="h-4 w-4" />
               </div>
-              <Button
-                onClick={handleSendMessage}
-                disabled={!messageInput.trim() || sendingMessage}
-                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-6 py-3 rounded-xl shadow-lg transition-all duration-200 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed border border-blue-500/30"
-              >
-                {sendingMessage ? (
-                  <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-              </Button>
             </div>
-            <div className="text-xs text-gray-400 mt-3 flex items-center gap-2">
-              <div className="flex items-center gap-1">
-                <div className="w-1 h-1 bg-green-500 rounded-full"></div>
-                <span>Pressione Enter para enviar</span>
-              </div>
-              <div className="w-1 h-1 bg-gray-600 rounded-full"></div>
-              <span>Shift+Enter para quebrar linha</span>
-            </div>
+            <Button
+              type="button"
+              onClick={() => {
+                if (isRecording) stopRecording(); else startRecording();
+              }}
+              className={cn(
+                "px-3 py-3 rounded-xl border transition-all duration-200",
+                isRecording
+                  ? "bg-red-700 hover:bg-red-800 border-red-500/40"
+                  : "bg-purple-700 hover:bg-purple-800 border-purple-500/40"
+              )}
+              title={isRecording ? 'Parar gravação' : 'Gravar áudio'}
+            >
+              {isRecording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+            </Button>
+            <Button
+              onClick={handleSendMessage}
+              disabled={!messageInput.trim() || sendingMessage}
+              className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-6 py-3 rounded-xl shadow-lg transition-all duration-200 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed border border-blue-500/30"
+            >
+              {sendingMessage ? (
+                <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </Button>
           </div>
-        )}
-
-        {/* Mensagem para gestores/admins - Design Elegante */}
-        {profile?.role !== 'corretor' && (
-          <div className="relative p-6 border-t border-gray-700/50 bg-gradient-to-r from-gray-900/90 via-gray-850 to-gray-900/90 backdrop-blur-sm">
-            <div className="absolute inset-0 bg-gradient-to-r from-amber-600/5 to-orange-600/5"></div>
-            <div className="relative text-center">
-              <div className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600/10 border border-amber-600/20 rounded-full">
-                <AlertCircle className="h-4 w-4 text-amber-400" />
-                <span className="text-amber-300 text-sm font-medium">
-                  Apenas o corretor responsável pode enviar mensagens
-                </span>
-              </div>
+          <div className="text-xs text-gray-400 mt-3 flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              <div className="w-1 h-1 bg-green-500 rounded-full"></div>
+              <span>Pressione Enter para enviar</span>
             </div>
+            <div className="w-1 h-1 bg-gray-600 rounded-full"></div>
+            <span>Shift+Enter para quebrar linha</span>
+            <div className="w-1 h-1 bg-gray-600 rounded-full"></div>
+            <span>{isRecording ? 'Gravando...' : 'Envie áudio pelo botão de microfone'}</span>
           </div>
-        )}
+        </div>
       </div>
     );
   };
