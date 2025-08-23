@@ -17,8 +17,16 @@ import {
   Search,
   AlertCircle,
   ChevronRight,
-  User
+  User,
+  FileText
 } from 'lucide-react';
+import { 
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -61,6 +69,11 @@ export function ChatsView() {
   const [sendingMessage, setSendingMessage] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [isSummaryOpen, setIsSummaryOpen] = useState(false);
+  const [summaryText, setSummaryText] = useState('');
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [summaryJson, setSummaryJson] = useState<any | null>(null);
   
   // Estado: corretor sem instância atribuída
   const isCorretorWithoutInstance = profile?.role === 'corretor' && !(profile as any)?.chat_instance;
@@ -126,6 +139,382 @@ export function ChatsView() {
       setMessageInput('');
     }
     setSendingMessage(false);
+  };
+
+  // Gerar resumo via n8n
+  const handleGenerateSummary = async () => {
+    if (!selectedChat) return;
+    setSummaryError(null);
+    setSummaryLoading(true);
+    try {
+      const response = await fetch('https://webhooklabz.n8nlabz.com.br/webhook/resumo_conversa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: selectedChat })
+      });
+
+      const raw = await response.text();
+      let summary = raw;
+      let parsed: any | null = null;
+      const safeParse = (text: string) => {
+        try {
+          return JSON.parse(text);
+        } catch {
+          return null;
+        }
+      };
+      const parseMaybeEmbeddedJson = (value: any): any => {
+        if (value && typeof value === 'string') {
+          const trimmed = value.trim();
+          if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+            const again = safeParse(trimmed);
+            return again ?? value;
+          }
+        }
+        return value;
+      };
+
+      parsed = safeParse(raw);
+      if (parsed && typeof parsed === 'object') {
+        // Alguns endpoints retornam o conteúdo em chaves como output/data/result/payload
+        const candidate = ['output', 'data', 'result', 'payload', 'OUTPUT'].reduce((acc: any, key) => {
+          if (acc !== null) return acc;
+          if (parsed && Object.prototype.hasOwnProperty.call(parsed, key)) return (parsed as any)[key];
+          return null;
+        }, null);
+
+        if (candidate !== null) {
+          const maybe = parseMaybeEmbeddedJson(candidate);
+          if (maybe && typeof maybe === 'object') {
+            parsed = maybe;
+          } else {
+            // Se for string simples
+            summary = String(maybe || raw);
+          }
+        }
+      } else if (typeof parsed === 'string') {
+        const again = parseMaybeEmbeddedJson(parsed);
+        if (again && typeof again === 'object') parsed = again;
+      }
+
+      if (parsed && typeof parsed === 'object') {
+        const maybeText = (parsed as any).summary || (parsed as any).resumo || (parsed as any).message || (parsed as any).resumo_conversa;
+        if (typeof maybeText === 'string' && maybeText.trim()) {
+          summary = maybeText;
+        }
+      }
+
+      if (!response.ok) {
+        throw new Error(summary || 'Falha ao gerar resumo');
+      }
+
+      setSummaryJson(parsed);
+      setSummaryText(summary);
+      setIsSummaryOpen(true);
+    } catch (err: any) {
+      setSummaryError(err?.message || 'Erro ao gerar resumo');
+      setSummaryText('');
+      setSummaryJson(null);
+      setIsSummaryOpen(true);
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
+
+  // Renderizador amigável para JSON do resumo
+  const renderJsonValue = (value: any, depth = 0): JSX.Element => {
+    if (value === null || value === undefined) {
+      return <span className="text-gray-400">nulo</span>;
+    }
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      return <span className="text-gray-200">{String(value)}</span>;
+    }
+    if (Array.isArray(value)) {
+      if (value.length === 0) return <span className="text-gray-400">[]</span>;
+      return (
+        <ul className="list-disc pl-5 space-y-1">
+          {value.map((item, idx) => (
+            <li key={idx} className="text-gray-200">
+              {typeof item === 'object' && item !== null ? (
+                <div className="mt-1 ml-1 border-l border-gray-700 pl-3">
+                  {renderJsonValue(item, depth + 1)}
+                </div>
+              ) : (
+                String(item)
+              )}
+            </li>
+          ))}
+        </ul>
+      );
+    }
+    // objeto
+    const entries = Object.entries(value as Record<string, any>);
+    if (entries.length === 0) return <span className="text-gray-400">{{}}</span>;
+    return (
+      <div className="space-y-2">
+        {entries.map(([k, v]) => (
+          <div key={k} className="">
+            <div className="text-gray-400 text-xs uppercase tracking-wide">{k}</div>
+            <div className="mt-0.5">
+              {typeof v === 'object' && v !== null ? (
+                <div className="border border-gray-800 bg-gray-900/40 rounded-md p-3">
+                  {renderJsonValue(v, depth + 1)}
+                </div>
+              ) : (
+                <div className="text-gray-200">{String(v)}</div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderFormattedSummary = () => {
+    if (summaryLoading) {
+      return (
+        <div className="flex justify-center py-8">
+          <div className="animate-spin h-6 w-6 border-2 border-white border-t-transparent rounded-full" />
+        </div>
+      );
+    }
+    if (summaryError) {
+      return <div className="text-red-400">{summaryError}</div>;
+    }
+    if (summaryJson && typeof summaryJson === 'object') {
+      const hasStructuredKeys = (
+        'resumo_conversa' in summaryJson ||
+        'nota_atendimento' in summaryJson ||
+        'status_atendimento' in summaryJson ||
+        'proximas_acoes' in summaryJson ||
+        'pendencias' in summaryJson ||
+        'riscos' in summaryJson ||
+        'recomendacoes_processos' in summaryJson ||
+        'dados_extraidos' in summaryJson ||
+        'metricas' in summaryJson ||
+        'qualidade' in summaryJson ||
+        'flags' in summaryJson
+      );
+
+      if (hasStructuredKeys) {
+        const data = summaryJson as any;
+
+        const renderListCard = (title: string, items?: any[], emoji?: string) => {
+          if (!Array.isArray(items) || items.length === 0) return null;
+          return (
+            <Card className="bg-gray-900/60 border-gray-700/60 hover:border-emerald-600/40 transition-colors">
+              <CardHeader>
+                <CardTitle className="text-white text-sm flex items-center gap-2">
+                  <span className="opacity-90">{emoji}</span>
+                  {title}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-1 text-gray-200 text-sm">
+                  {items.map((it, idx) => (
+                    <div key={idx} className="flex items-start gap-2">
+                      <span className="mt-0.5">•</span>
+                      <span className="leading-relaxed">{String(it)}</span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        };
+
+        const renderKeyValueCard = (title: string, obj?: Record<string, any>, emoji?: string) => {
+          if (!obj || typeof obj !== 'object') return null;
+          const entries = Object.entries(obj);
+          if (entries.length === 0) return null;
+          return (
+            <Card className="bg-gray-900/60 border-gray-700/60 hover:border-emerald-600/40 transition-colors">
+              <CardHeader>
+                <CardTitle className="text-white text-sm flex items-center gap-2">
+                  <span className="opacity-90">{emoji}</span>
+                  {title}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                  {entries.map(([k, v]) => (
+                    <div key={k} className="flex items-start gap-2">
+                      <span className="text-gray-400 capitalize min-w-[8rem] sm:min-w-0">{k.replaceAll('_',' ')}</span>
+                      <span className="text-gray-200 break-words">{String(v)}</span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        };
+
+        const renderFlagsCard = (title: string, obj?: Record<string, any>) => {
+          if (!obj || typeof obj !== 'object') return null;
+          const entries = Object.entries(obj);
+          if (entries.length === 0) return null;
+          return (
+            <Card className="bg-gray-900/60 border-gray-700/60 hover:border-emerald-600/40 transition-colors">
+              <CardHeader>
+                <CardTitle className="text-white text-sm flex items-center gap-2">🚩 {title}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-2">
+                  {entries.map(([k, v]) => (
+                    <span
+                      key={k}
+                      className={cn(
+                        "px-2 py-1 rounded-full text-xs border",
+                        v ? 'bg-amber-500/15 border-amber-500/30 text-amber-300' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                      )}
+                    >
+                      {v ? '⚠️ ' : '✅ '}<span className="capitalize">{k.replaceAll('_',' ')}</span>
+                    </span>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        };
+
+        const dadosExtraidos: any = data.dados_extraidos || {};
+
+        return (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Nota */}
+              {'nota_atendimento' in data && (
+                <Card className="bg-gray-900/60 border-gray-700/60 hover:border-emerald-600/40 transition-colors">
+                  <CardHeader>
+                    <CardTitle className="text-white text-sm flex items-center gap-2">⭐ Nota de Atendimento</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div
+                      className={cn(
+                        "text-3xl font-extrabold tracking-tight drop-shadow",
+                        Number(data.nota_atendimento) >= 8 ? 'text-emerald-400' : Number(data.nota_atendimento) >= 6 ? 'text-amber-300' : 'text-red-400'
+                      )}
+                    >
+                      {String(data.nota_atendimento)}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Status */}
+              {'status_atendimento' in data && (
+                <Card className="bg-gray-900/60 border-gray-700/60 hover:border-emerald-600/40 transition-colors">
+                  <CardHeader>
+                    <CardTitle className="text-white text-sm flex items-center gap-2">📌 Status de Atendimento</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {(() => {
+                      const s = String(data.status_atendimento || '').toLowerCase();
+                      const styles = s === 'aberto' || s === 'em_andamento'
+                        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                        : s === 'pendente'
+                          ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                          : 'bg-gray-500/15 text-gray-300 border-gray-500/30';
+                      const icon = s === 'aberto' || s === 'em_andamento' ? '🟢' : s === 'pendente' ? '⏳' : '⚪';
+                      return (
+                        <div className={cn("inline-flex items-center gap-2 px-3 py-1 rounded-full border", styles)}>
+                          <span>{icon}</span>
+                          <span className="capitalize">{String(data.status_atendimento)}</span>
+                        </div>
+                      );
+                    })()}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Resumo */}
+              {'resumo_conversa' in data && (
+                <Card className="md:col-span-2 bg-gray-900/60 border-gray-700/60 hover:border-emerald-600/40 transition-colors">
+                  <CardHeader>
+                    <CardTitle className="text-white text-sm flex items-center gap-2">📝 Resumo da conversa</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-gray-200 whitespace-pre-wrap">{String(data.resumo_conversa)}</div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Listas principais */}
+              {renderListCard('Próximas ações', data.proximas_acoes, '➡️')}
+              {renderListCard('Pendências', data.pendencias, '⏳')}
+              {renderListCard('Riscos', data.riscos, '⚠️')}
+              {renderListCard('Recomendações de processos', data.recomendacoes_processos, '🧭')}
+
+              {/* Dados extraídos */}
+              {(dadosExtraidos.cliente || dadosExtraidos.imovel || dadosExtraidos.agendamento) && (
+                <Card className="md:col-span-2 bg-gray-900/60 border-gray-700/60 hover:border-emerald-600/40 transition-colors">
+                  <CardHeader>
+                    <CardTitle className="text-white text-sm flex items-center gap-2">📤 Dados extraídos</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {dadosExtraidos.cliente && (
+                        <div>
+                          <div className="text-xs text-gray-400 uppercase mb-2 flex items-center gap-2">👤 Cliente</div>
+                          {renderKeyValueCard('', dadosExtraidos.cliente, '')}
+                        </div>
+                      )}
+                      {dadosExtraidos.imovel && (
+                        <div>
+                          <div className="text-xs text-gray-400 uppercase mb-2 flex items-center gap-2">🏠 Imóvel</div>
+                          {renderKeyValueCard('', dadosExtraidos.imovel, '')}
+                        </div>
+                      )}
+                      {dadosExtraidos.agendamento && (
+                        <div>
+                          <div className="text-xs text-gray-400 uppercase mb-2 flex items-center gap-2">📅 Agendamento</div>
+                          {renderKeyValueCard('', dadosExtraidos.agendamento, '')}
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Métricas, Qualidade, Flags */}
+              {renderKeyValueCard('Métricas', data.metricas, '📊')}
+              {renderKeyValueCard('Qualidade', data.qualidade, '✨')}
+              {renderFlagsCard('Flags', data.flags)}
+            </div>
+          </div>
+        );
+      }
+
+      const topText: string | null =
+        typeof summaryJson.summary === 'string' ? summaryJson.summary :
+        typeof summaryJson.resumo === 'string' ? summaryJson.resumo :
+        typeof summaryJson.message === 'string' ? summaryJson.message :
+        null;
+
+      const rest: Record<string, any> = { ...summaryJson } as Record<string, any>;
+      if ('summary' in rest) delete rest.summary;
+      if ('resumo' in rest) delete rest.resumo;
+      if ('message' in rest) delete rest.message;
+
+      return (
+        <div className="space-y-4">
+          {topText && (
+            <div className="bg-emerald-600/10 border border-emerald-600/30 text-emerald-200 rounded-md p-3 whitespace-pre-wrap">
+              {topText}
+            </div>
+          )}
+          {Object.keys(rest).length > 0 ? (
+            <div className="space-y-2">
+              {renderJsonValue(rest)}
+            </div>
+          ) : null}
+          {!topText && Object.keys(rest).length === 0 && summaryText && (
+            <div className="text-gray-200 whitespace-pre-wrap">{summaryText}</div>
+          )}
+        </div>
+      );
+    }
+    return <div className="text-gray-200 whitespace-pre-wrap">{summaryText || 'Nenhum conteúdo retornado.'}</div>;
   };
 
   // Formatação de tempo
@@ -459,9 +848,23 @@ export function ChatsView() {
                 )}
               </div>
             </div>
-            <div className="text-xs text-gray-400 bg-gray-800/50 px-3 py-1.5 rounded-full border border-gray-700/50">
-              <Clock className="h-3 w-3 inline mr-1" />
-              Online
+            <div className="ml-auto flex items-center gap-3">
+              <Button
+                onClick={handleGenerateSummary}
+                disabled={summaryLoading}
+                className="bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white px-4 py-2 rounded-lg shadow-lg transition-all duration-200 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed border border-emerald-500/30"
+              >
+                {summaryLoading ? (
+                  <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full mr-2" />
+                ) : (
+                  <FileText className="h-4 w-4 mr-2" />
+                )}
+                Gerar resumo
+              </Button>
+              <div className="text-xs text-gray-400 bg-gray-800/50 px-3 py-1.5 rounded-full border border-gray-700/50">
+                <Clock className="h-3 w-3 inline mr-1" />
+                Online
+              </div>
             </div>
           </div>
         </div>
@@ -709,6 +1112,27 @@ export function ChatsView() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Modal de resumo da conversa */}
+      <Dialog open={isSummaryOpen} onOpenChange={setIsSummaryOpen}>
+        <DialogContent className="bg-gray-900 text-white border border-gray-700">
+          <DialogHeader>
+            <DialogTitle>Resumo da conversa</DialogTitle>
+            <DialogDescription className="text-gray-400">
+              {summaryLoading
+                ? 'Gerando resumo...'
+                : summaryError
+                ? 'Ocorreu um erro ao gerar o resumo.'
+                : 'Resumo gerado a partir das mensagens desta conversa.'}
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-[60vh] mt-4 pr-2">
+            <div className="text-sm leading-relaxed">
+              {renderFormattedSummary()}
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
