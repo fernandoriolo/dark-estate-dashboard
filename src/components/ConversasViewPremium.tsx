@@ -223,15 +223,20 @@ function buildDataUrlFromMedia(raw: unknown): string | null {
     return null;
   }
 
-  // base64 cru → escolher MIME
+  // base64 cru → escolher MIME (melhorada detecção de áudio)
   const mime =
     s.startsWith('/9j/') ? 'image/jpeg' :
     s.startsWith('iVBORw0') ? 'image/png' :
     s.startsWith('SUQz') ? 'audio/mpeg' :
     s.startsWith('FF FB') ? 'audio/mpeg' :
+    s.startsWith('FF F3') ? 'audio/mpeg' :
+    s.startsWith('FF F2') ? 'audio/mpeg' :
     s.startsWith('OggS') ? 'audio/ogg' :
+    s.startsWith('RIFF') ? 'audio/wav' :
+    s.startsWith('GkXf') ? 'audio/webm' :
     s.includes('webm') ? 'audio/webm;codecs=opus' :
-    'image/jpeg'; // fallback para imagens atuais
+    // Se não detectou nada específico, tentar áudio como fallback mais provável
+    'audio/webm'; // mudança: fallback para áudio em vez de imagem
 
   const result = `data:${mime};base64,${s}`;
   console.log('🔧 Construindo data URL:', { 
@@ -251,6 +256,7 @@ function previewFromLast(last_media: any, last_message: any): string {
     // Detectar tipo de mídia pelo MIME
     if (dataUrl.includes('image/')) return '🖼️ Imagem';
     if (dataUrl.includes('audio/')) return '🎧 Áudio';
+    if (dataUrl.includes('video/')) return '🎥 Vídeo';
     return '📎 Mídia'; // fallback genérico
   }
 
@@ -280,45 +286,92 @@ function MessageBubble({ row }: { row: any }) {
   // 1) PRIORIDADE ABSOLUTA: se existe `media`, renderiza a mídia e NÃO renderiza message.content
   const dataUrl = buildDataUrlFromMedia(row.media);
   if (dataUrl) {
-    console.log('🖼️ Renderizando mídia:', {
+    const isImage = dataUrl.includes('image/');
+    const isAudio = dataUrl.includes('audio/');
+    
+    console.log('🎬 Renderizando mídia:', {
       dataUrlLength: dataUrl.length,
       dataUrlPreview: dataUrl.substring(0, 50) + '...',
-      isValidDataUrl: dataUrl.startsWith('data:')
+      isValidDataUrl: dataUrl.startsWith('data:'),
+      mediaType: isImage ? 'image' : isAudio ? 'audio' : 'unknown'
     });
 
-    return (
-      <div className={isAI ? 'self-end' : ''}>
-        <div className="max-w-[72ch] rounded-2xl bg-zinc-800/80 px-3.5 py-3 text-zinc-100 shadow border border-white/10">
+    // Componente de Mídia com Fallback
+    const MediaComponent = () => {
+      const [mediaType, setMediaType] = React.useState<'image' | 'audio' | 'error'>(
+        isImage ? 'image' : isAudio ? 'audio' : 'image' // tentar imagem primeiro se não detectado
+      );
+
+      // Renderizar baseado no tipo atual
+      if (mediaType === 'image') {
+        return (
           <img
             src={dataUrl}
             alt="Imagem enviada"
             className="block max-w-xs md:max-w-sm rounded-lg border border-zinc-600/30"
             loading="lazy"
             onLoad={(e) => {
-              console.log('✅ Mídia carregada com sucesso:', e.target);
+              console.log('✅ Imagem carregada com sucesso:', e.target);
             }}
             onError={(e) => {
-              console.error('❌ Erro ao carregar mídia:', {
-                error: e,
-                src: dataUrl.substring(0, 100) + '...',
-                element: e.target
-              });
-              // Fallback: mostrar placeholder de erro
-              e.currentTarget.style.display = 'none';
-              const parent = e.currentTarget.parentElement;
-              if (parent && !parent.querySelector('.error-placeholder')) {
-                const errorDiv = document.createElement('div');
-                errorDiv.className = 'error-placeholder p-4 text-center text-zinc-400 border border-dashed border-zinc-600 rounded-lg';
-                errorDiv.innerHTML = '🖼️ Erro ao carregar imagem<br><small class="text-xs text-zinc-500">Base64 pode estar corrompido</small>';
-                parent.appendChild(errorDiv);
-              }
+              console.log('❌ Imagem falhou, tentando áudio como fallback');
+              setMediaType('audio'); // FALLBACK: tentar áudio
             }}
             style={{ 
               maxWidth: '100%', 
               height: 'auto',
-              backgroundColor: '#27272a' // fallback bg
+              backgroundColor: '#27272a'
             }}
           />
+        );
+      }
+
+      if (mediaType === 'audio') {
+        return (
+          <div className="flex items-center gap-3 p-3 bg-zinc-700/50 rounded-lg border border-zinc-600/30">
+            <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-green-500/30 to-emerald-500/30 rounded-full flex items-center justify-center">
+              🎧
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-zinc-200 mb-1">Mensagem de áudio</div>
+              <audio
+                src={dataUrl}
+                controls
+                className="w-full max-w-xs"
+                preload="metadata"
+                onLoadedMetadata={(e) => {
+                  console.log('✅ Áudio carregado com sucesso:', e.target);
+                }}
+                onError={(e) => {
+                  console.log('❌ Áudio também falhou, mostrando erro');
+                  setMediaType('error'); // FALLBACK FINAL: erro
+                }}
+                style={{
+                  height: '32px',
+                  backgroundColor: 'transparent'
+                }}
+              />
+            </div>
+          </div>
+        );
+      }
+
+      // Fallback final: erro
+      return (
+        <div className="p-4 text-center text-zinc-400 border border-dashed border-zinc-600 rounded-lg">
+          ❌ Erro ao carregar mídia
+          <br />
+          <small className="text-xs text-zinc-500">
+            Tentou imagem e áudio - Base64 pode estar corrompido
+          </small>
+        </div>
+      );
+    };
+
+    return (
+      <div className={isAI ? 'self-end' : ''}>
+        <div className="max-w-[72ch] rounded-2xl bg-zinc-800/80 px-3.5 py-3 text-zinc-100 shadow border border-white/10">
+          <MediaComponent />
         </div>
       </div>
     );
