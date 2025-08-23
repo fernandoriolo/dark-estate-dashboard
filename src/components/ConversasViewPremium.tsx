@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useAnimation } from 'framer-motion';
 import { 
   MessageSquare, 
@@ -70,6 +70,292 @@ const formatHour = (dateString: string) => {
   });
 };
 
+// Utils de conversão para mídia
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = reject;
+    fr.onload = () => {
+      const out = String(fr.result || "");
+      // remove "data:<mime>;base64,"
+      const payload = out.includes(",") ? out.split(",")[1] : out;
+      resolve(payload || "");
+    };
+    fr.readAsDataURL(file);
+  });
+}
+
+async function blobToBase64(blob: Blob): Promise<string> {
+  const buf = await blob.arrayBuffer();
+  let binary = "";
+  const bytes = new Uint8Array(buf);
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+// Helper para formatar data/hora no fuso de São Paulo
+function formatNowSP(): string {
+  const now = new Date();
+  const tz = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false
+  }).formatToParts(now);
+
+  const get = (t: string) => tz.find(p => p.type === t)?.value;
+  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")}`;
+}
+
+// POST helper
+async function sendPayload(
+  sessionId: string, 
+  instancia: string, 
+  tipo: "texto"|"imagem"|"audio", 
+  mensagem: string, 
+  mimeType?: string
+) {
+  // Normalizar instância
+  const normalizedInstancia = instancia.trim().toLowerCase();
+  
+  // Validar instância
+  if (!normalizedInstancia) {
+    throw new Error("INSTANCE_REQUIRED");
+  }
+
+  const body: any = {
+    session_id: sessionId,
+    instancia: normalizedInstancia,
+    tipo,
+    mensagem,
+    data: formatNowSP()
+  };
+
+  // Adicionar mime_type se fornecido
+  if (mimeType) {
+    body.mime_type = mimeType;
+  }
+
+  const r = await fetch("https://webhooklabz.n8nlabz.com.br/webhook/enviar_mensagem", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!r.ok) throw new Error(`Falha ao enviar (${r.status})`);
+  try { return await r.json(); } catch { return {}; }
+}
+
+// Safe parse helper
+const safeParse = (x: any) => {
+  let v = x;
+  for (let i = 0; i < 2; i++) {
+    if (typeof v === 'string') {
+      try {
+        v = JSON.parse(v);
+      } catch {
+        break;
+      }
+    }
+  }
+  return v;
+};
+
+// Validar se base64 está íntegro
+function isValidBase64(str: string): boolean {
+  try {
+    // Verificar se tem caracteres válidos de base64
+    const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+    if (!base64Regex.test(str)) {
+      console.log('❌ Base64 contém caracteres inválidos');
+      return false;
+    }
+    
+    // Verificar se o comprimento é múltiplo de 4 (após padding)
+    if (str.length % 4 !== 0) {
+      console.log('❌ Base64 tem comprimento inválido:', str.length);
+      return false;
+    }
+    
+    // Tentar decodificar para verificar integridade
+    const decoded = atob(str);
+    if (decoded.length === 0) {
+      console.log('❌ Base64 decodifica para string vazia');
+      return false;
+    }
+    
+    console.log('✅ Base64 válido, tamanho decodificado:', decoded.length);
+    return true;
+  } catch (e) {
+    console.log('❌ Erro ao validar base64:', e);
+    return false;
+  }
+}
+
+// Helper para construir Data URL válido a partir da coluna media
+function buildDataUrlFromMedia(raw: unknown): string | null {
+  console.log('🔧 buildDataUrlFromMedia input:', { 
+    type: typeof raw, 
+    value: typeof raw === 'string' ? raw.substring(0, 50) + '...' : raw, 
+    stringLength: typeof raw === 'string' ? raw.length : 0 
+  });
+
+  if (typeof raw !== 'string') {
+    console.log('❌ Não é string, retornando null');
+    return null;
+  }
+  
+  let s = raw.trim();
+  if (!s || s.toLowerCase() === 'null') {
+    console.log('❌ String vazia ou null, retornando null');
+    return null;
+  }
+
+  // já é data URL?
+  if (s.startsWith('data:')) {
+    console.log('✅ Já é data URL, retornando como está');
+    return s;
+  }
+
+  // Validar integridade do base64 antes de usar
+  if (!isValidBase64(s)) {
+    console.log('❌ Base64 inválido, não criando data URL');
+    return null;
+  }
+
+  // base64 cru → escolher MIME
+  const mime =
+    s.startsWith('/9j/') ? 'image/jpeg' :
+    s.startsWith('iVBORw0') ? 'image/png' :
+    s.startsWith('SUQz') ? 'audio/mpeg' :
+    s.startsWith('FF FB') ? 'audio/mpeg' :
+    s.startsWith('OggS') ? 'audio/ogg' :
+    s.includes('webm') ? 'audio/webm;codecs=opus' :
+    'image/jpeg'; // fallback para imagens atuais
+
+  const result = `data:${mime};base64,${s}`;
+  console.log('🔧 Construindo data URL:', { 
+    mime, 
+    base64Preview: s.substring(0, 20) + '...', 
+    base64Length: s.length,
+    resultLength: result.length 
+  });
+  
+  return result;
+}
+
+// Preview da última mensagem (prioridade para media)
+function previewFromLast(last_media: any, last_message: any): string {
+  const dataUrl = buildDataUrlFromMedia(last_media);
+  if (dataUrl) {
+    // Detectar tipo de mídia pelo MIME
+    if (dataUrl.includes('image/')) return '🖼️ Imagem';
+    if (dataUrl.includes('audio/')) return '🎧 Áudio';
+    return '📎 Mídia'; // fallback genérico
+  }
+
+  const raw = last_message;
+  const m = typeof raw === 'string' ? ((): any => { try { return JSON.parse(raw); } catch { return {}; } })() : (raw || {});
+  const txt = m?.content || '';
+  return txt.length > 80 ? txt.slice(0, 80) + '…' : txt;
+}
+
+// Renderer da mensagem (prioridade absoluta para media)
+function MessageBubble({ row }: { row: any }) {
+  // Parse da mensagem para determinar tipo (AI/human)
+  const raw = row?.message;
+  const m = typeof raw === 'string' ? ((): any => { try { return JSON.parse(raw); } catch { return {}; } })() : (raw || {});
+  const isAI = String(m?.type || '').toLowerCase() === 'ai';
+
+  // --- LOG DIAGNÓSTICO COMPLETO ---
+  console.log('🔍 MessageBubble Debug:', {
+    id: row?.id,
+    mediaType: typeof row?.media,
+    mediaLength: (row?.media || '').length,
+    mediaPreview: row?.media ? row.media.substring(0, 20) + '...' : 'null',
+    messageType: typeof row?.message,
+    isAI
+  });
+
+  // 1) PRIORIDADE ABSOLUTA: se existe `media`, renderiza a mídia e NÃO renderiza message.content
+  const dataUrl = buildDataUrlFromMedia(row.media);
+  if (dataUrl) {
+    console.log('🖼️ Renderizando mídia:', {
+      dataUrlLength: dataUrl.length,
+      dataUrlPreview: dataUrl.substring(0, 50) + '...',
+      isValidDataUrl: dataUrl.startsWith('data:')
+    });
+
+    return (
+      <div className={isAI ? 'self-end' : ''}>
+        <div className="max-w-[72ch] rounded-2xl bg-zinc-800/80 px-3.5 py-3 text-zinc-100 shadow border border-white/10">
+          <img
+            src={dataUrl}
+            alt="Imagem enviada"
+            className="block max-w-xs md:max-w-sm rounded-lg border border-zinc-600/30"
+            loading="lazy"
+            onLoad={(e) => {
+              console.log('✅ Mídia carregada com sucesso:', e.target);
+            }}
+            onError={(e) => {
+              console.error('❌ Erro ao carregar mídia:', {
+                error: e,
+                src: dataUrl.substring(0, 100) + '...',
+                element: e.target
+              });
+              // Fallback: mostrar placeholder de erro
+              e.currentTarget.style.display = 'none';
+              const parent = e.currentTarget.parentElement;
+              if (parent && !parent.querySelector('.error-placeholder')) {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error-placeholder p-4 text-center text-zinc-400 border border-dashed border-zinc-600 rounded-lg';
+                errorDiv.innerHTML = '🖼️ Erro ao carregar imagem<br><small class="text-xs text-zinc-500">Base64 pode estar corrompido</small>';
+                parent.appendChild(errorDiv);
+              }
+            }}
+            style={{ 
+              maxWidth: '100%', 
+              height: 'auto',
+              backgroundColor: '#27272a' // fallback bg
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Verificar se há tentativa de mídia mas base64 inválido
+  if (row.media && typeof row.media === 'string' && row.media.trim() && row.media.toLowerCase() !== 'null') {
+    console.log('⚠️ Mídia detectada mas base64 inválido, mostrando placeholder');
+    return (
+      <div className={isAI ? 'self-end' : ''}>
+        <div className="max-w-[72ch] rounded-2xl bg-zinc-800/80 px-3.5 py-3 text-zinc-100 shadow border border-white/10">
+          <div className="p-4 text-center text-zinc-400 border border-dashed border-zinc-600 rounded-lg">
+            🖼️ Mídia corrompida
+            <br />
+            <small className="text-xs text-zinc-500">Base64 inválido ou incompleto</small>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2) SEM mídia → renderiza texto (message.content) normalmente
+  const content = m?.content ?? '';
+  
+  console.log('📝 Renderizando texto:', { content: content.substring(0, 50) + '...', isAI });
+
+  return (
+    <div className={isAI ? 'self-end' : ''}>
+      <div className={isAI
+        ? 'max-w-[72ch] rounded-2xl bg-blue-600/90 px-3.5 py-3 text-white shadow'
+        : 'max-w-[72ch] rounded-2xl bg-zinc-800/80 px-3.5 py-3 text-zinc-100 shadow'}>
+        <div className="whitespace-pre-wrap break-words">{content}</div>
+      </div>
+    </div>
+  );
+}
+
 interface ConversasViewPremiumProps {}
 
 export function ConversasViewPremium({}: ConversasViewPremiumProps) {
@@ -86,6 +372,19 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
     isOpen: false,
     data: null
   });
+
+  // Estados para mídia
+  const [busy, setBusy] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [sec, setSec] = useState(0);
+  
+  // Refs para mídia
+  const imgInputRef = useRef<HTMLInputElement | null>(null);
+  const recRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<number | null>(null);
+  
+  const maxAudioSec = 60;
 
   // Hooks de dados
   const { instances, loading: loadingInstances, error: errorInstances, refetch: refetchInstances } = useConversasInstances();
@@ -119,6 +418,14 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
 
   // Handlers
   const handleGenerateSummary = async (conversation: any) => {
+    if (!selectedInstance) {
+      toast({
+        title: "Selecione uma instância antes de gerar resumo",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       setSummaryModal({ isOpen: true, data: { loading: true } });
 
@@ -127,7 +434,7 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           session_id: conversation.sessionId,
-          instancia: conversation.instancia,
+          instancia: selectedInstance.trim().toLowerCase(),
           user_email: profile?.email || '',
           role: profile?.role || ''
         }),
@@ -150,13 +457,21 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
   };
 
   const handleFollowUp = async (conversation: any) => {
+    if (!selectedInstance) {
+      toast({
+        title: "Selecione uma instância antes de fazer follow up",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       await fetch('https://webhooklabz.n8nlabz.com.br/webhook/follow-up-chats', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           session_id: conversation.sessionId,
-          instancia: conversation.instancia,
+          instancia: selectedInstance.trim().toLowerCase(),
           user_email: profile?.email || '',
           role: profile?.role || ''
         }),
@@ -175,16 +490,161 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
     }
   };
 
-  const handleSendMessage = () => {
-    if (!messageInput.trim()) return;
-    // Implementar envio de mensagem
-    setMessageInput('');
+  // Handlers para mídia
+  
+  // IMAGE
+  const onPickImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedConversation || !selectedInstance) return;
+    
+    try {
+      setBusy(true);
+      const base64 = await fileToBase64(file);
+      await sendPayload(selectedConversation, selectedInstance, "imagem", base64, file.type);
+      toast({
+        title: "Imagem enviada com sucesso",
+        variant: "default",
+      });
+    } catch (err: any) {
+      console.error('Erro ao enviar imagem:', err);
+      if (err.message === "INSTANCE_REQUIRED") {
+        toast({
+          title: "Selecione uma instância antes de enviar",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Falha ao enviar imagem",
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setBusy(false);
+      if (e.target) e.target.value = "";
+    }
   };
 
-  const scrollToBottom = () => {
-    setHasNewMessages(false);
-    setIsAtBottom(true);
-    // Implementar scroll
+  // TEXT
+  const sendText = async () => {
+    const val = messageInput.trim();
+    if (!val || !selectedConversation || !selectedInstance) return;
+    
+    try {
+      setBusy(true);
+      await sendPayload(selectedConversation, selectedInstance, "texto", val);
+      setMessageInput("");
+      toast({
+        title: "Mensagem enviada com sucesso",
+        variant: "default",
+      });
+    } catch (err: any) {
+      console.error('Erro ao enviar texto:', err);
+      if (err.message === "INSTANCE_REQUIRED") {
+        toast({
+          title: "Selecione uma instância antes de enviar",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Falha ao enviar texto",
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.key === "Enter" && !e.shiftKey) || ((e.ctrlKey || e.metaKey) && e.key === "Enter")) {
+      e.preventDefault();
+      if (!busy) sendText();
+    }
+  };
+
+  // AUDIO (MediaRecorder)
+  const startRecord = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : (MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "");
+      const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      
+      chunksRef.current = [];
+      mr.ondataavailable = (e) => e.data && chunksRef.current.push(e.data);
+      mr.onstop = async () => {
+        try {
+          setBusy(true);
+          const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
+          const base64 = await blobToBase64(blob);
+          if (selectedConversation && selectedInstance) {
+            await sendPayload(selectedConversation, selectedInstance, "audio", base64, mr.mimeType || "audio/webm");
+            toast({
+              title: "Áudio enviado com sucesso",
+              variant: "default",
+            });
+          }
+        } catch (err: any) {
+          console.error('Erro ao enviar áudio:', err);
+          if (err.message === "INSTANCE_REQUIRED") {
+            toast({
+              title: "Selecione uma instância antes de enviar",
+              variant: "destructive",
+            });
+          } else {
+            toast({
+              title: "Falha ao enviar áudio",
+              variant: "destructive",
+            });
+          }
+        } finally {
+          // cleanup
+          stream.getTracks().forEach(t => t.stop());
+          setBusy(false);
+          setRecording(false);
+          setSec(0);
+          if (timerRef.current) { 
+            clearInterval(timerRef.current); 
+            timerRef.current = null; 
+          }
+        }
+      };
+      
+      mr.start(100);
+      recRef.current = mr;
+      setRecording(true);
+      setSec(0);
+      timerRef.current = window.setInterval(() => {
+        setSec((s) => {
+          if (s + 1 >= maxAudioSec) { 
+            stopRecord(); 
+            return maxAudioSec; 
+          }
+          return s + 1;
+        });
+      }, 1000) as unknown as number;
+    } catch (err) {
+      console.error('Erro ao acessar microfone:', err);
+      toast({
+        title: "Permissão de microfone negada ou indisponível",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const stopRecord = () => {
+    try { 
+      if (recRef.current?.state === "recording") {
+        recRef.current.stop(); 
+      }
+    } catch (err) {
+      console.error('Erro ao parar gravação:', err);
+    }
+  };
+
+  const handleSendMessage = () => {
+    sendText();
   };
 
   return (
@@ -416,24 +876,27 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
                           animate="visible" 
                           className="flex flex-col gap-2.5 px-1.5 pb-3"
                         >
-                          {messages.map(m => (
+                          {messages.map((row: any) => (
                             <motion.div 
-                              key={m.id} 
+                              key={row.id} 
                               variants={bubble} 
                               layout
                               animate={controls}
-                              className={m.message.type === 'ai'
-                                ? "self-end max-w-[72ch] rounded-2xl bg-blue-600/90 px-3.5 py-3 text-white shadow"
-                                : "max-w-[72ch] rounded-2xl bg-zinc-800/80 px-3.5 py-3 text-zinc-100 shadow"}
                             >
-                              <div className="whitespace-pre-wrap break-words">
-                                {m.message.content}
-                              </div>
-                              <div className={m.message.type === 'ai' 
-                                ? "mt-1 text-right text-[11px] text-zinc-300" 
-                                : "mt-1 text-left text-[11px] text-zinc-400"
-                              }>
-                                {formatHour(m.data)}
+                              <MessageBubble row={row} />
+                              
+                              <div className={(() => {
+                                const rawMessage = row?.message;
+                                const m = typeof rawMessage === 'string'
+                                  ? (() => { try { return JSON.parse(rawMessage); } catch { return {}; } })()
+                                  : (rawMessage || {});
+                                const isAI = String(m?.type || '').toLowerCase() === 'ai';
+                                return isAI 
+                                  ? "mt-1 text-right text-[11px] text-zinc-300" 
+                                  : "mt-1 text-left text-[11px] text-zinc-400";
+                              })()}
+                              >
+                                {formatHour(row.data)}
                               </div>
                             </motion.div>
                           ))}
@@ -446,30 +909,59 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
                 {/* Composer evidente */}
                 <div className="mt-2 rounded-2xl border border-zinc-700/60 bg-zinc-900/60 p-2 shadow-xl">
                   <div className="flex items-end gap-2">
-                    <button className="grid h-10 w-10 place-items-center rounded-xl bg-zinc-800/60 text-zinc-400 hover:scale-[1.03] active:scale-95 transition">
-                      <Paperclip className="h-4 w-4" />
+                    {/* IMAGEM */}
+                    <button
+                      onClick={() => imgInputRef.current?.click()}
+                      disabled={busy}
+                      title="Enviar imagem"
+                      className="grid h-10 w-10 place-items-center rounded-xl border border-zinc-700/60 bg-zinc-900/60 text-zinc-300 hover:text-white disabled:opacity-50"
+                    >
+                      🖼️
                     </button>
-                    
-                    <Textarea
-                      placeholder="Digite sua mensagem..."
+                    <input 
+                      ref={imgInputRef} 
+                      type="file" 
+                      accept="image/*" 
+                      className="hidden" 
+                      onChange={onPickImage} 
+                    />
+
+                    {/* ÁUDIO */}
+                    <button
+                      onClick={recording ? stopRecord : startRecord}
+                      disabled={busy}
+                      title={recording ? "Parar e enviar" : "Gravar áudio"}
+                      className={`grid h-10 w-10 place-items-center rounded-xl border border-zinc-700/60 
+                                  ${recording ? "bg-rose-600 text-white animate-pulse" : "bg-zinc-900/60 text-zinc-300 hover:text-white"} 
+                                  disabled:opacity-50`}
+                    >
+                      🎙️
+                    </button>
+                    {recording && (
+                      <span className="mb-1 select-none text-xs text-rose-300">
+                        {String(Math.floor(sec/60)).padStart(2,"0")}:{String(sec%60).padStart(2,"0")}
+                      </span>
+                    )}
+
+                    {/* TEXTAREA */}
+                    <textarea
                       value={messageInput}
                       onChange={(e) => setMessageInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                          e.preventDefault();
-                          handleSendMessage();
-                        }
-                      }}
-                      className="min-h-[44px] max-h-[200px] w-full resize-none rounded-xl border border-zinc-700/60 bg-zinc-800/60 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-400/30"
+                      onKeyDown={onTextareaKeyDown}
+                      placeholder="Digite sua mensagem..."
+                      disabled={busy}
+                      className="min-h-[44px] max-h-[200px] w-full resize-none rounded-xl border border-zinc-700/60 bg-zinc-800/60 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-sky-400/30 disabled:opacity-50"
                       rows={1}
                     />
-                    
-                    <button 
-                      className="ml-2 grid h-10 w-10 place-items-center rounded-xl bg-sky-600 text-white shadow hover:scale-[1.03] active:scale-95 transition"
-                      onClick={handleSendMessage}
-                      disabled={!messageInput.trim()}
+
+                    {/* ENVIAR TEXTO */}
+                    <button
+                      onClick={sendText}
+                      disabled={busy || !messageInput.trim()}
+                      title="Enviar"
+                      className="grid h-10 w-10 place-items-center rounded-xl bg-sky-600 text-white shadow hover:brightness-110 disabled:opacity-60"
                     >
-                      <Send className="h-4 w-4" />
+                      🛩️
                     </button>
                   </div>
                 </div>

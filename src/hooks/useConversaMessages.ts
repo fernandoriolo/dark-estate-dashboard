@@ -14,6 +14,7 @@ export interface ConversaMessage {
     invalid_tool_calls?: any[];
   };
   data: string;
+  media?: string | null;
 }
 
 export function useConversaMessages(sessionId?: string | null) {
@@ -38,10 +39,13 @@ export function useConversaMessages(sessionId?: string | null) {
       setLoading(true);
       setError(null);
 
-      // Usar RPC para buscar mensagens por session_id sem filtros extras
-      const { data, error: fetchError } = await supabase.rpc('get_messages_by_session', {
-        target_session_id: sessionId
-      });
+      // Buscar mensagens diretamente incluindo a coluna media explicitamente
+      const { data, error: fetchError } = await supabase
+        .from('imobipro_messages')
+        .select('id, session_id, message, data, instancia, media')
+        .eq('session_id', sessionId)
+        .order('data', { ascending: true })
+        .order('id', { ascending: true });
 
       if (fetchError) {
         console.error('Erro ao buscar mensagens:', fetchError);
@@ -77,7 +81,8 @@ export function useConversaMessages(sessionId?: string | null) {
             tool_calls: parsedMessage.tool_calls,
             invalid_tool_calls: parsedMessage.invalid_tool_calls
           },
-          data: row.data
+          data: row.data,
+          media: row.media
         };
       });
 
