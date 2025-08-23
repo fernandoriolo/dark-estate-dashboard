@@ -68,13 +68,7 @@ const menuItems = [
     view: "clients-crm" as const,
     permissionKey: "menu_clients_crm",
   },
-  {
-    title: "Chats",
-    url: "#",
-    icon: MessageSquare,
-    view: "chats" as const,
-    permissionKey: "menu_chats",
-  },
+
   {
     title: "Conexões",
     url: "#",
@@ -102,6 +96,13 @@ const menuItems = [
     icon: Send,
     view: "disparador" as const,
     permissionKey: "menu_disparador",
+  },
+  {
+    title: "Conversas",
+    url: "#",
+    icon: MessageSquare,
+    view: "conversas" as const,
+    permissionKey: "menu_conversas",
   },
 ];
 
@@ -141,7 +142,7 @@ const secondaryItems = [
 
 interface AppSidebarProps {
   currentView: string;
-  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "plantao" | "reports" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "disparador" | "chats" | "configurations" | "profile") => void;
+  onViewChange: (view: "dashboard" | "properties" | "contracts" | "agenda" | "plantao" | "reports" | "clients" | "clients-crm" | "connections" | "users" | "permissions" | "inquilinato" | "disparador" | "conversas" | "configurations" | "profile") => void;
 }
 
 export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
@@ -358,7 +359,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
                           permissions: () => import('@/components/PermissionsManagementView'),
                           inquilinato: () => import('@/components/InquilinatoView'),
                           disparador: () => import('@/components/DisparadorView'),
-                          chats: () => import('@/components/ChatsView'),
+                          conversas: () => import('@/components/ConversasView'),
                           profile: () => import('@/components/UserProfileView'),
                           dashboard: () => import('@/components/DashboardContent'),
                           plantao: () => import('@/components/PlantaoView'),

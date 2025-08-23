@@ -454,8 +454,10 @@ export function useUserProfile() {
       return;
     }
 
+    const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const channelName = `user-profile-${user.id}-${uniqueSuffix}`;
     const channel = supabase
-      .channel(`user-profile-${user.id}`)
+      .channel(channelName)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'user_profiles', filter: `id=eq.${user.id}` },

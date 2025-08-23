@@ -269,8 +269,9 @@ export function useContracts() {
   // Configurar real-time updates
   useEffect(() => {
     console.log('📡 Configurando real-time updates para contratos...');
+    const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const channel = supabase
-      .channel('contracts_realtime')
+      .channel(`contracts_realtime-${uniqueSuffix}`)
       .on(
         'postgres_changes',
         {

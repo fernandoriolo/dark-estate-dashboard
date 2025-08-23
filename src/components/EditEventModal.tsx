@@ -5,8 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Calendar } from "@/components/ui/calendar";
 import { CalendarIcon, Clock, Edit, User, MapPin } from "lucide-react";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import format from "date-fns/format";
+import ptBR from "date-fns/locale/pt-BR";
 import { cn } from "@/lib/utils";
 
 interface Appointment {

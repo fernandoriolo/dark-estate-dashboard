@@ -14,7 +14,7 @@ const ClientsCRMView = lazy(() => import("@/components/ClientsCRMView").then(m =
 const PermissionsManagementView = lazy(() => import("@/components/PermissionsManagementView").then(m => ({ default: m.PermissionsManagementView })));
 const InquilinatoView = lazy(() => import("@/components/InquilinatoView").then(m => ({ default: m.InquilinatoView })));
 const DisparadorView = lazy(() => import("@/components/DisparadorView").then(m => ({ default: m.DisparadorView })));
-const ChatsView = lazy(() => import("@/components/ChatsView").then(m => ({ default: m.ChatsView })));
+
 const UserProfileView = lazy(() => import("@/components/UserProfileView").then(m => ({ default: m.UserProfileView })));
 const PlantaoView = lazy(() => import("@/components/PlantaoView"));
 const ConnectionsViewSimplified = lazy(() => import("@/components/ConnectionsViewSimplified").then(m => ({ default: m.ConnectionsViewSimplified })));
@@ -85,8 +85,6 @@ const Index = () => {
         return <ClientsView />;
       case "clients-crm":
         return <ClientsCRMView />;
-      case "chats":
-        return <ChatsView />;
       case "connections":
         return <ConnectionsViewSimplified />;
       case "users":

@@ -32,8 +32,8 @@ import {
   DialogTitle
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
-import { formatDistanceToNow } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import formatDistanceToNow from 'date-fns/formatDistanceToNow';
+import ptBR from 'date-fns/locale/pt-BR';
 
 // Função auxiliar para gerar iniciais
 const getInitials = (name: string) => {

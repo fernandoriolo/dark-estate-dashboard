@@ -307,8 +307,9 @@ export function useCompanySettings() {
   useEffect(() => {
     if (!profile?.company_id) return;
 
+    const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const subscription = supabase
-      .channel('company_settings_changes')
+      .channel(`company_settings_changes-${profile.company_id}-${uniqueSuffix}`)
       .on('postgres_changes', 
         { 
           event: '*', 

@@ -163,8 +163,9 @@ export function usePermissions() {
   useEffect(() => {
     if (!profile || !canAccessPermissionsModule(profile.role)) return;
 
+    const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const subscription = supabase
-      .channel('permissions_changes')
+      .channel(`permissions_changes-${profile.role}-${uniqueSuffix}`)
       .on('postgres_changes', 
         { event: '*', schema: 'public', table: 'role_permissions' },
         () => {

@@ -268,8 +268,9 @@ export function ClientsCRMView() {
       return;
     }
     
-    // Navegar para o módulo Chats com o lead específico
-    navigate('/chats', { state: { leadPhone: lead.telefone, leadName: lead.nome } });
+    // Módulo de chats foi removido - funcionalidade desabilitada
+    console.log('ℹ️ Funcionalidade de chats foi removida do sistema');
+    // navigate('/chats', { state: { leadPhone: lead.telefone, leadName: lead.nome } });
   };
 
   const handleCloseViewModal = () => {

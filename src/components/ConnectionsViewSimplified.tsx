@@ -67,7 +67,8 @@ export function ConnectionsViewSimplified() {
     refreshInstances,
     canCreateInstances,
     connectInstance,
-    disconnectInstance
+    disconnectInstance,
+    resendConnectionRequest
   } = useWhatsAppInstances();
 
   // Tornar tolerante a diferenças de carregamento entre hooks: habilita criação se qualquer fonte indicar gestor/admin
@@ -91,6 +92,9 @@ export function ConnectionsViewSimplified() {
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [requestMessage, setRequestMessage] = useState("");
   const [requestingConnection, setRequestingConnection] = useState(false);
+  const [showPendingModal, setShowPendingModal] = useState(false);
+  const [pendingRequestData, setPendingRequestData] = useState<any | null>(null);
+  const [resending, setResending] = useState(false);
   
   // Novos estados para funcionalidades completas
   const [qrTimer, setQrTimer] = useState(15);
@@ -560,9 +564,29 @@ export function ConnectionsViewSimplified() {
       alert('Solicitação criada com sucesso! Os gestores foram notificados automaticamente.');
     } catch (error: any) {
       console.error('Erro ao solicitar conexão:', error);
-      alert(error.message || 'Erro ao enviar solicitação. Tente novamente.');
+      if (error?.code === 'REQUEST_ALREADY_EXISTS' && error?.pendingRequest) {
+        setPendingRequestData(error.pendingRequest);
+        setShowPendingModal(true);
+      } else {
+        alert(error.message || 'Erro ao enviar solicitação. Tente novamente.');
+      }
     } finally {
       setRequestingConnection(false);
+    }
+  };
+
+  const handleResendRequest = async () => {
+    if (!pendingRequestData?.id) return;
+    try {
+      setResending(true);
+      await resendConnectionRequest(pendingRequestData.id);
+      alert('Solicitação reenviada aos gestores com sucesso.');
+      setShowPendingModal(false);
+    } catch (error: any) {
+      console.error('Erro ao reenviar solicitação:', error);
+      alert(error.message || 'Falha ao reenviar solicitação.');
+    } finally {
+      setResending(false);
     }
   };
 
@@ -1463,6 +1487,42 @@ export function ConnectionsViewSimplified() {
                   Enviar Solicitação
                 </>
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Solicitação pendente existente */}
+      <Dialog open={showPendingModal} onOpenChange={setShowPendingModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Solicitação pendente encontrada</DialogTitle>
+            <DialogDescription>
+              Você já possui uma solicitação em análise por um gestor.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-gray-400">Instância</span>
+              <span className="font-medium">{pendingRequestData?.instance_name || '-'}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-gray-400">Telefone</span>
+              <span className="font-medium">{pendingRequestData?.phone_number || '-'}</span>
+            </div>
+            <div className="flex items-start justify-between">
+              <span className="text-gray-400">Mensagem</span>
+              <span className="font-medium text-right max-w-[60%] break-words">{pendingRequestData?.message || '-'}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-gray-400">Criada em</span>
+              <span className="font-medium">{pendingRequestData?.created_at ? new Date(pendingRequestData.created_at).toLocaleString() : '-'}</span>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowPendingModal(false)}>Fechar</Button>
+            <Button onClick={handleResendRequest} disabled={resending}>
+              {resending ? 'Reenviando...' : 'Reenviar solicitação'}
             </Button>
           </DialogFooter>
         </DialogContent>

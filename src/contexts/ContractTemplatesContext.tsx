@@ -337,8 +337,9 @@ export const ContractTemplatesProvider: React.FC<ContractTemplatesProviderProps>
     const setupRealTimeUpdates = () => {
       if (!mounted) return;
       
+      const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       channel = supabase
-        .channel('contract_templates_realtime')
+        .channel(`contract_templates_realtime-${uniqueSuffix}`)
         .on(
           'postgres_changes',
           {

@@ -64,10 +64,7 @@ const DisparadorView = createLazyComponent(
   () => import("@/components/DisparadorView").then(m => ({ default: m.DisparadorView })),
   "DisparadorView"
 );
-const ChatsView = createLazyComponent(
-  () => import("@/components/ChatsView").then(m => ({ default: m.ChatsView })),
-  "ChatsView"
-);
+
 const UserProfileView = createLazyComponent(
   () => import("@/components/UserProfileView").then(m => ({ default: m.UserProfileView })),
   "UserProfileView"
@@ -99,6 +96,10 @@ const UserManagementView = createLazyComponent(
 const ConfigurationsView = createLazyComponent(
   () => import("@/components/ConfigurationsView").then(m => ({ default: m.ConfigurationsView })),
   "ConfigurationsView"
+);
+const ConversasView = createLazyComponent(
+  () => import("@/components/ConversasViewPremium").then(m => ({ default: m.ConversasViewPremium })),
+  "ConversasView"
 );
 
 import { useImoveisVivaReal } from "@/hooks/useImoveisVivaReal";
@@ -138,8 +139,6 @@ const Index = () => {
         return <ClientsView />;
       case "clients-crm":
         return <ClientsCRMView />;
-      case "chats":
-        return <ChatsView />;
       case "connections":
         return <ConnectionsViewSimplified />;
       case "users":
@@ -182,6 +181,8 @@ const Index = () => {
         return <InquilinatoView />;
       case "disparador":
         return <DisparadorView />;
+      case "conversas":
+        return <ConversasView />;
       case "configurations":
         console.log('🔧 Renderizando ConfigurationsView...');
         

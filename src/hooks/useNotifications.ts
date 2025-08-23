@@ -320,8 +320,9 @@ export function useNotifications() {
   useEffect(() => {
     if (!profile?.id) return;
 
+    const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const channel = supabase
-      .channel('notifications-changes')
+      .channel(`notifications-changes-${profile.id}-${uniqueSuffix}`)
       .on(
         'postgres_changes',
         {
@@ -357,6 +358,25 @@ export function useNotifications() {
     };
   }, [profile?.id]);
 
+  // Enviar uma notificação de teste para o usuário atual (debug Realtime)
+  const sendTestNotification = async (message?: string) => {
+    if (!profile?.id || !profile?.company_id) throw new Error('Perfil não disponível');
+    const { data, error } = await supabase
+      .from('notifications')
+      .insert({
+        user_id: profile.id,
+        company_id: profile.company_id,
+        type: 'general',
+        title: 'Teste Realtime',
+        message: message || `Ping de teste às ${new Date().toLocaleString('pt-BR')}`,
+        data: { test: true }
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data as Notification;
+  };
+
   return {
     notifications,
     unreadCount,
@@ -367,6 +387,7 @@ export function useNotifications() {
     loadConnectionRequests,
     approveConnectionRequest,
     rejectConnectionRequest,
-    refreshNotifications: loadNotifications
+    refreshNotifications: loadNotifications,
+    sendTestNotification
   };
 }

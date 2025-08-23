@@ -956,17 +956,21 @@ export function useWhatsAppInstances() {
 
       console.log('🔄 Criando solicitação de conexão...');
 
-      // Verificar se usuário já tem solicitação pendente
+      // Verificar se usuário já tem solicitação pendente (retornar detalhes)
       const { data: existingRequests, error: checkError } = await supabase
         .from('connection_requests')
-        .select('id, status')
+        .select('id, status, instance_name, phone_number, created_at, message')
         .eq('user_id', profile.id)
         .eq('status', 'pending');
 
       if (checkError) throw checkError;
 
       if (existingRequests && existingRequests.length > 0) {
-        throw new Error('Você já possui uma solicitação pendente');
+        const pending = existingRequests[0];
+        const err: any = new Error('Você já possui uma solicitação pendente');
+        err.code = 'REQUEST_ALREADY_EXISTS';
+        err.pendingRequest = pending;
+        throw err;
       }
 
       // Verificar se usuário já tem instância ativa
@@ -1003,59 +1007,50 @@ export function useWhatsAppInstances() {
 
       console.log('✅ Solicitação criada:', newRequest);
 
-      // Buscar todos os gestores da empresa para notificar
-      console.log('🔍 Buscando gestores para company_id:', profile.company_id);
-      const { data: managers, error: managersError } = await supabase
-        .from('user_profiles')
-        .select('id, full_name, email, role')
-        .eq('company_id', profile.company_id)
-        .in('role', ['gestor', 'admin'])
-        .eq('is_active', true);
-
-      if (managersError) {
-        console.error('❌ Erro ao buscar gestores:', managersError);
-        throw managersError;
-      }
-
-      console.log('👥 Gestores encontrados:', managers?.length, managers);
-
-      // Criar notificações para cada gestor
-      if (managers && managers.length > 0) {
-        const notifications = managers.map(manager => ({
-          user_id: manager.id,
-          company_id: profile.company_id,
-          type: 'connection_request',
-          title: 'Nova Solicitação de Conexão WhatsApp',
-          message: `${profile.full_name} (${profile.role}) solicitou uma conexão WhatsApp`,
-          data: {
-            request_id: newRequest.id,
-            instance_name: instanceData.instance_name,
-            phone_number: instanceData.phone_number,
-            requester_id: profile.id,
-            requester_name: profile.full_name,
-            requester_email: profile.email,
-            requester_role: profile.role,
-            request_message: instanceData.message
-          }
-        }));
-
-        console.log('📬 Criando notificações:', notifications);
-        
-        const { error: notifyError } = await supabase
-          .from('notifications')
-          .insert(notifications);
-
-        if (notifyError) {
-          console.error('❌ Erro ao notificar gestores:', notifyError);
-          // Não fazer throw aqui para não quebrar o fluxo principal
-        } else {
-          console.log('✅ Gestores notificados com sucesso:', managers.length);
-        }
+      // Notificar gestores via RPC (seguro contra RLS)
+      console.log('📬 Notificando gestores via RPC notify_managers_connection_request');
+      const { error: rpcError } = await supabase.rpc('notify_managers_connection_request', {
+        p_request_id: newRequest.id,
+        p_custom_message: `${profile.full_name} (${profile.role}) solicitou uma conexão WhatsApp`,
+      });
+      if (rpcError) {
+        console.error('❌ Erro na RPC de notificação:', rpcError);
+      } else {
+        console.log('✅ RPC de notificação executada');
       }
 
       return newRequest;
     } catch (error: any) {
       console.error('❌ Erro ao criar solicitação:', error);
+      throw error;
+    }
+  };
+
+  // Reenviar notificação aos gestores para uma solicitação pendente existente
+  const resendConnectionRequest = async (requestId: string, extraMessage?: string) => {
+    try {
+      if (!profile?.company_id) throw new Error('Perfil do usuário não encontrado');
+
+      // Carregar a solicitação para obter dados de contexto
+      const { data: req, error: reqErr } = await supabase
+        .from('connection_requests')
+        .select('id, user_id, company_id, instance_name, phone_number, message, status')
+        .eq('id', requestId)
+        .single();
+
+      if (reqErr) throw reqErr;
+      if (!req || req.status !== 'pending') throw new Error('Solicitação não está pendente');
+
+      // Reenviar via RPC também
+      const { error: rpcError } = await supabase.rpc('notify_managers_connection_request', {
+        p_request_id: req.id,
+        p_custom_message: `${profile.full_name} reenviou a solicitação${extraMessage ? `: ${extraMessage}` : ''}`
+      });
+      if (rpcError) throw rpcError;
+
+      return { ok: true } as const;
+    } catch (error) {
+      console.error('Erro ao reenviar solicitação:', error);
       throw error;
     }
   };
@@ -1235,6 +1230,7 @@ export function useWhatsAppInstances() {
     loadAllUsers,
     loadAvailableUsersForAssignment,  // Nova função centralizada
     requestConnection,                // Nova função integrada de solicitação
+    resendConnectionRequest,          // Reenvio de notificação para gestores
     approveConnectionRequest,         // Aprovação de solicitação
     getPendingRequests,              // Obter solicitações pendentes
     refreshInstances: loadInstances,
