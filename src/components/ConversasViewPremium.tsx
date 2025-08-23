@@ -369,8 +369,10 @@ function MessageBubble({ row }: { row: any }) {
     };
 
     return (
-      <div className={isAI ? 'self-end' : ''}>
-        <div className="max-w-[72ch] rounded-2xl bg-zinc-800/80 px-3.5 py-3 text-zinc-100 shadow border border-white/10">
+      <div className={isAI ? 'self-end' : 'self-start'}>
+        <div className={isAI
+          ? 'max-w-[72ch] rounded-2xl bg-blue-600/90 px-3.5 py-3 text-white shadow border border-blue-500/30'
+          : 'max-w-[72ch] rounded-2xl bg-zinc-800/80 px-3.5 py-3 text-zinc-100 shadow border border-white/10'}>
           <MediaComponent />
         </div>
       </div>
@@ -381,8 +383,10 @@ function MessageBubble({ row }: { row: any }) {
   if (row.media && typeof row.media === 'string' && row.media.trim() && row.media.toLowerCase() !== 'null') {
     console.log('⚠️ Mídia detectada mas base64 inválido, mostrando placeholder');
     return (
-      <div className={isAI ? 'self-end' : ''}>
-        <div className="max-w-[72ch] rounded-2xl bg-zinc-800/80 px-3.5 py-3 text-zinc-100 shadow border border-white/10">
+      <div className={isAI ? 'self-end' : 'self-start'}>
+        <div className={isAI
+          ? 'max-w-[72ch] rounded-2xl bg-blue-600/90 px-3.5 py-3 text-white shadow border border-blue-500/30'
+          : 'max-w-[72ch] rounded-2xl bg-zinc-800/80 px-3.5 py-3 text-zinc-100 shadow border border-white/10'}>
           <div className="p-4 text-center text-zinc-400 border border-dashed border-zinc-600 rounded-lg">
             🖼️ Mídia corrompida
             <br />
@@ -399,7 +403,7 @@ function MessageBubble({ row }: { row: any }) {
   console.log('📝 Renderizando texto:', { content: content.substring(0, 50) + '...', isAI });
 
   return (
-    <div className={isAI ? 'self-end' : ''}>
+    <div className={isAI ? 'self-end' : 'self-start'}>
       <div className={isAI
         ? 'max-w-[72ch] rounded-2xl bg-blue-600/90 px-3.5 py-3 text-white shadow'
         : 'max-w-[72ch] rounded-2xl bg-zinc-800/80 px-3.5 py-3 text-zinc-100 shadow'}>
