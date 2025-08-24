@@ -494,11 +494,21 @@ export function useKanbanLeads() {
     return () => {
       //
       try {
-        if (subscriptionRef.current) {
-          supabase.removeChannel(subscriptionRef.current);
-          subscriptionRef.current = null;
-        }
+        const ch = subscriptionRef.current;
+        subscriptionRef.current = null;
         isSubscribedRef.current = false;
+        if (ch && typeof ch.unsubscribe === 'function') {
+          // Tenta primeiro cancelar a inscrição de forma graciosa
+          Promise.resolve(ch.unsubscribe()).catch(() => {
+            // fallback silencioso
+          }).finally(() => {
+            try {
+              supabase.removeChannel(ch);
+            } catch (_) {}
+          });
+        } else if (ch) {
+          try { supabase.removeChannel(ch); } catch (_) {}
+        }
       } catch (error) {
         console.error('❌ Erro ao limpar subscription de leads:', error);
       }

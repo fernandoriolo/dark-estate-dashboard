@@ -321,9 +321,10 @@ const getOrigemColor = (origem: string) => {
 interface LeadCardProps {
   lead: KanbanLead;
   isDragging?: boolean;
+  availableBrokers?: { id: string, full_name: string }[];
 }
 
-const LeadCard = ({ lead, isDragging = false }: LeadCardProps) => {
+const LeadCard = ({ lead, isDragging = false, availableBrokers = [] }: LeadCardProps) => {
   const {
     attributes,
     listeners,
@@ -455,9 +456,10 @@ interface KanbanColumnProps {
   stage: typeof kanbanStages[0];
   leads: KanbanLead[];
   leadCount: number;
+  availableBrokers?: { id: string, full_name: string }[];
 }
 
-const KanbanColumn = ({ stage, leads, leadCount }: KanbanColumnProps) => {
+const KanbanColumn = ({ stage, leads, leadCount, availableBrokers = [] }: KanbanColumnProps) => {
   const StageIcon = stage.icon;
   
   const { setNodeRef: setDropRef, isOver } = useDroppable({ id: `drop-${stage.id}`, data: { type: 'column', stage: stage.title } });
@@ -493,7 +495,7 @@ const KanbanColumn = ({ stage, leads, leadCount }: KanbanColumnProps) => {
             <div className="space-y-3 p-2">
               <AnimatePresence>
                 {leads.map((lead) => (
-                  <LeadCard key={lead.id} lead={lead} />
+                  <LeadCard key={lead.id} lead={lead} availableBrokers={availableBrokers} />
                 ))}
               </AnimatePresence>
               
@@ -1039,6 +1041,7 @@ export function ClientsView() {
                                 stage={stage} 
                                 leads={stageLeads} 
                                 leadCount={stageLeads.length}
+                                availableBrokers={availableBrokers}
                               />
                             </motion.div>
                           );
