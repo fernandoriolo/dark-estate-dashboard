@@ -126,6 +126,17 @@ export function useCompanySettings() {
       setUpdating(field);
       setError(null);
 
+      // Verificar se a sessão está válida e renovar se necessário
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        // Tentar renovar a sessão
+        const { error: refreshError } = await supabase.auth.refreshSession();
+        if (refreshError) {
+          throw new Error('Sessão expirada. Faça login novamente.');
+        }
+      }
+
       const { data, error } = await supabase
         .from('company_settings')
         .update({ [field]: value })
@@ -133,9 +144,31 @@ export function useCompanySettings() {
         .select()
         .single();
 
-      if (error) throw error;
-
-      setSettings(data);
+      if (error) {
+        // Se for erro de token expirado, tentar renovar sessão e tentar novamente
+        if (error.message?.includes('exp') || error.message?.includes('JWT')) {
+          console.log('Token expirado em updateSetting, tentando renovar sessão...');
+          const { error: refreshError } = await supabase.auth.refreshSession();
+          if (refreshError) {
+            throw new Error('Sessão expirada. Faça login novamente.');
+          }
+          
+          // Tentar novamente com sessão renovada
+          const { data: retryData, error: retryError } = await supabase
+            .from('company_settings')
+            .update({ [field]: value })
+            .eq('company_id', profile.company_id)
+            .select()
+            .single();
+            
+          if (retryError) throw retryError;
+          setSettings(retryData);
+        } else {
+          throw error;
+        }
+      } else {
+        setSettings(data);
+      }
       
       // Toast específico por tipo de configuração
       const messages = {
@@ -183,6 +216,17 @@ export function useCompanySettings() {
       setUpdating('logo_url');
       setError(null);
 
+      // Verificar se a sessão está válida e renovar se necessário
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        // Tentar renovar a sessão
+        const { error: refreshError } = await supabase.auth.refreshSession();
+        if (refreshError) {
+          throw new Error('Sessão expirada. Faça login novamente.');
+        }
+      }
+
       // Nome único para o arquivo
       const fileExt = file.name.split('.').pop();
       const fileName = `logo-${Date.now()}.${fileExt}`;
@@ -196,7 +240,28 @@ export function useCompanySettings() {
           upsert: false
         });
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        // Se for erro de token expirado, tentar renovar sessão e tentar novamente
+        if (uploadError.message?.includes('exp') || uploadError.message?.includes('Unauthorized')) {
+          console.log('Token expirado, tentando renovar sessão...');
+          const { error: refreshError } = await supabase.auth.refreshSession();
+          if (refreshError) {
+            throw new Error('Sessão expirada. Faça login novamente.');
+          }
+          
+          // Tentar upload novamente com sessão renovada
+          const { error: retryError } = await supabase.storage
+            .from('company-assets')
+            .upload(filePath, file, {
+              cacheControl: '3600',
+              upsert: false
+            });
+            
+          if (retryError) throw retryError;
+        } else {
+          throw uploadError;
+        }
+      }
 
       // Obter URL pública
       const { data: { publicUrl } } = supabase.storage

@@ -24,6 +24,7 @@ import { Separator } from '@/components/ui/separator';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
+import { useUserProfile } from '@/hooks/useUserProfile';
 import { useTheme } from '@/contexts/ThemeContext';
 import { usePreview } from '@/contexts/PreviewContext';
 import { toast } from 'sonner';
@@ -52,6 +53,7 @@ const FONT_OPTIONS = [
 ];
 
 export function ConfigurationsView() {
+  const { profile } = useUserProfile();
   const { 
     settings, 
     loading, 
@@ -65,6 +67,38 @@ export function ConfigurationsView() {
   
   const { theme } = useTheme();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Debug: verificar se o ref está sendo inicializado
+  React.useEffect(() => {
+    console.log('ConfigurationsView mounted, fileInputRef:', fileInputRef.current);
+    console.log('useCompanySettings state:', { settings, loading, updating, hasLogo });
+    console.log('useUserProfile state:', { profile });
+  }, []);
+
+  // Debug: monitorar mudanças nos estados
+  React.useEffect(() => {
+    console.log('Estados atualizados:', { 
+      settings: settings ? 'loaded' : 'null', 
+      loading, 
+      updating, 
+      hasLogo,
+      settingsLogoUrl: settings?.logo_url,
+      profileCompanyId: profile?.company_id,
+      profileLoaded: !!profile
+    });
+  }, [settings, loading, updating, hasLogo, profile]);
+
+  // Forçar renderização mesmo com loading se demorar muito
+  const [forceRender, setForceRender] = React.useState(false);
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      if (loading) {
+        console.log('⚠️ Loading demorou muito, forçando renderização');
+        setForceRender(true);
+      }
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [loading]);
   
   const {
     previewName,
@@ -216,30 +250,52 @@ export function ConfigurationsView() {
   };
 
   const handleSaveChanges = async () => {
-    if (!hasUnsavedChanges) return;
-
     try {
-      await Promise.all([
-        updateSetting('company_name_font_family', previewNameFont),
-        updateSetting('company_name_font_size', previewNameSize),
-        updateSetting('company_name_color', previewNameColor),
-        updateSetting('company_name_bold', previewNameBold),
-        updateSetting('company_subtitle_font_family', previewSubtitleFont),
-        updateSetting('company_subtitle_font_size', previewSubtitleSize),
-        updateSetting('company_subtitle_color', previewSubtitleColor),
-        updateSetting('company_subtitle_bold', previewSubtitleBold),
-        updateSetting('logo_size', previewLogoSize),
-      ]);
-
-      setHasUnsavedChanges(false);
-      toast.success('Alterações salvas com sucesso!');
+      if (hasUnsavedChanges) {
+        // Salvar alterações pendentes
+        await Promise.all([
+          updateSetting('company_name_font_family', previewNameFont),
+          updateSetting('company_name_font_size', previewNameSize),
+          updateSetting('company_name_color', previewNameColor),
+          updateSetting('company_name_bold', previewNameBold),
+          updateSetting('company_subtitle_font_family', previewSubtitleFont),
+          updateSetting('company_subtitle_font_size', previewSubtitleSize),
+          updateSetting('company_subtitle_color', previewSubtitleColor),
+          updateSetting('company_subtitle_bold', previewSubtitleBold),
+          updateSetting('logo_size', previewLogoSize),
+        ]);
+        setHasUnsavedChanges(false);
+        toast.success('✅ Alterações salvas! Atualizando interface...');
+      } else {
+        // Apenas atualizar interface
+        toast.success('✅ Interface atualizada!');
+      }
+      
+      // Refresh automático após salvar
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000); // 1 segundo de delay para mostrar o toast
+      
     } catch (error) {
       toast.error('Erro ao salvar alterações');
     }
   };
 
   const handleFileSelect = async (file: File) => {
-    await uploadLogo(file);
+    console.log('🔄 handleFileSelect chamado com arquivo:', file.name, file.type, file.size);
+    console.log('📤 Chamando uploadLogo...');
+    try {
+      const result = await uploadLogo(file);
+      console.log('✅ uploadLogo resultado:', result);
+      if (result) {
+        toast.success('✅ Logo atualizado com sucesso!');
+      } else {
+        toast.error('Erro ao enviar logo');
+      }
+    } catch (error) {
+      console.error('❌ Erro no handleFileSelect:', error);
+      toast.error('Erro ao processar arquivo');
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -284,7 +340,10 @@ export function ConfigurationsView() {
     }
   };
 
-  if (loading) {
+  // Debug: verificar se está sempre em loading
+  console.log('🔍 Estado de loading:', loading, 'settings:', !!settings, 'forceRender:', forceRender);
+
+  if (loading && !forceRender) {
     return (
       <div className="min-h-screen bg-theme-primary text-theme-primary p-6">
         <div className="max-w-6xl mx-auto">
@@ -292,6 +351,8 @@ export function ConfigurationsView() {
             <div className="text-center">
               <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary-color" />
               <p className="text-theme-secondary">Carregando configurações...</p>
+              
+
             </div>
           </div>
         </div>
@@ -301,6 +362,8 @@ export function ConfigurationsView() {
 
   return (
     <div className="bg-theme-primary text-theme-primary p-6">
+
+
       <div className="max-w-6xl mx-auto space-y-8">
         
         <motion.div 
@@ -344,15 +407,105 @@ export function ConfigurationsView() {
             >
               <Card className="bg-theme-card border-theme-primary">
                 <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-primary-color">
-                      <Building2 className="h-5 w-5 text-white" />
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-primary-color">
+                        <Building2 className="h-5 w-5 text-white" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-theme-primary">Empresa</CardTitle>
+                        <CardDescription className="text-theme-secondary">
+                          Personalize a identidade da sua empresa
+                        </CardDescription>
+                      </div>
                     </div>
-                    <div>
-                      <CardTitle className="text-theme-primary">Empresa</CardTitle>
-                      <CardDescription className="text-theme-secondary">
-                        Personalize a identidade da sua empresa
-                      </CardDescription>
+                    
+                    {/* Botões para gerenciar logo - usando HTML nativo */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          console.log('📷 BOTÃO HEADER CLICADO!');
+                          const input = document.createElement('input');
+                          input.type = 'file';
+                          input.accept = 'image/*';
+                          input.onchange = (e) => {
+                            const file = (e.target as HTMLInputElement).files?.[0];
+                            if (file) {
+                              console.log('📁 Arquivo selecionado via botão header:', file);
+                              handleFileSelect(file);
+                            }
+                          };
+                          input.click();
+                        }}
+                        disabled={updating === 'logo_url'}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '6px 12px',
+                          border: '1px solid #3B82F6',
+                          borderRadius: '6px',
+                          background: 'transparent',
+                          color: '#3B82F6',
+                          cursor: updating === 'logo_url' ? 'not-allowed' : 'pointer',
+                          fontSize: '14px',
+                          fontWeight: '500',
+                          opacity: updating === 'logo_url' ? 0.5 : 1,
+                          transition: 'all 0.2s',
+                          zIndex: 999
+                        }}
+                        onMouseEnter={(e) => {
+                          if (updating !== 'logo_url') {
+                            e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                        }}
+                      >
+                        <Camera className="h-4 w-4" />
+                        {hasLogo ? 'Alterar Logo' : 'Adicionar Logo'}
+                      </button>
+                      
+                      {hasLogo && (
+                        <button
+                          onClick={() => {
+                            console.log('🗑️ BOTÃO REMOVER HEADER CLICADO!');
+                            const confirmar = confirm('Tem certeza que deseja remover o logo?');
+                            if (confirmar) {
+                              removeLogo();
+                            }
+                          }}
+                          disabled={updating === 'logo_url'}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '6px 12px',
+                            border: '1px solid #EF4444',
+                            borderRadius: '6px',
+                            background: 'transparent',
+                            color: '#EF4444',
+                            cursor: updating === 'logo_url' ? 'not-allowed' : 'pointer',
+                            fontSize: '14px',
+                            fontWeight: '500',
+                            opacity: updating === 'logo_url' ? 0.5 : 1,
+                            transition: 'all 0.2s',
+                            zIndex: 999
+                          }}
+                          onMouseEnter={(e) => {
+                            if (updating !== 'logo_url') {
+                              e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'transparent';
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                          Remover
+                        </button>
+                      )}
                     </div>
                   </div>
                 </CardHeader>
@@ -360,6 +513,9 @@ export function ConfigurationsView() {
                 <CardContent className="space-y-6">
                   <div className="space-y-3">
                     <Label className="text-theme-primary font-medium">Logo da Empresa</Label>
+                    
+
+
                     <div
                       className={`relative border-2 border-dashed rounded-lg p-6 transition-all duration-200 cursor-pointer ${
                         dragOver
@@ -370,7 +526,23 @@ export function ConfigurationsView() {
                       onDragOver={handleDragOver}
                       onDragEnter={handleDragEnter}
                       onDragLeave={handleDragLeave}
-                      onClick={() => !updating && !hasLogo && fileInputRef.current?.click()}
+                      onClick={(e) => {
+                        if (!updating && !hasLogo) {
+                          e.preventDefault();
+                          console.log('🖱️ Div clicada para upload');
+                          const input = document.createElement('input');
+                          input.type = 'file';
+                          input.accept = 'image/*';
+                          input.onchange = (e) => {
+                            const file = (e.target as HTMLInputElement).files?.[0];
+                            if (file) {
+                              console.log('📁 Arquivo selecionado via div:', file);
+                              handleFileSelect(file);
+                            }
+                          };
+                          input.click();
+                        }
+                      }}
                     >
                       {updating === 'logo_url' ? (
                         <div className="text-center">
@@ -379,31 +551,58 @@ export function ConfigurationsView() {
                         </div>
                       ) : hasLogo ? (
                         <div className="text-center">
-                          <img 
-                            src={settings?.logo_url} 
-                            alt="Logo da empresa"
-                            className="h-16 w-16 object-contain mx-auto mb-3 rounded"
-                          />
-                          <div className="flex justify-center gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => fileInputRef.current?.click()}
-                              className="border-theme-primary text-theme-secondary"
-                            >
-                              <Camera className="h-4 w-4 mr-2" />
-                              Alterar
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={removeLogo}
-                              className="border-red-500 text-red-500 hover:bg-red-500/10"
-                            >
-                              <X className="h-4 w-4 mr-2" />
-                              Remover
-                            </Button>
+                          {/* Imagem clicável com overlay hover */}
+                          <div 
+                            className="relative group cursor-pointer mx-auto mb-3 w-16 h-16"
+                            onClick={() => {
+                              console.log('🖼️ Imagem clicada - mostrando opções!');
+                              
+                              // Criar modal simples com opções
+                              const escolha = confirm('Escolha uma ação:\n\nOK = Trocar logo\nCancelar = Remover logo');
+                              
+                              if (escolha) {
+                                // Trocar logo
+                                console.log('🔄 Usuário escolheu trocar logo');
+                                const input = document.createElement('input');
+                                input.type = 'file';
+                                input.accept = 'image/*';
+                                input.onchange = (e) => {
+                                  const file = (e.target as HTMLInputElement).files?.[0];
+                                  if (file) {
+                                    console.log('📁 Arquivo selecionado para trocar:', file);
+                                    handleFileSelect(file);
+                                  }
+                                };
+                                input.click();
+                              } else {
+                                // Remover logo
+                                console.log('🗑️ Usuário escolheu remover logo');
+                                const confirmarRemocao = confirm('Tem certeza que deseja remover o logo?');
+                                if (confirmarRemocao) {
+                                  removeLogo();
+                                }
+                              }
+                            }}
+                          >
+                            <img 
+                              src={settings?.logo_url} 
+                              alt="Logo da empresa"
+                              className="h-16 w-16 object-contain rounded transition-opacity group-hover:opacity-75"
+                            />
+                            {/* Overlay com ícone de câmera no hover */}
+                            <div className="absolute inset-0 bg-black bg-opacity-50 rounded opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <Camera className="h-6 w-6 text-white" />
+                            </div>
+                            {/* Indicação de que é clicável */}
+                            <div className="absolute -bottom-1 -right-1 bg-blue-500 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Edit3 className="h-3 w-3 text-white" />
+                            </div>
                           </div>
+                          
+                          {/* Texto explicativo */}
+                          <p className="text-xs text-theme-secondary mb-3">
+                            Clique na imagem para alterar ou remover
+                          </p>
                         </div>
                       ) : (
                         <div className="text-center">
@@ -419,12 +618,28 @@ export function ConfigurationsView() {
                             PNG, JPG ou SVG até 2MB
                           </p>
                           {!dragOver && (
-                            <Button
-                              className="mt-3 bg-primary-color hover:bg-primary-color-hover"
-                              onClick={() => fileInputRef.current?.click()}
-                            >
-                              Selecionar Arquivo
-                            </Button>
+                            <>
+                              <Button
+                                className="mt-3 bg-primary-color hover:bg-primary-color-hover"
+                                onClick={() => {
+                                  console.log('🔵 Botão principal clicado!');
+                                  const input = document.createElement('input');
+                                  input.type = 'file';
+                                  input.accept = 'image/*';
+                                  input.onchange = (e) => {
+                                    const file = (e.target as HTMLInputElement).files?.[0];
+                                    if (file) {
+                                      console.log('📁 Arquivo selecionado via botão principal:', file);
+                                      handleFileSelect(file);
+                                    }
+                                  };
+                                  input.click();
+                                }}
+                                disabled={updating === 'logo_url'}
+                              >
+                                Selecionar Arquivo
+                              </Button>
+                            </>
                           )}
                         </div>
                       )}
@@ -435,8 +650,14 @@ export function ConfigurationsView() {
                         accept="image/*"
                         className="hidden"
                         onChange={(e) => {
+                          console.log('Input file onChange triggered, files:', e.target.files);
                           const file = e.target.files?.[0];
-                          if (file) handleFileSelect(file);
+                          if (file) {
+                            console.log('Arquivo selecionado:', file.name, file.type, file.size);
+                            handleFileSelect(file);
+                          }
+                          // Reset input para permitir selecionar o mesmo arquivo novamente
+                          e.target.value = '';
                         }}
                       />
                     </div>
@@ -494,66 +715,7 @@ export function ConfigurationsView() {
             </motion.div>
 
 
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-            >
-              <Card className="bg-theme-card border-theme-primary">
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-gradient-to-r from-green-500 to-emerald-500">
-                      <Globe className="h-5 w-5 text-white" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-theme-primary">Regional</CardTitle>
-                      <CardDescription className="text-theme-secondary">
-                        Configurações de idioma e localização
-                      </CardDescription>
-                    </div>
-                  </div>
-                </CardHeader>
-                
-                <CardContent className="space-y-6">
-                  <div className="space-y-2">
-                    <Label className="text-theme-primary font-medium">Idioma</Label>
-                    <Select
-                      value={settings?.language}
-                      onValueChange={(value) => updateSetting('language', value)}
-                      disabled={updating === 'language'}
-                    >
-                      <SelectTrigger className="bg-theme-tertiary border-theme-primary text-theme-primary">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-theme-card border-theme-primary">
-                        <SelectItem value="pt-BR">Português (Brasil)</SelectItem>
-                        <SelectItem value="en-US">English (US)</SelectItem>
-                        <SelectItem value="es-ES">Español (España)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
 
-                  <div className="space-y-2">
-                    <Label className="text-theme-primary font-medium">Fuso Horário</Label>
-                    <Select
-                      value={settings?.timezone}
-                      onValueChange={(value) => updateSetting('timezone', value)}
-                      disabled={updating === 'timezone'}
-                    >
-                      <SelectTrigger className="bg-theme-tertiary border-theme-primary text-theme-primary">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-theme-card border-theme-primary">
-                        <SelectItem value="America/Sao_Paulo">São Paulo (GMT-3)</SelectItem>
-                        <SelectItem value="America/New_York">New York (GMT-5)</SelectItem>
-                        <SelectItem value="Europe/London">London (GMT+0)</SelectItem>
-                        <SelectItem value="Europe/Madrid">Madrid (GMT+1)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
           </div>
 
           {/* Coluna Lateral - Preview Moderno e Fixo */}
@@ -813,33 +975,35 @@ export function ConfigurationsView() {
                     </div>
 
                     {/* Botão Salvar */}
-                    {hasUnsavedChanges && (
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
-                        className="pt-4 border-t border-slate-600/50"
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      className="pt-4 border-t border-slate-600/50"
+                    >
+                      <Button
+                        onClick={handleSaveChanges}
+                        disabled={updating !== null}
+                        className={`w-full text-white shadow-lg transition-all duration-300 ${
+                          hasUnsavedChanges 
+                            ? 'bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 shadow-green-500/25' 
+                            : 'bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 shadow-blue-500/25'
+                        }`}
+                        size="lg"
                       >
-                        <Button
-                          onClick={handleSaveChanges}
-                          disabled={updating !== null}
-                          className="w-full bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white shadow-lg shadow-green-500/25 transition-all duration-300"
-                          size="lg"
-                        >
-                          {updating ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Salvando...
-                            </>
-                          ) : (
-                            <>
-                              <Check className="mr-2 h-4 w-4" />
-                              Salvar Alterações
-                            </>
-                          )}
-                        </Button>
-                      </motion.div>
-                    )}
+                        {updating ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Salvando...
+                          </>
+                        ) : (
+                          <>
+                            <Check className="mr-2 h-4 w-4" />
+                            {hasUnsavedChanges ? 'Salvar Alterações' : 'Atualizar Interface'}
+                          </>
+                        )}
+                      </Button>
+                    </motion.div>
                   </CardContent>
                 </Card>
               </motion.div>
@@ -848,7 +1012,7 @@ export function ConfigurationsView() {
         </div>
 
         {/* Botão Salvar Mobile */}
-        <div className="lg:hidden mt-6">{hasUnsavedChanges && (
+        <div className="lg:hidden mt-6">
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -858,7 +1022,11 @@ export function ConfigurationsView() {
             <Button
               onClick={handleSaveChanges}
               disabled={updating !== null}
-              className="w-full bg-green-600 hover:bg-green-700 text-white"
+              className={`w-full text-white ${
+                hasUnsavedChanges 
+                  ? 'bg-green-600 hover:bg-green-700' 
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }`}
               size="lg"
             >
               {updating ? (
@@ -869,12 +1037,11 @@ export function ConfigurationsView() {
               ) : (
                 <>
                   <Check className="mr-2 h-4 w-4" />
-                  Salvar Alterações
+                  {hasUnsavedChanges ? 'Salvar Alterações' : 'Atualizar Interface'}
                 </>
               )}
             </Button>
           </motion.div>
-        )}
         </div>
 
       </div>
