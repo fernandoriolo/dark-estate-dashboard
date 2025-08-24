@@ -618,3 +618,20 @@ Próximos passos sugeridos:
 - **Guia criado**: `APLICAR_MIGRATIONS_NOVO_BANCO.md` com instruções detalhadas
 - **Próximos passos**: Aplicar migrations via SQL Editor do Supabase Dashboard
 - **Scripts auxiliares**: Criados para verificação e teste do novo banco
+
+## 2025-01-09 — Criação da tabela imobipro_messages
+- **Problema identificado**: Tabela `imobipro_messages` não existia no banco, causando erros no sistema de chat/conversas
+- **Análise realizada**: 
+  - Migration RLS existente tentava configurar políticas em tabela inexistente
+  - Views e hooks faziam referência à tabela faltante
+  - Estrutura esperada identificada através do código TypeScript
+- **Solução implementada**:
+  - **Migration criada**: `supabase/migrations/20250109120000_create_imobipro_messages.sql`
+  - **Estrutura da tabela**: UUID (id), session_id, instancia, message (JSONB), data, media, created_at, updated_at
+  - **RLS habilitado**: Políticas para SELECT, INSERT e UPDATE por usuários autenticados
+  - **Índices de performance**: session_id, data DESC, instancia, created_at DESC
+  - **Trigger updated_at**: Atualização automática do timestamp
+  - **Comentários**: Documentação completa das colunas
+- **Migration aplicada**: Tabela criada com sucesso no Supabase (ID: 18128)
+- **Validação**: Estrutura confirmada via SQL query, RLS ativo, views funcionais
+- **Resultado**: Sistema de mensagens ImobiPro agora funcional, hooks e views operacionais
