@@ -108,7 +108,8 @@ export function useConversaMessages(sessionId?: string | null) {
         tool_calls: newMessage.message?.tool_calls,
         invalid_tool_calls: newMessage.message?.invalid_tool_calls
       },
-      data: newMessage.data
+      data: newMessage.data,
+      media: newMessage.media ?? null
     };
 
     setMessages(prev => [...prev, parsedMessage].sort((a, b) => 
@@ -116,11 +117,16 @@ export function useConversaMessages(sessionId?: string | null) {
     ));
   };
 
+  const removeMessage = (messageId: any) => {
+    setMessages(prev => prev.filter(m => String(m.id) === String(messageId) ? false : true));
+  };
+
   return {
     messages,
     loading,
     error,
     refetch: fetchMessages,
-    addMessage
+    addMessage,
+    removeMessage
   };
 }

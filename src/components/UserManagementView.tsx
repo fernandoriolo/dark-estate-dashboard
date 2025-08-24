@@ -32,6 +32,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
 import { useUserProfile, UserProfile } from '@/hooks/useUserProfile';
+import { useWhatsAppInstances } from '@/hooks/useWhatsAppInstances';
 import { supabase } from '@/integrations/supabase/client';
 import { invokeEdge } from '@/integrations/supabase/invoke';
 import { logAudit } from '@/lib/audit/logger';
@@ -76,6 +77,7 @@ export function UserManagementView() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [settingsForm, setSettingsForm] = useState<{ chat_instance: string } | null>(null);
   const [instances, setInstances] = useState<{ label: string; key: string }[]>([]);
+  const { instances: waInstances } = useWhatsAppInstances();
   
   // Dados do formulário de criação
   const [createForm, setCreateForm] = useState({
@@ -192,15 +194,14 @@ export function UserManagementView() {
     }
   };
 
-  // Carregar instâncias de chat disponíveis (views normalizadas)
+  // Carregar instâncias de chat disponíveis usando a mesma fonte do menu Conexões
   const loadChatInstances = async () => {
     try {
-      const { data, error } = await supabase
-        .from('vw_imobipro_instances')
-        .select('instancia_label, instancia_key')
-        .order('instancia_label', { ascending: true });
-      if (error) throw error;
-      setInstances((data || []).map((r: any) => ({ label: r.instancia_label, key: r.instancia_key })));
+      const options = (waInstances || []).map((inst: any) => ({
+        label: (inst.name || inst.instance_name || inst.profile_name || '').toString(),
+        key: String(inst.instance_name || inst.name || '').trim().toLowerCase(),
+      }));
+      setInstances(options);
     } catch (e) {
       console.error('Erro ao carregar instâncias de chat:', e);
       setInstances([]);
@@ -212,9 +213,13 @@ export function UserManagementView() {
     setSelectedUser(user);
     // Normalizar valor salvo (pode ter sido rótulo). Tentar mapear para a key
     await loadChatInstances();
+    const opts = (waInstances || []).map((inst: any) => ({
+      label: (inst.name || inst.instance_name || inst.profile_name || '').toString(),
+      key: String(inst.instance_name || inst.name || '').trim().toLowerCase(),
+    }));
     const raw = (user.chat_instance || '').toString();
     const normalized = raw.trim().toLowerCase();
-    const match = instances.find(i => i.key === normalized || i.label.trim().toLowerCase() === normalized);
+    const match = opts.find(i => i.key === normalized || i.label.trim().toLowerCase() === normalized);
     setSettingsForm({ chat_instance: match ? match.key : '' });
     setShowSettingsModal(true);
   };
@@ -224,20 +229,44 @@ export function UserManagementView() {
     if (!selectedUser || !settingsForm) return;
     const loadingToast = toast.loading('Salvando definições...');
     try {
-      const updatePayload = { chat_instance: settingsForm.chat_instance || null } as any;
-      let { data: upd1, error: err1 } = await supabase
-        .from('user_profiles')
-        .update(updatePayload)
-        .eq('id', selectedUser.id)
-        .select('id');
-      if (err1) throw err1;
-      if (!upd1 || upd1.length === 0) {
-        let { data: upd2, error: err2 } = await supabase
+      const normalizedInstance = (settingsForm.chat_instance || '').toString().trim().toLowerCase() || null;
+      const updatePayload = { chat_instance: normalizedInstance } as any;
+
+      // Tentar identificar corretamente o ID do user_profile
+      const candidateIds = [
+        selectedUser.id,
+        (selectedUser as any)?.user_id,
+        (selectedUser as any)?.profile_id,
+        (selectedUser as any)?.auth_user_id,
+      ]
+        .map((v) => (v ? String(v) : ''))
+        .filter((v, idx, arr) => !!v && arr.indexOf(v) === idx);
+
+      if (candidateIds.length === 0) {
+        throw new Error('Perfil de usuário não encontrado para atualização (id).');
+      }
+
+      let updated = false;
+      let lastErr: any = null;
+      for (const uid of candidateIds) {
+        const { data, error } = await supabase
           .from('user_profiles')
           .update(updatePayload)
-          .eq('user_id', selectedUser.id)
-          .select('user_id');
-        if (err2) throw err2;
+          .eq('id', uid)
+          .select('id');
+        if (error) {
+          lastErr = error;
+          continue;
+        }
+        if (data && data.length > 0) {
+          updated = true;
+          break;
+        }
+      }
+
+      if (!updated) {
+        if (lastErr) throw lastErr;
+        throw new Error('Perfil de usuário não encontrado para atualização (id).');
       }
 
       try { await logAudit({ action: 'user.settings_updated', resource: 'user_profile', resourceId: selectedUser.id, meta: { chat_instance: settingsForm.chat_instance } }); } catch {}

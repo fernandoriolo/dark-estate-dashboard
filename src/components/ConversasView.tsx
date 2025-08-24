@@ -59,6 +59,11 @@ export function ConversasView() {
   
   const { conversas, loading: loadingConversas, error: errorConversas, updateConversation } = useConversasList(selectedInstance);
   const { messages, loading: loadingMessages, error: errorMessages, addMessage } = useConversaMessages(selectedConversation);
+  const endOfMessagesRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages.length, selectedConversation, loadingMessages]);
   const { profile } = useUserProfile();
   const { toast } = useToast();
 
@@ -475,7 +480,7 @@ export function ConversasView() {
 
             {/* Área de Mensagens */}
             <CardContent className="flex-1 p-4 overflow-hidden">
-              <ScrollArea className="h-full pr-4">
+              <ScrollArea className="h-[calc(100vh-24rem)] pr-4">
                 {loadingMessages ? (
                   <div className="flex items-center justify-center h-full">
                     <div className="text-center">
@@ -552,6 +557,7 @@ export function ConversasView() {
                         </div>
                       </div>
                     ))}
+                    <div ref={endOfMessagesRef} />
                   </div>
                 )}
               </ScrollArea>

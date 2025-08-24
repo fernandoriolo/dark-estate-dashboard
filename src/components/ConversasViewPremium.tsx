@@ -13,7 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { useConversasInstances } from '@/hooks/useConversasInstances';
+import { useChatInstancesFromMessages } from '@/hooks/useChatInstancesFromMessages';
 import { useConversasList } from '@/hooks/useConversasList';
 import { useConversaMessages } from '@/hooks/useConversaMessages';
 import { useConversasRealtime } from '@/hooks/useConversasRealtime';
@@ -440,19 +440,20 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
+  const endOfMessagesRef = useRef<HTMLDivElement | null>(null);
   
   const maxAudioSec = 60;
 
   // Hooks de dados
-  const { instances, loading: loadingInstances, error: errorInstances, refetch: refetchInstances } = useConversasInstances();
-  const { conversas, loading: loadingConversas, error: errorConversas, refetch: refetchConversas, updateConversation } = useConversasList(selectedInstance);
-  const { messages, loading: loadingMessages, error: errorMessages, refetch: refetchMessages, addMessage } = useConversaMessages(selectedConversation);
+  const { instances, loading: loadingInstances, error: errorInstances, refresh: refetchInstances, scopedInstance } = useChatInstancesFromMessages();
+  const { conversas, loading: loadingConversas, error: errorConversas, refetch: refetchConversas, updateConversation } = useConversasList(selectedInstance || scopedInstance);
+  const { messages, loading: loadingMessages, error: errorMessages, refetch: refetchMessages, addMessage, removeMessage } = useConversaMessages(selectedConversation);
 
-  // Realtime com animação de nova mensagem
+  // Realtime (única assinatura): novas mensagens e deleções
   useConversasRealtime({
     onInstanceUpdate: refetchInstances,
-    onConversationUpdate: (sessionId, data) => {
-      updateConversation(sessionId, data);
+    onConversationUpdate: (sessionId) => {
+      updateConversation(sessionId);
     },
     onMessageUpdate: (sessionId, message) => {
       if (sessionId === selectedConversation) {
@@ -461,8 +462,22 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
         controls.start('highlight');
         setTimeout(() => controls.start('visible'), 250);
       }
+      // Atualizar lista (move para topo)
+      updateConversation(sessionId);
+    },
+    onMessageDelete: (_sessionId, messageId) => {
+      // Remover imediatamente do painel direito (se estiver visível)
+      removeMessage(messageId);
+      // Atualizar contadores e lista
+      refetchConversas();
+      refetchInstances();
     }
   });
+
+  // Auto scroll para o final quando novas mensagens chegam ou conversa muda
+  useEffect(() => {
+    endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages.length, selectedConversation, loadingMessages]);
 
   // Conversas filtradas por busca
   const filteredConversas = conversas.filter(conversa =>
@@ -728,25 +743,25 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
                 ) : (
                   instances.map((instance) => (
                     <div
-                      key={instance.instancia}
+                      key={instance.name}
                       className={`
                         group relative rounded-2xl border border-zinc-700/60 bg-zinc-900/60 p-3 shadow-lg transition
                         hover:-translate-y-0.5 hover:shadow-2xl cursor-pointer
-                        ${selectedInstance === instance.instancia 
+                        ${selectedInstance === instance.name 
                           ? 'ring-2 ring-sky-500/40' 
                           : ''
                         }
                       `}
-                      data-active={selectedInstance === instance.instancia}
-                      onClick={() => setSelectedInstance(instance.instancia)}
+                      data-active={selectedInstance === instance.name}
+                      onClick={() => setSelectedInstance(instance.name)}
                     >
                       <div className="flex items-center gap-3">
                         <div className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-green-400/30 to-emerald-400/30 text-sm font-medium text-white ring-1 ring-white/10">
-                          {instance.displayName.charAt(0).toUpperCase()}
+                          {instance.name.charAt(0).toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
                           <h3 className="font-medium text-white truncate">
-                            {instance.displayName}
+                            {instance.name}
                           </h3>
                           <span className="relative inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-300">
                             <span className="relative h-2 w-2">
@@ -756,9 +771,7 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
                             Ativa
                           </span>
                         </div>
-                        <span className="ml-auto rounded-full bg-zinc-800/80 px-2 py-0.5 text-xs text-zinc-200">
-                          {instance.conversationCount}
-                        </span>
+                        <span className="ml-auto rounded-full bg-zinc-800/80 px-2 py-0.5 text-xs text-zinc-200">{instance.conversationCount}</span>
                       </div>
                     </div>
                   ))
@@ -914,7 +927,7 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
 
                 {/* Lista de mensagens com stagger real */}
                 <div className="flex-1 overflow-hidden">
-                  <ScrollArea className="h-full">
+                  <ScrollArea className="h-[calc(100vh-24rem)]">
                     {loadingMessages ? (
                       <div className="space-y-3 px-1.5 pb-3">
                         {[1, 2, 3].map(i => (
@@ -957,6 +970,7 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
                               </div>
                             </motion.div>
                           ))}
+                          <div ref={endOfMessagesRef} />
                         </motion.div>
                       </AnimatePresence>
                     )}
