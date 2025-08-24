@@ -262,10 +262,27 @@ const PlantaoView = () => {
 
   // Removido localStorage; manter apenas estado em memória e banco
   const persistEscalas = useCallback((data: typeof escalas) => {
+    console.log('💾 persistEscalas: Tentando atualizar estado:', {
+      dadosRecebidos: data,
+      estadoAtual: escalas
+    });
+    
     setEscalas(prevEscalas => {
       // Só atualizar se houver mudanças reais
       const isEqual = JSON.stringify(prevEscalas) === JSON.stringify(data);
-      return isEqual ? prevEscalas : data;
+      console.log('🔍 persistEscalas: Comparação de estado:', {
+        isEqual,
+        prevCount: Object.keys(prevEscalas).length,
+        newCount: Object.keys(data).length
+      });
+      
+      if (isEqual) {
+        console.log('⚡ persistEscalas: Estados iguais, mantendo anterior');
+        return prevEscalas;
+      }
+      
+      console.log('✅ persistEscalas: Estado atualizado!');
+      return data;
     });
   }, []);
 
@@ -332,7 +349,7 @@ const PlantaoView = () => {
     const willOpen = !isOpen;
     if (willOpen && !escalas[calendarId]) {
       // Carregar escala do banco ao expandir pela primeira vez
-      loadSchedule(calendarId, calendarName || calendars.find(x => x.id === calendarId)?.name || '');
+      loadSchedule(calendarId, calendarName || '');
     }
     setExpandedCalendars(prev => ({ ...prev, [calendarId]: willOpen }));
   };
@@ -412,32 +429,18 @@ const PlantaoView = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       
-      // Buscar primeiro por assigned_user_id (quando o calendário foi vinculado pelo gestor)
+      // Buscar escala por calendar_id (mais genérico)
       let { data, error } = await supabase
         .from('oncall_schedules')
         .select(`
           *,
           assigned_user_profile:assigned_user_id(id, full_name, email)
         `)
-        .eq('assigned_user_id', user.id)
         .eq('calendar_id', calendarId)
+        .eq('company_id', profile?.company_id as any)
         .maybeSingle();
 
       if (error && error.code !== 'PGRST116') throw error;
-      
-      // Se não houver linha por assigned_user_id, tentar pelo owner (user_id)
-      if (!data) {
-        const res2 = await supabase
-          .from('oncall_schedules')
-          .select(`
-            *,
-            assigned_user_profile:assigned_user_id(id, full_name, email)
-          `)
-          .eq('user_id', user.id)
-          .eq('calendar_id', calendarId)
-          .maybeSingle();
-        data = res2.data as any;
-      }
 
       if (data) {
         const assignedUserProfile = (data as any).assigned_user_profile;
@@ -491,17 +494,31 @@ const PlantaoView = () => {
   // Carrega todas as escalas do usuário para os calendários atuais
   const loadAllSchedules = useCallback(async () => {
     try {
+      console.log('🚀 loadAllSchedules INICIADO');
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      if (!calendars || calendars.length === 0) return;
-      if (!profile) return; // Aguardar profile carregar antes de fazer query
+      if (!user) {
+        console.log('❌ loadAllSchedules: Usuário não autenticado');
+        return;
+      }
+      if (!calendars || calendars.length === 0) {
+        console.log('⚠️ loadAllSchedules: Nenhum calendário carregado');
+        return;
+      }
+      if (!profile) {
+        console.log('⚠️ loadAllSchedules: Profile não carregado');
+        return;
+      }
+      
+      console.log('👤 loadAllSchedules: Dados do usuário:', {
+        userId: user.id,
+        userRole: profile?.role,
+        companyId: profile?.company_id,
+        calendarsCount: calendars.length
+      });
       
       const calendarIds = calendars.map(c => c.id);
       
-      
       // Buscar escalas com JOIN para trazer o nome do corretor vinculado
-      // SOLUÇÃO: Para gestores, buscar TODAS as escalas (não filtrar por calendar_id)
-      // Para corretores: apenas escalas onde ele é owner OU assigned
       let query = supabase
         .from('oncall_schedules')
         .select(`
@@ -510,22 +527,23 @@ const PlantaoView = () => {
         `);
       
       if (profile?.role === 'admin' || profile?.role === 'gestor') {
-        // Admins e gestores veem todas as escalas da empresa
-        // Não filtrar por calendar_id porque pode haver escalas de calendários não carregados
+        console.log('📋 loadAllSchedules: Query para gestor/admin - filtrando por company_id:', profile.company_id);
+        query = query.eq('company_id', profile.company_id);
       } else if (profile?.role === 'corretor') {
-        // Corretores só veem escalas onde estão como assigned_user_id
+        console.log('👨‍💼 loadAllSchedules: Query para corretor - filtrando por assigned_user_id:', user.id);
         query = query.eq('assigned_user_id', user.id);
       } else {
-        // Para roles desconhecidos, não mostrar nada (fallback de segurança)
+        console.log('❓ loadAllSchedules: Role desconhecido, bloqueando acesso');
         query = query.eq('id', 'never-match');
       }
       
       const { data, error } = await query;
       
-      console.log('🔍 DEBUG loadAllSchedules resultado:', {
+      console.log('📊 loadAllSchedules: Resultado da consulta:', {
         userRole: profile?.role,
-        queryData: data,
-        error,
+        dataCount: data?.length || 0,
+        data: data,
+        error: error,
         escalasAntes: Object.keys(escalas).length
       });
       
@@ -553,6 +571,14 @@ const PlantaoView = () => {
         const assignedUserName = assignedUserProfile ? 
           (assignedUserProfile.full_name || assignedUserProfile.email) : undefined;
         
+        console.log('📝 loadAllSchedules: Processando escala:', {
+          calendarId,
+          calendarName,
+          assignedUserId: (row as any).assigned_user_id,
+          assignedUserName,
+          assignedUserProfile
+        });
+        
         const slots: EscalaSlot[] = [
           (row as any).mon_works ? { dia: 'Segunda', inicio: toHalfHour(toHHMM((row as any).mon_start)), fim: toHalfHour(toHHMM((row as any).mon_end)) } : null,
           (row as any).tue_works ? { dia: 'Terça', inicio: toHalfHour(toHHMM((row as any).tue_start)), fim: toHalfHour(toHHMM((row as any).tue_end)) } : null,
@@ -571,6 +597,12 @@ const PlantaoView = () => {
           slots,
         };
       }
+      
+      console.log('🔄 loadAllSchedules: Estado final antes de persistir:', {
+        nextEscalas: next,
+        totalCalendarios: Object.keys(next).length
+      });
+      
       persistEscalas(next);
     } catch (e) {
       console.error('Falha ao carregar escalas:', e);
@@ -682,11 +714,11 @@ const PlantaoView = () => {
           sun_works: dayMap['Domingo'].works, sun_start: dayMap['Domingo'].start, sun_end: dayMap['Domingo'].end,
         } as any;
         
-        // upsert usando unique constraint existente: (user_id, calendar_id)
+        // upsert usando unique constraint por empresa+calendário: (company_id, calendar_id)
         const { data: upsertData, error } = await supabase
           .from('oncall_schedules')
           .upsert(payload, { 
-            onConflict: 'user_id,calendar_id',
+            onConflict: 'company_id,calendar_id',
             ignoreDuplicates: false 
           })
           .select();
@@ -721,7 +753,9 @@ const PlantaoView = () => {
         
         setDirtyCalendars(prev => ({ ...prev, [calendarId]: false }));
         // Recarregar do banco para garantir consistência visual
-        await loadSchedule(calendarId, cfg.calendarName);
+        console.log('🔄 salvarCalendario: Recarregando escalas após salvar...');
+        await loadAllSchedules();
+        console.log('✅ salvarCalendario: Recarregamento concluído');
       } catch (e: any) {
         console.error(e);
         toast({ 
@@ -1073,7 +1107,13 @@ const PlantaoView = () => {
                                    (profile?.role === 'corretor' && cfg.assignedUserId === profile?.id);
                     const resumo = buildScheduleSummary(cfg);
                     const dayMap = getDayMapFromSlots(cfg.slots);
-                    const ownerName = cfg.assignedUserName || 'Não vinculado';
+                    const ownerName = cfg.assignedUserId
+                      ? (
+                          (profile?.role === 'corretor' && cfg.assignedUserId === profile?.id)
+                            ? (profile.full_name || profile.email)
+                            : (companyUsers.find(u => u.id === cfg.assignedUserId)?.full_name || cfg.assignedUserName || 'Vinculado')
+                        )
+                      : 'Não vinculado';
                     const isOpen = !!expandedCalendars[c.id];
                     
                     if (c.id.includes('0ae22feaa75b11bebadb9e065010b9af7737828cd27764412524369d6fa8c3d1')) {
@@ -1114,6 +1154,7 @@ const PlantaoView = () => {
                                   className="text-blue-300 hover:text-blue-200 hover:bg-blue-900/20" 
                                   onClick={() => { 
                                     setConfigCalendarId(c.id); 
+                                    setIsConfigOpen(true);
                                     // Se não há usuário vinculado, usar valor especial para remoção
                                     setAssignedUserLocal(escalas[c.id]?.assignedUserId || "__remove__"); 
                                   }}

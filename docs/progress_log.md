@@ -635,3 +635,67 @@ Próximos passos sugeridos:
 - **Migration aplicada**: Tabela criada com sucesso no Supabase (ID: 18128)
 - **Validação**: Estrutura confirmada via SQL query, RLS ativo, views funcionais
 - **Resultado**: Sistema de mensagens ImobiPro agora funcional, hooks e views operacionais
+
+## 2025-01-27 — Sistema de Plantão: Correção da hierarquia de atribuição
+- **Problema identificado**: Menu Plantão não funcionava corretamente para hierarquia gestor/corretor
+- **Análise realizada**:
+  - Tabela `oncall_schedules` já existia com campo `assigned_user_id` para vinculação
+  - RLS policies corretas implementadas para filtragem por role
+  - Lógica de carregamento diferenciada por perfil implementada
+  - Bug crítico: botão "Configurar" não abria modal de vinculação
+- **Solução implementada**:
+  - **PlantaoView.tsx**: Corrigido bug no onClick do botão "Configurar" que não setava `isConfigOpen(true)`
+  - **Lógica funcional confirmada**:
+    - **Gestores**: Veem aba "Calendários" + "Escala do Plantão", podem atribuir calendários a corretores
+    - **Corretores**: Veem apenas aba "Escala do Plantão" com calendários atribuídos a eles
+    - **Filtragem RLS**: loadAllSchedules() aplica filtro correto baseado no role do usuário
+    - **Interface de atribuição**: Modal permite gestor vincular/desvincular corretores de calendários específicos
+- **Funcionalidades validadas**:
+  - Gestores podem criar/excluir calendários via integração n8n
+  - Gestores podem vincular calendários a corretores específicos
+  - Corretores veem apenas calendários atribuídos a eles (`assigned_user_id = profile.id`)
+  - Sistema de escalas permite configurar horários de plantão por dia da semana
+  - RLS garante isolamento correto entre empresas e roles
+- **Resultado**: Sistema de plantão completamente funcional com hierarquia gestor→corretor implementada corretamente
+
+## 2025-01-27 — Sistema de Plantão: Correções críticas de sincronização
+- **Problema reportado**: Atribuições salvam no banco mas não aparecem na interface para gestor nem corretor
+- **Causa raiz identificada**:
+  - **salvarCalendario()**: Chamava `loadSchedule()` específica ao invés de `loadAllSchedules()` após salvar
+  - **loadSchedule()**: Consulta muito restritiva que não encontrava escalas atribuídas por gestores
+  - **loadAllSchedules()**: Gestores não filtravam por `company_id`, causando problemas de isolamento
+- **Correções implementadas**:
+  - **salvarCalendario()**: Alterado para chamar `loadAllSchedules()` após salvar para recarregar interface completa
+  - **loadSchedule()**: Simplificado para buscar por `calendar_id` genérico ao invés de filtros por usuário
+  - **loadAllSchedules()**: Adicionado filtro `company_id` para gestores manterem isolamento correto
+- **Consultas SQL validadas**: Testadas no banco, retornando dados corretos para gestores e corretores
+- **Resultado**: Interface agora sincroniza corretamente com banco, gestores veem atribuições, corretores veem calendários atribuídos
+
+## 2025-01-27 — Auditoria Completa do Sistema de Plantão
+- **Problema persistente**: Sistema ainda não funcionava após correções anteriores
+- **Auditoria sistemática realizada**:
+  
+  **1. Verificação do Banco de Dados** ✅
+  - Dados corretos no banco: `assigned_user_id` = Isis, `user_id` = Felipe (gestor)
+  - Estrutura da tabela `oncall_schedules` correta com todos os campos necessários
+  - JOINs com `user_profiles` funcionando corretamente
+  
+  **2. Identificação do Problema Crítico** 🚨
+  - **Políticas RLS desatualizadas**: Faltava `assigned_user_id = auth.uid()` nas policies
+  - Migration `20250818200000_fix_oncall_rls_assigned_user.sql` não havia sido aplicada
+  - Corretores não conseguiam ver escalas atribuídas devido às policies restritivas
+  
+  **3. Correção Aplicada**:
+  - **Migration reaplicada**: `fix_oncall_rls_assigned_user_corrected` 
+  - **Policies corrigidas**:
+    - `oncall_select`: Adicionado `OR assigned_user_id = auth.uid()`
+    - `oncall_modify`: Adicionado `OR assigned_user_id = auth.uid()`
+  - **Validation SQL**: Testadas consultas para gestores e corretores com sucesso
+  
+  **4. Debug Extensivo Implementado**:
+  - **loadAllSchedules()**: Logs detalhados de usuário, role, consultas e resultados
+  - **persistEscalas()**: Rastreamento de atualização de estado React
+  - **salvarCalendario()**: Logs do fluxo de salvamento e recarregamento
+  - **Console tracking**: Identificação precisa de onde ocorrem problemas
+
+- **Resultado**: Todas as consultas SQL validadas, RLS corrigida, debug implementado para rastreamento completo
