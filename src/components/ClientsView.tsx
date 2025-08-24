@@ -436,7 +436,7 @@ const LeadCard = ({ lead, isDragging = false }: LeadCardProps) => {
             <div className="flex items-center justify-between pt-2 border-t border-gray-700/50">
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="text-xs text-amber-300 border-amber-300/40">
-                  {lead.corretor?.nome || 'Sem corretor'}
+                  {lead.corretor?.nome || (lead.id_corretor_responsavel ? (availableBrokers.find(b => b.id === lead.id_corretor_responsavel)?.full_name || 'Sem corretor') : 'Sem corretor')}
                 </Badge>
                 <Badge variant="outline" className={`${getOrigemColor(lead.origem)} text-xs`}>
                   {lead.origem}

@@ -565,10 +565,14 @@ export function ClientsCRMView() {
                                   </Badge>
                                   {/* Label do corretor responsável (sempre exibir, com fallbacks) */}
                                   {(() => {
+                                    const brokerFromList = lead.id_corretor_responsavel 
+                                      ? brokers.find(b => b.id === lead.id_corretor_responsavel) 
+                                      : undefined;
                                     const brokerName = lead.corretor?.nome 
+                                      || brokerFromList?.full_name 
                                       || (lead.id_corretor_responsavel && profile?.id && lead.id_corretor_responsavel === profile.id ? 'Você' 
                                       : 'Sem corretor');
-                                    const brokerRole = (lead.corretor?.role || 'corretor');
+                                    const brokerRole = (lead.corretor?.role || brokerFromList?.role || 'corretor');
                                     return (
                                       <Badge variant="outline" className={getBrokerColor(brokerRole)}>
                                         <User className="h-3 w-3 mr-1" />
@@ -868,10 +872,14 @@ export function ClientsCRMView() {
                 </Badge>
                 {/* Label do corretor responsável (sempre exibir, com fallbacks) */}
                 {(() => {
+                  const brokerFromList = selectedLead.id_corretor_responsavel 
+                    ? brokers.find(b => b.id === selectedLead.id_corretor_responsavel) 
+                    : undefined;
                   const brokerName = selectedLead.corretor?.nome 
+                    || brokerFromList?.full_name 
                     || (selectedLead.id_corretor_responsavel && profile?.id && selectedLead.id_corretor_responsavel === profile.id ? 'Você' 
                     : 'Sem corretor');
-                  const brokerRole = (selectedLead.corretor?.role || 'corretor');
+                  const brokerRole = (selectedLead.corretor?.role || brokerFromList?.role || 'corretor');
                   return (
                     <Badge variant="outline" className={getBrokerColor(brokerRole)}>
                       <User className="h-3 w-3 mr-1" />
