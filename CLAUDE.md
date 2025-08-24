@@ -1,217 +1,545 @@
----
-alwaysApply: true
----
-## 1. Idioma & comunicação
+# 🏢 IMOBIPRO Dashboard — Global Rules & Architecture Guide
 
-* Responder em **pt-BR**.
-* Comentários de código, commits e mensagens de erro em **pt-BR**. (Commits curtos e úteis; `package.json` define `build`, `dev`, `lint` scripts).
-
----
-
-## 2. Stack & Deploy (Hostinger-first / Hybrid)
-
-* **Frontend**: SPA React + Vite + Tailwind + shadcn/ui (build `pnpm build` / `vite build`). Deploy estático em Hostinger (`dist/`).
-* **Server-side / secure logic**: **Supabase Edge Functions** para lógica que precisa `SERVICE_ROLE` (recomendado). Use Hostinger BFF **somente** se houver processamento pesado ou requisitos persistentes de runtime.
-* **CI/CD**: GitHub Actions — passos mínimos: lint → test → semgrep → build → deploy (Hostinger SFTP) + `supabase functions deploy`.
-* **.htaccess** para SPA fallback no Hostinger (fornecer snippet no deploy).
-
----
-
-## 3. Banco de Dados — regras e convenções (alinhado ao `schema-db-imobipro.md`)
-
-* **Nomenclatura**: `snake_case` para tabelas/colunas (o schema atual já segue isso). **Não** usar PascalCase/camelCase no DB; use `camelCase` apenas em TypeScript.
-* **IDs**: preferir `uuid` (usar `gen_random_uuid()`), exceto quando legados exigirem outro tipo (documentar). Note que no schema algumas tabelas ainda têm `id (text)`; padronizar quando possível.
-* **Migrations**: todas as mudanças no schema passam por SQL migrations versionadas em `supabase/migrations/`. Prisma (se usado no BFF) só usa `db pull` — **não** gerar migrations do Prisma para esse DB.
-* **Mapper**: implementar `src/lib/db/mapper.ts` que converta `snake_case` ↔ `camelCase` centralmente. Proibir mapeamentos ad hoc nos componentes.
-* **Índices**: criar índices nas colunas de busca frequente (ex.: `company_id`, `user_id`, `created_at`, `property_id`).
-* **Audit logs**: criar tabela `audit_logs` com `actor_id`, `action`, `resource`, `resource_id`, `meta`, `created_at`.
-
-Observações do schema: Caso hajam tabelas com policies permissivas — prioridade para correção. Tabelas com RLS desabilitado: ativar quando integrar produção.
+## Índice
+1. [Visão Geral & Objetivo do Projeto](#1-visão-geral--objetivo-do-projeto)
+2. [Stack & Módulos](#2-stack--módulos)
+3. [Arquitetura](#3-arquitetura)
+4. [Modelagem de Dados](#4-modelagem-de-dados)
+5. [Autenticação & Autorização](#5-autenticação--autorização)
+6. [Integrações Externas](#6-integrações-externas)
+7. [Qualidade & DX](#7-qualidade--dx)
+8. [Segurança & LGPD](#8-segurança--lgpd)
+9. [CI/CD & Ambientes](#9-cicd--ambientes)
+10. [Padrões de Contribuição](#10-padrões-de-contribuição)
+11. [Definição de Pronto (DoD)](#11-definição-de-pronto-dod)
+12. [MVP: Escopo e Limites](#12-mvp-escopo-e-limites)
+13. [Roteiro de Onboarding](#13-roteiro-de-onboarding)
+14. [Apêndice de Evidências](#14-apêndice-de-evidências)
 
 ---
 
-## 4. Row Level Security (RLS) — política operacional (MANDATÓRIO)
+## 1. Visão Geral & Objetivo do Projeto
 
-* **RLS ativa por padrão** em todas as tabelas de domínio (`companies`, `user_profiles`, `properties`, `leads`, `contracts`, `property_images`, `whatsapp_*`, etc.). O schema atual já tem RLS em grande parte; completar e endurecer onde permissivo.
-* **JWT claims mínimas**: `user_id` (auth.uid()), `company_id`, `role`. Todas as policies consultam `current_setting('request.jwt.claims', true)::json`.
-* **Política generalizada**:
-  * SELECT: permitir quando `company_id = claim.company_id` ou `user_id = auth.uid()` dependendo da tabela.
-  * INSERT/UPDATE/DELETE: exigir `WITH CHECK` que `company_id = claim.company_id` e/ou `user_id = auth.uid()`.
+**ImobiPRO Dashboard** é uma solução SaaS para gestão de imobiliárias que permite:
+- Gerenciamento de propriedades e leads
+- Sistema de chat integrado com WhatsApp
+- Dashboard com métricas e relatórios
+- Gestão de contratos e templates
+- Automações via n8n
+- Sistema de permissões hierárquico
 
-<!-- [parte de impersonation desabilitada por enquanto]
- * **Impersonation controlada**:
-  * `impersonations` table: gravar `dev_master_id`, `impersonated_user_id`, `reason`, `created_at`, `expires_at`, `active`.
-  * RLS + função `get_effective_user()` que valida TTL e retorna claim efetiva (impersonation only when active). Todas as ações  auditadas em `audit_logs`.
- * **Testes**: incluir SQL scripts no CI que validem RLS para cada role (agent/gestor/admin/dev\_master). Não merge sem esses testes passarem.
-  -->
+### 1.1 Princípios Fundamentais (Obrigatórios)
 
-*Exemplo de policy skeleton (migrate SQL):*
+1. **Segurança por padrão** — RLS ativo em todas as tabelas de domínio. Não publicar features sem testes de RLS.
+2. **Fonte única de verdade** — migrations SQL em `supabase/migrations/` são o SSOT do schema.
+3. **Nomenclatura consistente** — DB em snake_case, aplicação em camelCase com mapper centralizado.
+4. **Segredos seguros** — SUPABASE_SERVICE_ROLE, N8N_WEBHOOK_SECRET, JWT_SECRET só em server/edge environment.
 
-```sql
--- properties SELECT (company scope)
-CREATE POLICY "properties_select_company" ON public.properties
-FOR SELECT
-USING (
-  company_id = current_setting('request.jwt.claims', true)::json->>'company_id'
-);
+## 2. Stack & Módulos
 
--- properties INSERT/UPDATE check
-CREATE POLICY "properties_modify_company_check" ON public.properties
-FOR ALL
-USING (
-  (
-    current_setting('request.jwt.claims', true)::json->>'role' IN ('admin','gestor')
-    AND company_id = current_setting('request.jwt.claims', true)::json->>'company_id'
-  )
-  OR user_id = auth.uid()
-)
-WITH CHECK (
-  company_id = current_setting('request.jwt.claims', true)::json->>'company_id'
-);
-```
+### 2.1 Frontend
+- **Framework**: React 18.3.1 + TypeScript 5.5.3
+- **Bundler**: Vite 5.4.1 com SWC
+- **UI Library**: Tailwind CSS + shadcn/ui (Radix UI)
+- **Charts**: MUI X-Charts + Recharts
+- **Forms**: React Hook Form + Zod validation
+- **Routing**: React Router DOM
+- **Estado**: Context API + Custom Hooks
 
----
+*Evidências: package.json:67-80, vite.config.ts:1-67*
 
-## 5. Integração n8n — contratos, segurança e operação (MANDATÓRIO)
+### 2.2 Backend & Database
+- **Backend**: Supabase PostgreSQL + Edge Functions (Deno)
+- **Auth**: Supabase Auth com RLS
+- **Storage**: Supabase Storage (buckets: property-images, contract-templates)
+- **Real-time**: Supabase Realtime para notificações
 
-### 5.1 Padrão de eventos
+*Evidências: supabase/config.toml:1, src/integrations/supabase/client.ts:17-29*
 
-* **Formato** (sempre):
+### 2.3 Integrações & Automações
+- **n8n**: Automação de workflows (webhooklabz.n8nlabz.com.br)
+- **WhatsApp**: EvolutionAPI integration
+- **PDFs**: jspdf, react-pdf, mammoth para documentos
+- **Exportação**: HTML2Canvas, HTML2PDF para relatórios
 
-```json
-{
-  "version": "1.0",
-  "event": "evt.<domain>.<action>",
-  "idempotencyKey": "uuid",
-  "occurredAt": "2025-08-09T00:00:00Z",
-  "actor": { "userId": "uuid", "companyId": "uuid", "role": "admin" },
-  "data": { ... }
-}
-```
+*Evidências: vite.config.ts:12-22, src/services/whatsappWebhook.ts:1-30*
 
-* **Nome**: `evt.<domínio>.<ação>` (ex.: `evt.client.created`, `evt.property.updated`) — facilita roteamento e catalogação.
-* **Documentar** todos os schemas de `data` em `@docs/events.md` (catálogo versionado).
-
-### 5.2 HMAC-SHA256 (X-Signature)
-
-* **Assinatura**: `signature = HMAC_SHA256(N8N_WEBHOOK_SECRET, raw_body)` enviada no header `X-Signature`.
-* **Validação**: no receptor (Edge/BFF), recomputar usando raw body e `timingSafeEqual` para comparar. **Nunca** parse o body antes da validação (use raw).
-* **Requisitos**:
-
-  * `N8N_WEBHOOK_SECRET` somente em server/edge env.
-  * Rejeitar assinaturas inválidas com `401` e logar no `webhook_events` para auditoria.
-
-### 5.3 Retries e Idempotência
-
-* **IdempotencyKey** obrigatório em cada evento.
-* **Retry Strategy**: exponencial backoff (1s, 2s, 4s, 8s) + jitter; limite de tentativas configurável (ex.: 5).
-* **Storage de rastreio**: tabela `event_delivery` com `idempotency_key`, `target`, `attempts`, `last_status`, `last_error`, `next_retry_at`.
-
-### 5.4 DLQ (Dead Letter Queue)
-
-* Eventos que excederam tentativas vão para `event_dlq` com `payload`, `error`, `attempts`, `created_at`.
-* Processo operacional: operador humano revisa DLQ; jobs automáticos podem tentar reprocessamentos manuais.
-* Alertas: monitorar taxa de DLQ e notificar via Slack/Sentry.
-
-### 5.5 Outbound vs Inbound (resumo de prática)
-
-* **Outbound (app → n8n)**: evento gerado no server/edge → persistido localmente (event\_outbox) → POST assinado para n8n → mark delivered / schedule retry → event\_delivery log. *Nunca* enviar do client.
-* **Inbound (n8n → app)**: n8n faz POST para Edge/BFF → validar `X-Signature` e `idempotencyKey` → persistir em `webhook_events` → processar (persist-then-process) → retornar `200`. Em caso de erro, devolver 4xx/5xx conforme a natureza; n8n fará retry conforme sua configuração.
-
----
-
-## 6. Estrutura de arquivos e padrão de código (ajustado ao `package.json`)
-
-* **Estrutura** sugerida:
+### 2.4 Estrutura de Módulos
 
 ```
 src/
-├─ lib/
-│  ├─ db/
-│  │  └─ mapper.ts         # snake_case <-> camelCase
-│  └─ events/
-│     └─ contracts.ts      # schemas de eventos
-├─ services/               # BFF logic / edge wrappers
-├─ hooks/
-├─ components/
-├─ pages/
-└─ integrations/           # n8n, supabase functions, workers
+├── components/          # Componentes React organizados por funcionalidade
+│   ├── ui/             # shadcn/ui components base
+│   ├── dispatch/       # Módulo de automação/disparador  
+│   └── [feature]/      # Componentes específicos por feature
+├── hooks/              # Custom hooks para lógica de negócio
+├── services/           # Camada de serviços (metrics, webhooks)
+├── integrations/       # Integrações externas (supabase)
+├── lib/                # Utilitários (charts, permissions, utils)
+├── contexts/           # React Contexts
+├── pages/              # Páginas principais da aplicação
+└── types/              # Definições TypeScript
 ```
 
-* **TypeScript** estrito; `zod` para validação (já em deps).&#x20;
-* **Scripts**: use `pnpm` (ou npm) conforme `package.json` (`dev`, `build`, `lint`).&#x20;
+*Evidências: estrutura de pastas levantada via LS*
 
 ---
 
-## 7. Observabilidade & Segurança de código
+## 3. Arquitetura
 
-* **Semgrep** no CI (checagens customizadas: leaks de secret, uso do service\_role no client, políticas de CORS).
-* **Sentry** para erros front/back.
-* **Pre-commit**: lint + tests básicos + semgrep.
-* **Antes de cada merge**: rodar testes RLS em CI (script SQL) — bloqueador.
+### 3.1 Estilo Arquitetural
+- **Frontend**: Component-Based Architecture com Custom Hooks
+- **Backend**: Serverless Functions + Database-as-a-Service  
+- **Integração**: Event-Driven com webhooks
+- **Deploy**: Static Site + Edge Functions
+
+*Evidências: src/pages/Index.tsx:1-50, src/hooks/useAuthManager.ts:6-40*
+
+### 3.2 Diagramas da Arquitetura
+
+#### Visão de Módulos
+```mermaid
+graph TB
+    subgraph "Frontend (React + Vite)"
+        UI[UI Components<br/>shadcn/ui]
+        HOOKS[Custom Hooks<br/>Business Logic]
+        SERVICES[Services Layer<br/>API calls]
+        CONTEXTS[React Contexts<br/>Global State]
+    end
+    
+    subgraph "Backend (Supabase)"
+        DB[(PostgreSQL<br/>RLS enabled)]
+        EDGE[Edge Functions<br/>Deno Runtime]
+        STORAGE[Storage Buckets<br/>Files & Images]
+        AUTH[Auth System<br/>JWT + RLS]
+    end
+    
+    subgraph "External Integrations"
+        N8N[n8n Automation<br/>webhooklabz.n8nlabz.com.br]
+        WPP[WhatsApp API<br/>EvolutionAPI]
+        PORTALS[Real Estate Portals<br/>VivaReal]
+    end
+    
+    UI --> HOOKS
+    HOOKS --> SERVICES
+    SERVICES --> DB
+    SERVICES --> EDGE
+    SERVICES --> STORAGE
+    CONTEXTS --> AUTH
+    
+    EDGE --> N8N
+    N8N --> WPP
+    SERVICES --> PORTALS
+```
+
+#### Fluxo de Autenticação e Autorização
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant F as Frontend
+    participant A as AuthManager
+    participant S as Supabase Auth
+    participant R as RLS Policies
+    participant D as Database
+    
+    U->>F: Login attempt
+    F->>A: ensureAuthenticated()
+    A->>S: auth.signIn()
+    S->>A: JWT + Session
+    A->>F: User session
+    F->>D: API request with JWT
+    D->>R: Check RLS policies
+    R->>R: get_current_role()
+    R->>D: Allow/Deny based on role
+    D->>F: Filtered results
+```
+
+#### Data Flow - Lead Management
+```mermaid
+flowchart LR
+    subgraph "Lead Creation Flow"
+        A[User creates lead] --> B{Permission Check}
+        B -->|Admin/Gestor| C[Create anywhere]
+        B -->|Corretor| D[Create with user_id = auth.uid()]
+        C --> E[(Database)]
+        D --> E
+    end
+    
+    subgraph "WhatsApp Integration"
+        E --> F[Lead created event]
+        F --> G[n8n webhook]
+        G --> H[WhatsApp message]
+        H --> I[Update chat record]
+        I --> E
+    end
+```
+
+*Evidências: src/hooks/useAuthManager.ts:20-40, src/lib/permissions/rules.ts:8-12, docs/schema-db-imobipro.md:70-77*
 
 ---
 
-## 8. Hierarquia de Acesso e Perfis (aplicada ao schema)
+## 4. Modelagem de Dados
 
-* **Roles**: 'admin', 'gestor', 'corretor'. As policies leem role do claim (ou perfil) para decisões finas.
+### 4.1 Visão Geral
+O banco segue modelo **role-based** com RLS ativo. Referência completa: `docs/schema-db-imobipro.md`
 
-* **Admin**: nível global; pode gerenciar qualquer 'company_id', criar empresas, ativar/desativar funções de qualquer empresa e gerenciar todos os usuários do sistema.
+### 4.2 Tabelas Principais
 
-* **Gestor**: leitura total e gestão de todos os dados da sua empresa (leads, propriedades, logins de todos os corretores).
+#### user_profiles
+- **PK**: `id (uuid)` - espelha auth.users.id
+- **RLS**: próprio registro apenas (`id = auth.uid()`)
+- **Campos**: email, full_name, role, phone, avatar_url, is_active
 
-* **Corretor**: acesso apenas aos itens cujo user_id = auth.uid() dentro da sua company_id.
+#### properties 
+- **PK**: `id (text)`
+- **RLS**: Admin/Gestor (CRUD), Corretor (read + disponibilidade only)
+- **Campos**: title, type, price, area, bedrooms, disponibilidade, user_id
 
----
+#### leads
+- **PK**: `id (uuid)`  
+- **RLS**: Admin/Gestor (todos), Corretor (próprios apenas)
+- **Campos**: name, email, phone, source, property_id, stage, user_id
 
-## 9. Documentos vivos (obrigatórios)
+### 4.3 Hierarquia de Papéis
+```mermaid
+graph TD
+    ADMIN[Admin<br/>Acesso global] --> GESTOR[Gestor<br/>Empresa completa]
+    GESTOR --> CORRETOR[Corretor<br/>Próprios registros]
+    
+    ADMIN -.-> PERMS[Módulo Permissões<br/>Configurar roles]
+    GESTOR -.-> PERMS
+```
 
-* `@docs/progress_log.md` — documento com estrutura resumida das ações realizadas. Atualizar ao final de cada PR (SUMÁRIO). A IA deve escrever entradas claras e resumidas automaticamente e possíveis próximos passos.
-* `@docs/database-schema.md` — refletir migrations. Este arquivo pode e deve ser atualizado quando houverem atualizações no supabase. As RLS e como as tabelas conversam entrem si devem ser comentados de forma didática para que leigos entendam.
-* `@docs/hierarquia-usuarios.md` — conter matrizes de permissão por tabela. Comentar de forma didática as hierarquias e como tudo está funcionando.
-* `@docs/events.md` — catálogo versionado de eventos n8n.
-
----
-
-## 10. MCPs e agentes (uso obrigatório e proativo)
-
-Uso obrigatório e aplicação proativa
-* server-sequential-thinking — OBRIGATÓRIO sempre que iniciar uma tarefa complexa ou refatoração:
-- Use para decompor problemas grandes, criar planos, dividir etapas em pensamentos independentes antes de codificar ou adaptar.
-
-* supabase MCP — IMEDIATAMENTE ativado para todas operações envolvendo:
-- Consultas SQL, inspeção de schema, refatorações de migrations ou análises de banco.
-- Serve para validar integridade do banco conforme a Global Rule (migrations como fonte de verdade, RLS, etc.).
-
-* context7-mcp e mem0-memory-mcp — usados PROATIVAMENTE para:
-- Armazenar decisões arquiteturais, preferências, frustrações já resolvidas ou corrigidas, histórico de conversas longas.
-- context7 bom para contexto geral; mem0-memory útil para sessões altamente técnicas ou focadas.
-
-* mcp-taskmanager — invocado APÓS planejamento via Sequential Thinking para:
-- Criar, organizar e priorizar as tarefas resultantes (ex.: “criar migration”, “implementar policy”, “escrever teste RLS”), servindo como ferramenta de produtividade.
-
-* desktop-commander — acionado quando necessário, por exemplo:
-- Executar scripts locais (como pnpm lint, pnpm build, rodar migrations), abrir arquivos específicos ou aplicar um patch local — mas sem ser invocado por demanda do usuário, sim proativamente por necessidade.
-
-### 10.1 Princípio de uso automático (implícito)
-* Esses MCPs devem ser usados sem intervenção manual, ou seja, o sistema (Cursor/Claude) deve reconhecer o momento certo para:
-
-- Engajar o Sequential Thinking antes da implementação.
-- Consultar Supabase MCP ao tocar código/migrations/Tabelas.
-- Armazenar contexto com Context7/Mem0.
-- Gerar tarefas via TaskManager após planejar.
-- Executar ambientes locais via Desktop Commander, se o plano exigir.
+*Evidências: docs/schema-db-imobipro.md:30-141, src/lib/permissions/rules.ts:8-15*
 
 ---
 
-## 11. Checklist mínimo de PR / Merge (obrigatório)
+## 5. Autenticação & Autorização
 
-1. Lint OK (`pnpm lint`) — ver `package.json`.&#x20;
-2. Tests OK (unit + e2e crítico).
-3. Semgrep OK.
-4. Migrations incluídas + `supabase/migrations/` atualizada (se houver DB changes).
-5. RLS tests executados e passando (scripts SQL).
-6. Atualização do `@docs/progress_log.md`.
-7. Se alteração afetar eventos → atualizar `@docs/events.md` e notificar integradores n8n.
+### 5.1 Sistema de Auth
+- **Supabase Auth**: JWT + Session management  
+- **AuthManager**: Singleton para gerenciamento centralizado
+- **RLS**: Row Level Security baseado em roles
+- **Função**: `get_current_role()` para determinar role efetiva
+
+*Evidências: src/hooks/useAuthManager.ts:6-40, docs/schema-db-imobipro.md:20-25*
+
+### 5.2 Matriz de Permissões
+
+| Tabela | Admin | Gestor | Corretor |
+|--------|--------|--------|----------|
+| user_profiles | Próprio registro | Próprio registro | Próprio registro |
+| properties | CRUD global | CRUD global | Read + Disponibilidade |
+| leads | CRUD global | CRUD global | CRUD próprios |
+| contracts | CRUD global | CRUD global | Read próprios |
+| imobipro_messages | CRUD global | CRUD global | Por instância¹ |
+| whatsapp_instances | CRUD global | CRUD global | Negado |
+
+*¹Corretor: instância `sdr` (acesso livre) + outras instâncias via `company_id`*
+
+*Evidências: docs/hierarquia-usuarios.md, src/lib/permissions/rules.ts:7-12, supabase RLS policies*
+
+### 5.3 Edge Functions para Admin
+- **admin-create-user**: Criação de usuários
+- **admin-delete-user**: Exclusão de usuários  
+- **admin-update-user**: Atualização de usuários
+
+*Evidências: supabase/functions/admin-create-user/index.ts:1-30*
 
 ---
+
+## 6. Integrações Externas
+
+### 6.1 n8n Automation Platform
+- **Endpoint**: webhooklabz.n8nlabz.com.br
+- **Proxy Vite**: `/api/webhook` → `/webhook`
+- **Uso**: Automações WhatsApp, workflows de leads
+- **Config**: vite.config.ts:12-22
+
+### 6.2 WhatsApp via EvolutionAPI
+- **Service**: src/services/whatsappWebhook.ts
+- **Env**: VITE_EVOLUTION_API_URL
+- **Fluxo**: Lead → n8n → WhatsApp → Database
+
+### 6.3 Portais Imobiliários
+- **VivaReal**: Tabela `imoveisvivareal`
+- **Import/Sync**: Propriedades externas
+- **Status**: Integração existente com disponibilidade
+
+*Evidências: src/services/whatsappWebhook.ts:1-30, vite.config.ts:12-22*
+
+---
+
+## 7. Qualidade & DX
+
+### 7.1 Linting e Formatação
+- **ESLint 9**: TypeScript rules + React hooks
+- **Config**: Permissiva para MVP (warnings > errors)
+- **Scripts**: `pnpm lint`
+
+*Evidências: eslint.config.js:1-46, package.json:10*
+
+### 7.2 TypeScript
+- **Versão**: 5.5.3
+- **Config**: Modo permissivo (noImplicitAny: false)
+- **Path mapping**: `@/*` → `./src/*`
+
+*Evidências: tsconfig.json:7-18*
+
+### 7.3 Build & Performance
+- **Code splitting**: Lazy loading de componentes
+- **Manual chunks**: PDFs, Canvas, domains
+- **Otimizações**: Bundle size otimizado por feature
+
+*Evidências: vite.config.ts:37-63, src/pages/Index.tsx:10-36*
+
+### 7.4 Developer Experience
+- **Hot reload**: Vite development server
+- **Error boundaries**: Fallback components para lazy loading
+- **Debug logs**: Console logs em desenvolvimento
+- **Preview context**: Para testes de componentes
+
+*Evidências: src/pages/Index.tsx:20-35, src/contexts/PreviewContext.tsx*
+
+---
+
+## 8. Segurança & LGPD
+
+### 8.1 Segurança de Dados
+- **RLS**: Row Level Security em todas as tabelas
+- **JWT**: Tokens seguros com refresh automático
+- **Secrets**: Environment variables (server-side only)
+- **CORS**: Configurado para domínios específicos
+
+### 8.2 Princípio do Menor Privilégio
+- **Corretor**: Acesso limitado aos próprios dados
+- **Gestor**: Acesso à empresa completa
+- **Admin**: Acesso global limitado
+
+### 8.3 LGPD & Retenção de Dados
+- **Base legal**: Consentimento + interesse legítimo
+- **Minimização**: Apenas dados necessários
+- **Anonimização**: Logs sem dados pessoais
+- **Auditoria**: Tabela audit_logs (planejada)
+
+*Evidências: src/integrations/supabase/client.ts:5-12, docs/schema-db-imobipro.md:11-17*
+
+---
+
+## 9. CI/CD & Ambientes
+
+### 9.1 Branching & Deploy
+- **Branch ativa**: 23-08-25-Tiago  
+- **Main branch**: main
+- **Deploy**: GitHub Actions → Hostinger (estático)
+- **Edge Functions**: Deploy via Supabase CLI
+
+*Evidências: git status output, vite.config.ts:7-23*
+
+### 9.2 Scripts Disponíveis
+```json
+{
+  "dev": "vite",
+  "build": "vite build", 
+  "build:dev": "vite build --mode development",
+  "lint": "eslint .",
+  "preview": "vite preview"
+}
+```
+
+*Evidências: package.json:6-11*
+
+### 9.3 Ambientes
+- **Development**: Local com Vite dev server
+- **Production**: Build estático no Hostinger
+- **Database**: Supabase (projeto: vitiqschibbontjwhiim)
+
+---
+
+## 10. Padrões de Contribuição
+
+### 10.1 Commits
+- **Idioma**: Português brasileiro
+- **Padrão**: Conventional Commits recomendado
+- **Formato**: `tipo: descrição curta e útil`
+
+### 10.2 Code Review
+- **RLS**: Testar políticas antes de merge
+- **Lint**: `pnpm lint` deve passar
+- **Build**: `pnpm build` deve ser bem-sucedido
+- **Docs**: Atualizar progress_log.md
+- **Docs Vivos**: Atualizar hierarquia-usuarios.md e/ou schema-db-imobipro.md se aplicável
+
+### 10.3 Documentação Obrigatória
+- **hierarquia-usuarios.md**: DEVE ser atualizado em qualquer mudança de RLS/permissões/acessos
+- **schema-db-imobipro.md**: DEVE ser atualizado em qualquer migration/alteração no Supabase
+- **Responsabilidade**: Desenvolvedor que faz a alteração DEVE atualizar a documentação
+- **Verificação**: Code review DEVE validar se docs foram atualizados
+
+### 10.4 Nomenclatura
+- **Database**: snake_case (properties, user_profiles)  
+- **TypeScript**: camelCase (userProfiles, propertyData)
+- **Files**: kebab-case para componentes (UserManagementView.tsx)
+
+---
+
+## 11. Definição de Pronto (DoD)
+
+### 11.1 Checklist de Feature
+- [ ] Implementação funcional
+- [ ] RLS policies aplicadas e testadas
+- [ ] Lint passing (`pnpm lint`)  
+- [ ] Build successful (`pnpm build`)
+- [ ] Tipos TypeScript atualizados se necessário
+- [ ] Documentação atualizada (progress_log.md)
+- [ ] **Docs Vivos**: hierarquia-usuarios.md atualizado (se mudança RLS/permissões)
+- [ ] **Docs Vivos**: schema-db-imobipro.md atualizado (se migration/mudança DB)
+
+### 11.2 Checklist de PR/Merge  
+- [ ] Migrations incluídas se alteração de schema
+- [ ] Testes de RLS executados
+- [ ] Edge functions deployadas se necessário
+- [ ] **Docs Vivos validados**: hierarquia-usuarios.md e schema-db-imobipro.md checados
+- [ ] Branch limpa e pronta para merge
+
+---
+
+## 12. MVP: Escopo e Limites
+
+### 12.1 Módulos no MVP
+✅ **Dashboard**: Métricas e gráficos básicos  
+✅ **Propriedades**: CRUD + disponibilidade
+✅ **Leads**: Gestão e pipeline  
+✅ **Usuários**: Criação e permissões
+✅ **WhatsApp**: Conversas básicas  
+✅ **Contratos**: Templates e gestão
+✅ **Agenda**: Calendário básico
+
+### 12.2 Fora do MVP
+❌ **Relatórios avançados**: Dashboards complexos
+❌ **Integrações múltiplas**: Além de VivaReal/WhatsApp  
+❌ **Multi-tenancy**: Sistema single-tenant por enquanto
+❌ **Auditoria completa**: Logs detalhados de ações
+❌ **Performance avançada**: Cache, CDN, otimizações
+
+*Referência: Itens fora do MVP → docs/proximos-passos.md*
+
+---
+
+## 13. Roteiro de Onboarding
+
+### 13.1 Pré-requisitos
+- Node.js 18+ 
+- pnpm (package manager)
+- Acesso ao projeto Supabase (vitiqschibbontjwhiim)
+- Variáveis de ambiente (.env.local)
+
+### 13.2 Setup Local
+```bash
+# 1. Clone e instale dependências
+git clone [repo-url]
+cd dark-estate-dashboard  
+pnpm install
+
+# 2. Configure environment
+cp .env.production .env.local
+# Ajuste VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY
+
+# 3. Execute desenvolvimento
+pnpm dev
+# Acesse http://localhost:8081
+```
+
+### 13.3 Scripts Úteis
+```bash
+pnpm lint          # Verificar code quality
+pnpm build         # Build production  
+pnpm preview       # Preview build local
+```
+
+---
+
+## 14. Apêndice de Evidências
+
+### 14.1 Arquivos de Configuração
+- `package.json:1-103` - Dependencies e scripts
+- `vite.config.ts:1-67` - Build configuration  
+- `tsconfig.json:1-19` - TypeScript setup
+- `tailwind.config.ts:1-96` - Styling configuration
+- `eslint.config.js:1-46` - Linting rules
+
+### 14.2 Estrutura de Código
+- `src/integrations/supabase/client.ts:1-59` - Database client
+- `src/hooks/useAuthManager.ts:6-40` - Auth management
+- `src/lib/permissions/rules.ts:1-40` - Permission rules
+- `src/services/whatsappWebhook.ts:1-30` - WhatsApp integration
+
+### 14.3 Documentação Viva (Obrigatória Atualização)
+
+#### 14.3.1 Arquivos que DEVEM ser mantidos atualizados
+
+**`docs/hierarquia-usuarios.md`** - **Arquivo Vivo de Hierarquia**
+- **Quando atualizar**: A cada alteração, correção ou implementação que afete acessos e hierarquia de usuários
+- **Gatilhos para atualização**:
+  - Criação/modificação de políticas RLS
+  - Mudanças na estrutura de roles (admin/gestor/corretor)
+  - Alterações em permissões por tabela
+  - Implementação de novos módulos com controle de acesso
+  - Correções em regras de negócio de segurança
+
+**`docs/schema-db-imobipro.md`** - **Arquivo Vivo do Schema**  
+- **Quando atualizar**: A cada alteração, correção ou implementação específica ou via migrations no Supabase
+- **Gatilhos para atualização**:
+  - Execução de migrations no Supabase
+  - Criação/alteração/remoção de tabelas
+  - Modificação de colunas, índices ou relacionamentos
+  - Mudanças em funções de banco ou triggers
+  - Alterações em políticas RLS que afetem estrutura
+  - Correções de mapeamento funcional (tabelas ativas vs legado)
+
+#### 14.3.2 Arquivos de Referência Estática
+- `docs/progress_log.md` - Histórico de alterações do projeto
+- `CLAUDE.md` - Este documento (fonte única de verdade)
+
+### 14.4 Supabase
+- `supabase/config.toml:1` - Project configuration
+- `supabase/functions/admin-create-user/index.ts:1-30` - Admin functions
+- `supabase/migrations/` - Database migrations versionadas
+
+---
+
+## Observações Finais
+
+Este documento é a **fonte única de verdade** para o desenvolvimento do ImobiPRO Dashboard. Todas as decisões arquiteturais e implementações devem seguir as diretrizes aqui estabelecidas.
+
+Para alterações neste documento, sempre incluir evidências (arquivo:linha) e atualizar o `docs/progress_log.md` correspondente.
+
+**Última atualização**: 24/08/2025 - Adicionadas regras de documentação viva obrigatória
+
+---
+
+## Seções Legadas (mantidas para referência)
+
+* **Idioma**: Português brasileiro para commits, comentários e mensagens
+* **Nomenclatura DB**: snake_case para tabelas/colunas 
+* **IDs**: Preferir uuid, algumas tabelas legadas usam text
+* **Migrations**: SQL versionadas em supabase/migrations/
+* **Mapper**: Implementar src/lib/db/mapper.ts (snake_case ↔ camelCase)
+* **Índices**: Criados em colunas de busca frequente (company_id, user_id, created_at)
+* **Audit logs**: Tabela audit_logs planejada para auditoria completa
+
+---
+
+### Seção Removida - Conteúdo Migrado para Novas Seções
+
+As seções originais (RLS, estrutura de arquivos, observabilidade, etc.) foram reorganizadas e expandidas nas seções numeradas 1-14 acima.
+
+Para referências históricas, consulte:
+- **RLS**: Seção 5 (Autenticação & Autorização) 
+- **Estrutura**: Seção 2.4 (Estrutura de Módulos)
+- **Observabilidade**: Seção 7 (Qualidade & DX)
+- **Hierarquia**: Seção 4.3 + 5.2 (Papéis e Permissões)
+- **MCPs**: Recomendações de uso mantidas
+- **Progress Log**: Já existe em docs/progress_log.md
+
+*Nota: Todas as informações técnicas legadas foram reorganizadas e atualizadas nas seções principais deste documento.*
