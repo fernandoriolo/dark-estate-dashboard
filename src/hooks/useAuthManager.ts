@@ -20,7 +20,7 @@ class AuthManager {
   async initialize() {
     if (this.initialized) return;
     
-    console.log('🔐 AuthManager: Inicializando gerenciador central de autenticação');
+    //
     
     // Obter sessão atual
     const { data: { session } } = await supabase.auth.getSession();
@@ -29,7 +29,7 @@ class AuthManager {
     // Configurar listener único
     if (!this.subscription) {
       const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-        console.log('🔐 AuthManager: Evento de autenticação:', event);
+        //
         
         this.currentSession = session;
         

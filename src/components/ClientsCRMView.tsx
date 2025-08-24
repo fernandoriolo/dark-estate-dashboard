@@ -563,13 +563,19 @@ export function ClientsCRMView() {
                                   <Badge variant="outline" className={getSourceColor(lead.origem)}>
                                     {lead.origem}
                                   </Badge>
-                                  {/* Mostrar corretor apenas para gestores e admins */}
-                                  {canSeeAllBrokers && lead.corretor && (
-                                    <Badge variant="outline" className={getBrokerColor(lead.corretor.role)}>
-                                      <User className="h-3 w-3 mr-1" />
-                                      {lead.corretor.nome}
-                                    </Badge>
-                                  )}
+                                  {/* Label do corretor responsável (sempre exibir, com fallbacks) */}
+                                  {(() => {
+                                    const brokerName = lead.corretor?.nome 
+                                      || (lead.id_corretor_responsavel && profile?.id && lead.id_corretor_responsavel === profile.id ? 'Você' 
+                                      : 'Sem corretor');
+                                    const brokerRole = (lead.corretor?.role || 'corretor');
+                                    return (
+                                      <Badge variant="outline" className={getBrokerColor(brokerRole)}>
+                                        <User className="h-3 w-3 mr-1" />
+                                        {brokerName}
+                                      </Badge>
+                                    );
+                                  })()}
                                 </div>
                               </div>
                             </div>
@@ -860,13 +866,19 @@ export function ClientsCRMView() {
                 <Badge variant="outline" className={getSourceColor(selectedLead.origem)}>
                   {selectedLead.origem}
                 </Badge>
-                {/* Mostrar corretor apenas para gestores e admins */}
-                {canSeeAllBrokers && selectedLead.corretor && (
-                  <Badge variant="outline" className={getBrokerColor(selectedLead.corretor.role)}>
-                    <User className="h-3 w-3 mr-1" />
-                    {selectedLead.corretor.nome}
-                  </Badge>
-                )}
+                {/* Label do corretor responsável (sempre exibir, com fallbacks) */}
+                {(() => {
+                  const brokerName = selectedLead.corretor?.nome 
+                    || (selectedLead.id_corretor_responsavel && profile?.id && selectedLead.id_corretor_responsavel === profile.id ? 'Você' 
+                    : 'Sem corretor');
+                  const brokerRole = (selectedLead.corretor?.role || 'corretor');
+                  return (
+                    <Badge variant="outline" className={getBrokerColor(brokerRole)}>
+                      <User className="h-3 w-3 mr-1" />
+                      {brokerName}
+                    </Badge>
+                  );
+                })()}
               </div>
 
               {/* Informações em Grid */}

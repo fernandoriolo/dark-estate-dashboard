@@ -111,10 +111,10 @@ const Index = () => {
   const { currentView, changeView } = useBasicNavigation();
   const { hasPermission } = usePermissions();
   
-  console.log(`🚀 Index renderizado - currentView: ${currentView}`);
+  //
 
   const renderContent = () => {
-    console.log(`🎬 Renderizando conteúdo para: ${currentView}`);
+    //
     
     switch (currentView) {
       case "dashboard":

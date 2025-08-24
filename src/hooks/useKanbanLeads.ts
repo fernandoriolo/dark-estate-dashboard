@@ -61,14 +61,18 @@ export function useKanbanLeads() {
       // Verificar role do usuário
       const currentRole = await checkUserRole();
 
-      console.log('🎭 Usuário logado:', user.email);
-      console.log('🎭 Role do usuário:', currentRole);
+      //
 
       // Para gestores e admins, buscar todos os leads
       // Para corretores, as políticas RLS já filtram automaticamente
       let query = supabase
         .from('leads')
-        .select(`*`) 
+        .select(`
+          *,
+          corretor:user_profiles!leads_id_corretor_responsavel_fkey(
+            id, full_name, role
+          )
+        `) 
         .order('created_at', { ascending: false });
 
       const { data, error } = await query;
@@ -78,8 +82,7 @@ export function useKanbanLeads() {
         throw error;
       }
 
-      console.log('🔍 Leads encontrados:', data?.length || 0);
-      console.log('🔍 Dados dos leads:', data);
+              //
 
       // Converter dados do banco para formato do kanban com tratamento seguro
       const kanbanLeads = (data || []).map(dbLead => {
@@ -131,7 +134,12 @@ export function useKanbanLeads() {
         imovel_tipo: l.imovel_interesse ? (tipoMap[l.imovel_interesse] || undefined) : undefined
       }));
 
-      setLeads(enriched);
+      // Salvaguarda de UI: se corretor, mostrar apenas leads atribuídos a si
+      const visibleLeads = (currentRole === 'corretor' && user?.id)
+        ? enriched.filter(l => l.id_corretor_responsavel === user.id)
+        : enriched;
+
+      setLeads(visibleLeads);
       
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Erro ao carregar leads';
@@ -204,9 +212,9 @@ export function useKanbanLeads() {
         estimated_value: leadData.valorEstimado || leadData.valor || null,
         notes: leadData.observacoes || null,
         imovel_interesse: leadData.imovel_interesse || null,
-        // TODO: Implementar user_id e id_corretor_responsavel quando as colunas forem criadas na tabela leads
-        // user_id: user.id,
-        // id_corretor_responsavel: options?.assignedUserId || null
+        // Campos de autoria e responsabilidade
+        user_id: user.id,
+        id_corretor_responsavel: options?.assignedUserId ?? user.id
       };
 
       // Adicionar property_id se existir na estrutura da tabela
@@ -222,7 +230,12 @@ export function useKanbanLeads() {
       const { data, error } = await supabase
         .from('leads')
         .insert([insertData])
-        .select()
+        .select(`
+          *,
+          corretor:user_profiles!leads_id_corretor_responsavel_fkey(
+            id, full_name, role
+          )
+        `)
         .single();
 
       if (error) {
@@ -273,10 +286,10 @@ export function useKanbanLeads() {
       if (updates.property_id !== undefined) updateData.property_id = updates.property_id || null;
       if (updates.imovel_interesse !== undefined) updateData.imovel_interesse = updates.imovel_interesse || null;
       if (updates.message !== undefined) updateData.message = updates.message || null;
-      // TODO: Implementar id_corretor_responsavel quando a coluna for criada na tabela leads
-      // if ((updates as any).id_corretor_responsavel !== undefined) updateData.id_corretor_responsavel = (updates as any).id_corretor_responsavel;
-      // if ((updates as any).assigned_user_id !== undefined) updateData.id_corretor_responsavel = (updates as any).assigned_user_id || null;
-      // if ((updates as any).id_corretor_responsavel !== undefined) updateData.id_corretor_responsavel = (updates as any).id_corretor_responsavel || null;
+      // Atribuição de corretor responsável (padronizado)
+      if ((updates as any).id_corretor_responsavel !== undefined) {
+        updateData.id_corretor_responsavel = (updates as any).id_corretor_responsavel || null;
+      }
 
       const { error } = await supabase
         .from('leads')
@@ -332,30 +345,27 @@ export function useKanbanLeads() {
   // Vinculação em massa de leads a um corretor
   const bulkAssignLeads = useCallback(async (leadIds: string[], corretorId: string | null) => {
     try {
-      // TODO: Implementar quando a coluna id_corretor_responsavel for criada na tabela leads
-      console.log('⚠️ Funcionalidade de atribuição em massa temporariamente desabilitada - coluna id_corretor_responsavel não existe');
-      
-      // // Atualizar no banco de dados
-      // const { error } = await supabase
-      //   .from('leads')
-      //   .update({ 
-      //     id_corretor_responsavel: corretorId,
-      //     updated_at: new Date().toISOString()
-      //   })
-      //   .in('id', leadIds);
+      // Atualizar no banco de dados
+      const { error } = await supabase
+        .from('leads')
+        .update({ 
+          id_corretor_responsavel: corretorId,
+          updated_at: new Date().toISOString()
+        })
+        .in('id', leadIds);
 
-      // if (error) {
-      //   throw error;
-      // }
+      if (error) {
+        throw error;
+      }
 
-      // // Atualizar estado local
-      // setLeads(prevLeads => 
-      //   prevLeads.map(lead => 
-      //     leadIds.includes(lead.id) 
-      //       ? { ...lead, id_corretor_responsavel: corretorId }
-      //       : lead
-      //   )
-      // );
+      // Atualizar estado local
+      setLeads(prevLeads => 
+        prevLeads.map(lead => 
+          leadIds.includes(lead.id) 
+            ? { ...lead, id_corretor_responsavel: corretorId || undefined }
+            : lead
+        )
+      );
 
       // Fazer log da operação
       logAudit({ 
@@ -391,7 +401,7 @@ export function useKanbanLeads() {
   useEffect(() => {
     // Verificar se já temos subscription ativa
     if (isSubscribedRef.current) {
-      console.log('🔄 Subscription de leads já ativa, pulando...');
+      //
       return;
     }
 
@@ -411,7 +421,7 @@ export function useKanbanLeads() {
             table: 'leads'
           },
           async (payload) => {
-            console.log('🔔 Mudança detectada na tabela leads:', payload);
+            //
             
             // Verificar se o usuário atual está autenticado
             const { data: { user } } = await supabase.auth.getUser();
@@ -434,7 +444,7 @@ export function useKanbanLeads() {
                   // Verificar se o lead já existe para evitar duplicatas
                   const exists = prevLeads.some(lead => lead.id === newLead.id);
                   if (!exists) {
-                    console.log('✅ Adicionando novo lead:', newLead.nome);
+                    //
                     return [newLead, ...prevLeads];
                   }
                   return prevLeads;
@@ -471,7 +481,7 @@ export function useKanbanLeads() {
       subscriptionRef.current = subscription;
 
       subscription.subscribe((status: string) => {
-        console.log(`🔗 Status subscription leads: ${status}`);
+        //
         if (status === 'SUBSCRIBED') {
           isSubscribedRef.current = true;
         }
@@ -482,7 +492,7 @@ export function useKanbanLeads() {
 
     // Cleanup
     return () => {
-      console.log('🧹 Removendo subscription de leads...');
+      //
       try {
         if (subscriptionRef.current) {
           supabase.removeChannel(subscriptionRef.current);

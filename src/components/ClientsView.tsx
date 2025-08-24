@@ -432,14 +432,12 @@ const LeadCard = ({ lead, isDragging = false }: LeadCardProps) => {
               </div>
             )}
 
-            {/* Rodapé: corretor (se houver) + origem */}
+            {/* Rodapé: corretor responsável + origem */}
             <div className="flex items-center justify-between pt-2 border-t border-gray-700/50">
               <div className="flex items-center gap-2">
-                {lead.corretor?.nome && (
-                  <Badge variant="outline" className="text-xs text-amber-300 border-amber-300/40">
-                    {lead.corretor.nome}
-                  </Badge>
-                )}
+                <Badge variant="outline" className="text-xs text-amber-300 border-amber-300/40">
+                  {lead.corretor?.nome || 'Sem corretor'}
+                </Badge>
                 <Badge variant="outline" className={`${getOrigemColor(lead.origem)} text-xs`}>
                   {lead.origem}
                 </Badge>
@@ -565,7 +563,7 @@ export function ClientsView() {
   // Carregar corretores disponíveis
   useEffect(() => {
     const fetchBrokers = async () => {
-      console.log('🔍 AUDITORIA - ClientsView: Iniciando busca de corretores...');
+      //
       
       try {
         // Usar a função RPC list_company_users para respeitar as políticas RLS
@@ -577,7 +575,7 @@ export function ClientsView() {
           offset_count: 0,
         });
         
-        console.log('📊 AUDITORIA - Query RPC result:', { data, error });
+        //
         
         if (error) {
           console.error('❌ AUDITORIA - Erro na query RPC:', error);
@@ -589,14 +587,14 @@ export function ClientsView() {
           user.role === 'corretor' && user.is_active === true
         );
         
-        console.log('✅ AUDITORIA - Corretores encontrados:', activeBrokers?.length || 0, activeBrokers);
+        //
         setAvailableBrokers(activeBrokers);
       } catch (err) {
         console.error('❌ AUDITORIA - Erro ao carregar corretores:', err);
         // Em caso de erro, tentar consulta direta como fallback apenas se for admin
         if (profile?.role === 'admin') {
           try {
-            console.log('🔄 AUDITORIA - Tentando fallback para admin...');
+            //
             const { data: fallbackData, error: fallbackError } = await supabase
               .from('user_profiles')
               .select('id, full_name, role, is_active')
@@ -605,7 +603,7 @@ export function ClientsView() {
               .order('full_name');
             
             if (!fallbackError && fallbackData) {
-              console.log('✅ AUDITORIA - Fallback admin bem-sucedido:', fallbackData?.length || 0);
+              //
               setAvailableBrokers(fallbackData || []);
             }
           } catch (fallbackErr) {
@@ -619,7 +617,7 @@ export function ClientsView() {
     if (profile && (profile.role === 'gestor' || profile.role === 'admin')) {
       fetchBrokers();
     } else if (profile) {
-      console.log('ℹ️ AUDITORIA - Usuário não tem permissão para ver corretores:', profile.role);
+      //
       setAvailableBrokers([]);
     }
   }, [profile]);

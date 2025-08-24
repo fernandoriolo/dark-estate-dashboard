@@ -72,11 +72,13 @@ export async function logAudit(
     // Inserir o log de auditoria
     const { error } = await supabase.from('audit_logs').insert({
       actor_id: user.id,
-      company_id: companyId,
       action: params.action,
       resource: params.resource,
       resource_id: params.resourceId || null,
-      meta: params.meta || null,
+      meta: { 
+        ...(params.meta || {}),
+        company_id: companyId // Mover company_id para meta para evitar problemas de schema
+      },
     });
 
     if (error) {

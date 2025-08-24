@@ -68,13 +68,14 @@ Este documento reflete o estado ATUAL do schema e das políticas RLS, após a mi
 
 ### leads — Leads
 - PK: `id (uuid)`
-- Campos: dados do lead, `property_id`, `user_id`, `created_at`, `updated_at`, `company_id (legado)`
+- Campos: dados do lead, `property_id`, `user_id`, `id_corretor_responsavel (uuid, FK user_profiles.id)`, `created_at`, `updated_at`, `company_id (legado)`
 - RLS: HABILITADO + FORCE RLS
-  - SELECT: `admin/gestor` veem todos; `corretor` apenas os próprios (`user_id = auth.uid()`)
+  - SELECT: `admin/gestor` veem todos; `corretor` apenas os próprios (`user_id = auth.uid()`) e/ou visão "Meus Leads" por `id_corretor_responsavel = auth.uid()`
   - INSERT: `admin/gestor` livres; `corretor` somente se `user_id = auth.uid()`
   - UPDATE: `admin/gestor` livres; `corretor` apenas nos próprios
   - DELETE: apenas `admin/gestor`
-- Índices: `user_id`, `created_at DESC`
+- Índices: `user_id`, `id_corretor_responsavel`, `created_at DESC`
+- Nota: coluna legada `assigned_user_id` descontinuada após backfill; usar apenas `id_corretor_responsavel`.
 
 ### contract_templates — Templates de Contrato
 - PK: `id (text)`

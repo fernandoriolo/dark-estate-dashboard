@@ -23,3 +23,18 @@
 - Senha padrão configurável via `VITE_DEFAULT_NEW_USER_PASSWORD` (fallback `Imobi@1234`). Recomenda-se forçar troca no primeiro acesso.
 
 
+## Tabela `leads`
+- Leitura:
+  - admin/gestor: todos os leads
+  - corretor: apenas leads atribuídos a si (`id_corretor_responsavel = auth.uid()`)
+- Criação:
+  - admin/gestor: livre
+  - corretor: somente se `user_id = auth.uid()`
+- Edição:
+  - admin/gestor: livre
+  - corretor: apenas nos próprios
+- Atribuição de responsável (`id_corretor_responsavel`):
+  - admin/gestor podem alterar
+  - corretores não alteram o responsável de outros
+
+

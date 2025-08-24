@@ -7,7 +7,7 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instanciate createClient with right options
+  // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "13.0.4"
@@ -59,9 +59,120 @@ export type Database = {
         }
         Relationships: []
       }
+      company_features: {
+        Row: {
+          company_id: string
+          created_at: string
+          feature_key: string
+          id: string
+          is_enabled: boolean
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          feature_key: string
+          id?: string
+          is_enabled?: boolean
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          feature_key?: string
+          id?: string
+          is_enabled?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_features_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_settings: {
+        Row: {
+          company_id: string
+          company_name_bold: boolean
+          company_name_color: string
+          company_name_font_family: string
+          company_name_font_size: number
+          company_subtitle_bold: boolean
+          company_subtitle_color: string
+          company_subtitle_font_family: string
+          company_subtitle_font_size: number
+          created_at: string | null
+          display_name: string
+          display_subtitle: string
+          id: string
+          language: string
+          logo_size: number
+          logo_url: string | null
+          primary_color: string
+          theme: string
+          timezone: string
+          updated_at: string | null
+        }
+        Insert: {
+          company_id: string
+          company_name_bold?: boolean
+          company_name_color?: string
+          company_name_font_family?: string
+          company_name_font_size?: number
+          company_subtitle_bold?: boolean
+          company_subtitle_color?: string
+          company_subtitle_font_family?: string
+          company_subtitle_font_size?: number
+          created_at?: string | null
+          display_name?: string
+          display_subtitle?: string
+          id?: string
+          language?: string
+          logo_size?: number
+          logo_url?: string | null
+          primary_color?: string
+          theme?: string
+          timezone?: string
+          updated_at?: string | null
+        }
+        Update: {
+          company_id?: string
+          company_name_bold?: boolean
+          company_name_color?: string
+          company_name_font_family?: string
+          company_name_font_size?: number
+          company_subtitle_bold?: boolean
+          company_subtitle_color?: string
+          company_subtitle_font_family?: string
+          company_subtitle_font_size?: number
+          created_at?: string | null
+          display_name?: string
+          display_subtitle?: string
+          id?: string
+          language?: string
+          logo_size?: number
+          logo_url?: string | null
+          primary_color?: string
+          theme?: string
+          timezone?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_settings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contract_templates: {
         Row: {
-          company_id: string | null
           created_at: string | null
           created_by: string | null
           description: string | null
@@ -74,10 +185,8 @@ export type Database = {
           name: string
           template_type: string | null
           updated_at: string | null
-          user_id: string | null
         }
         Insert: {
-          company_id?: string | null
           created_at?: string | null
           created_by?: string | null
           description?: string | null
@@ -90,10 +199,8 @@ export type Database = {
           name: string
           template_type?: string | null
           updated_at?: string | null
-          user_id?: string | null
         }
         Update: {
-          company_id?: string | null
           created_at?: string | null
           created_by?: string | null
           description?: string | null
@@ -106,24 +213,8 @@ export type Database = {
           name?: string
           template_type?: string | null
           updated_at?: string | null
-          user_id?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "contract_templates_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "contract_templates_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       contracts: {
         Row: {
@@ -135,7 +226,6 @@ export type Database = {
           client_name: string
           client_nationality: string | null
           client_phone: string | null
-          company_id: string | null
           contract_city: string | null
           contract_duration: string | null
           contract_file_name: string | null
@@ -178,7 +268,6 @@ export type Database = {
           template_name: string
           tipo: string
           updated_at: string | null
-          user_id: string | null
           valor: number
         }
         Insert: {
@@ -190,7 +279,6 @@ export type Database = {
           client_name: string
           client_nationality?: string | null
           client_phone?: string | null
-          company_id?: string | null
           contract_city?: string | null
           contract_duration?: string | null
           contract_file_name?: string | null
@@ -233,7 +321,6 @@ export type Database = {
           template_name: string
           tipo: string
           updated_at?: string | null
-          user_id?: string | null
           valor: number
         }
         Update: {
@@ -245,7 +332,6 @@ export type Database = {
           client_name?: string
           client_nationality?: string | null
           client_phone?: string | null
-          company_id?: string | null
           contract_city?: string | null
           contract_duration?: string | null
           contract_file_name?: string | null
@@ -288,17 +374,9 @@ export type Database = {
           template_name?: string
           tipo?: string
           updated_at?: string | null
-          user_id?: string | null
           valor?: number
         }
         Relationships: [
-          {
-            foreignKeyName: "contracts_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "contracts_property_id_fkey"
             columns: ["property_id"]
@@ -313,14 +391,106 @@ export type Database = {
             referencedRelation: "contract_templates"
             referencedColumns: ["id"]
           },
+        ]
+      }
+      dispatch_configurations: {
+        Row: {
+          assigned_brokers: Json | null
+          broker_assignment_strategy: string | null
+          company_id: string | null
+          created_at: string | null
+          description: string | null
+          id: string
+          interval_between_messages: number | null
+          is_active: boolean | null
+          is_default: boolean | null
+          max_messages_per_hour: number | null
+          message_template: string
+          name: string
+          priority: number | null
+          time_windows: Json | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          assigned_brokers?: Json | null
+          broker_assignment_strategy?: string | null
+          company_id?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          interval_between_messages?: number | null
+          is_active?: boolean | null
+          is_default?: boolean | null
+          max_messages_per_hour?: number | null
+          message_template?: string
+          name: string
+          priority?: number | null
+          time_windows?: Json | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          assigned_brokers?: Json | null
+          broker_assignment_strategy?: string | null
+          company_id?: string | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          interval_between_messages?: number | null
+          is_active?: boolean | null
+          is_default?: boolean | null
+          max_messages_per_hour?: number | null
+          message_template?: string
+          name?: string
+          priority?: number | null
+          time_windows?: Json | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
           {
-            foreignKeyName: "contracts_user_id_fkey"
+            foreignKeyName: "dispatch_configurations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispatch_configurations_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "user_profiles"
             referencedColumns: ["id"]
           },
         ]
+      }
+      imobipro_messages: {
+        Row: {
+          data: string | null
+          id: number
+          instancia: string | null
+          media: string | null
+          message: Json
+          session_id: string
+        }
+        Insert: {
+          data?: string | null
+          id?: number
+          instancia?: string | null
+          media?: string | null
+          message: Json
+          session_id: string
+        }
+        Update: {
+          data?: string | null
+          id?: number
+          instancia?: string | null
+          media?: string | null
+          message?: Json
+          session_id?: string
+        }
+        Relationships: []
       }
       imoveisvivareal: {
         Row: {
@@ -335,6 +505,7 @@ export type Database = {
           complemento: string | null
           created_at: string | null
           descricao: string | null
+          disponibilidade: string | null
           endereco: string | null
           features: string[] | null
           garagem: number | null
@@ -364,6 +535,7 @@ export type Database = {
           complemento?: string | null
           created_at?: string | null
           descricao?: string | null
+          disponibilidade?: string | null
           endereco?: string | null
           features?: string[] | null
           garagem?: number | null
@@ -393,6 +565,7 @@ export type Database = {
           complemento?: string | null
           created_at?: string | null
           descricao?: string | null
+          disponibilidade?: string | null
           endereco?: string | null
           features?: string[] | null
           garagem?: number | null
@@ -430,39 +603,47 @@ export type Database = {
       inquilinato_conversations: {
         Row: {
           company_id: string | null
-          created_at: string
+          created_at: string | null
           id: string
-          last_message_at: string
+          last_message_at: string | null
           title: string | null
-          updated_at: string
+          updated_at: string | null
           user_id: string
         }
         Insert: {
           company_id?: string | null
-          created_at?: string
+          created_at?: string | null
           id?: string
-          last_message_at?: string
+          last_message_at?: string | null
           title?: string | null
-          updated_at?: string
+          updated_at?: string | null
           user_id: string
         }
         Update: {
           company_id?: string | null
-          created_at?: string
+          created_at?: string | null
           id?: string
-          last_message_at?: string
+          last_message_at?: string | null
           title?: string | null
-          updated_at?: string
+          updated_at?: string | null
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "inquilinato_conversations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       inquilinato_messages: {
         Row: {
           company_id: string | null
           content: string
           conversation_id: string | null
-          created_at: string
+          created_at: string | null
           email: string | null
           id: string
           role: string
@@ -472,7 +653,7 @@ export type Database = {
           company_id?: string | null
           content: string
           conversation_id?: string | null
-          created_at?: string
+          created_at?: string | null
           email?: string | null
           id?: string
           role: string
@@ -482,13 +663,28 @@ export type Database = {
           company_id?: string | null
           content?: string
           conversation_id?: string | null
-          created_at?: string
+          created_at?: string | null
           email?: string | null
           id?: string
           role?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "inquilinato_messages_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inquilinato_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "inquilinato_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       leads: {
         Row: {
@@ -500,19 +696,18 @@ export type Database = {
           estado_civil: string | null
           estimated_value: number | null
           id: string
+          id_corretor_responsavel: string | null
           imovel_interesse: string | null
           interest: string | null
           message: string | null
-          name: string
+          name: string | null
           notes: string | null
           phone: string | null
           property_id: string | null
-          source: string
+          source: string | null
           stage: string | null
           updated_at: string | null
           user_id: string | null
-          assigned_user_id: string | null
-          id_corretor_responsavel: string | null
         }
         Insert: {
           company_id?: string | null
@@ -523,14 +718,15 @@ export type Database = {
           estado_civil?: string | null
           estimated_value?: number | null
           id?: string
+          id_corretor_responsavel?: string | null
           imovel_interesse?: string | null
           interest?: string | null
           message?: string | null
-          name: string
+          name?: string | null
           notes?: string | null
           phone?: string | null
           property_id?: string | null
-          source: string
+          source?: string | null
           stage?: string | null
           updated_at?: string | null
           user_id?: string | null
@@ -544,14 +740,15 @@ export type Database = {
           estado_civil?: string | null
           estimated_value?: number | null
           id?: string
+          id_corretor_responsavel?: string | null
           imovel_interesse?: string | null
           interest?: string | null
           message?: string | null
-          name?: string
+          name?: string | null
           notes?: string | null
           phone?: string | null
           property_id?: string | null
-          source?: string
+          source?: string | null
           stage?: string | null
           updated_at?: string | null
           user_id?: string | null
@@ -562,6 +759,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_id_corretor_responsavel_fkey"
+            columns: ["id_corretor_responsavel"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -649,29 +853,126 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "oncall_events_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "oncall_events_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
             referencedRelation: "properties"
             referencedColumns: ["id"]
           },
+        ]
+      }
+      oncall_schedules: {
+        Row: {
+          assigned_user_id: string | null
+          calendar_id: string
+          calendar_name: string
+          company_id: string
+          created_at: string
+          fri_end: string | null
+          fri_start: string | null
+          fri_works: boolean
+          id: string
+          mon_end: string | null
+          mon_start: string | null
+          mon_works: boolean
+          sat_end: string | null
+          sat_start: string | null
+          sat_works: boolean
+          sun_end: string | null
+          sun_start: string | null
+          sun_works: boolean
+          thu_end: string | null
+          thu_start: string | null
+          thu_works: boolean
+          tue_end: string | null
+          tue_start: string | null
+          tue_works: boolean
+          updated_at: string
+          user_id: string
+          wed_end: string | null
+          wed_start: string | null
+          wed_works: boolean
+        }
+        Insert: {
+          assigned_user_id?: string | null
+          calendar_id: string
+          calendar_name: string
+          company_id: string
+          created_at?: string
+          fri_end?: string | null
+          fri_start?: string | null
+          fri_works?: boolean
+          id?: string
+          mon_end?: string | null
+          mon_start?: string | null
+          mon_works?: boolean
+          sat_end?: string | null
+          sat_start?: string | null
+          sat_works?: boolean
+          sun_end?: string | null
+          sun_start?: string | null
+          sun_works?: boolean
+          thu_end?: string | null
+          thu_start?: string | null
+          thu_works?: boolean
+          tue_end?: string | null
+          tue_start?: string | null
+          tue_works?: boolean
+          updated_at?: string
+          user_id: string
+          wed_end?: string | null
+          wed_start?: string | null
+          wed_works?: boolean
+        }
+        Update: {
+          assigned_user_id?: string | null
+          calendar_id?: string
+          calendar_name?: string
+          company_id?: string
+          created_at?: string
+          fri_end?: string | null
+          fri_start?: string | null
+          fri_works?: boolean
+          id?: string
+          mon_end?: string | null
+          mon_start?: string | null
+          mon_works?: boolean
+          sat_end?: string | null
+          sat_start?: string | null
+          sat_works?: boolean
+          sun_end?: string | null
+          sun_start?: string | null
+          sun_works?: boolean
+          thu_end?: string | null
+          thu_start?: string | null
+          thu_works?: boolean
+          tue_end?: string | null
+          tue_start?: string | null
+          tue_works?: boolean
+          updated_at?: string
+          user_id?: string
+          wed_end?: string | null
+          wed_start?: string | null
+          wed_works?: boolean
+        }
+        Relationships: [
           {
-            foreignKeyName: "oncall_events_user_id_fkey"
-            columns: ["user_id"]
+            foreignKeyName: "oncall_schedules_assigned_user_id_fkey"
+            columns: ["assigned_user_id"]
             isOneToOne: false
             referencedRelation: "user_profiles"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "oncall_events_assigned_user_id_fkey"
-            columns: ["assigned_user_id"]
+            foreignKeyName: "oncall_schedules_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "oncall_schedules_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "user_profiles"
             referencedColumns: ["id"]
@@ -688,8 +989,6 @@ export type Database = {
           company_id: string | null
           created_at: string | null
           description: string | null
-          disponibilidade: string | null
-          disponibilidade_observacao: string | null
           id: string
           price: number
           property_purpose: string | null
@@ -714,9 +1013,7 @@ export type Database = {
           company_id?: string | null
           created_at?: string | null
           description?: string | null
-          disponibilidade?: string | null
-          disponibilidade_observacao?: string | null
-          id?: string
+          id: string
           price: number
           property_purpose?: string | null
           proprietario_cpf?: string | null
@@ -740,8 +1037,6 @@ export type Database = {
           company_id?: string | null
           created_at?: string | null
           description?: string | null
-          disponibilidade?: string | null
-          disponibilidade_observacao?: string | null
           id?: string
           price?: number
           property_purpose?: string | null
@@ -845,6 +1140,7 @@ export type Database = {
       user_profiles: {
         Row: {
           avatar_url: string | null
+          chat_instance: string | null
           company_id: string | null
           created_at: string | null
           department: string | null
@@ -858,6 +1154,7 @@ export type Database = {
         }
         Insert: {
           avatar_url?: string | null
+          chat_instance?: string | null
           company_id?: string | null
           created_at?: string | null
           department?: string | null
@@ -871,6 +1168,7 @@ export type Database = {
         }
         Update: {
           avatar_url?: string | null
+          chat_instance?: string | null
           company_id?: string | null
           created_at?: string | null
           department?: string | null
@@ -1131,13 +1429,26 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      _admin_global: {
-        Args: Record<PropertyKey, never>
-        Returns: boolean
+      get_conversations_for_corretor: {
+        Args: { selected_instance?: string; user_id: string }
+        Returns: {
+          display_name: string
+          instancia: string
+          last_message_content: string
+          last_message_date: string
+          last_message_type: string
+          lead_phone: string
+          lead_stage: string
+          message_count: number
+          session_id: string
+        }[]
       }
-      get_user_company: {
-        Args: { user_uuid?: string }
-        Returns: string
+      get_instances_with_conversation_count: {
+        Args: { user_id: string }
+        Returns: {
+          conversation_count: number
+          instancia: string
+        }[]
       }
       get_user_company_id: {
         Args: Record<PropertyKey, never>
@@ -1147,44 +1458,31 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: string
       }
-      get_whatsapp_stats: {
-        Args: { user_id_param?: string }
-        Returns: {
-          total_instances: number
-          connected_instances: number
-          total_chats: number
-          total_messages: number
-          unread_messages: number
-        }[]
-      }
-      has_permission: {
-        Args: { permission_key_param: string }
-        Returns: boolean
-      }
-      is_manager: {
-        Args: { user_uuid?: string }
-        Returns: boolean
-      }
-      is_same_company_as: {
-        Args: { target_user_id: string }
+      is_admin_user: {
+        Args: Record<PropertyKey, never>
         Returns: boolean
       }
       list_company_users: {
         Args: {
-          target_company_id?: string
-          search?: string
-          roles?: string[]
           limit_count?: number
           offset_count?: number
+          roles?: string[]
+          search?: string
+          target_company_id?: string
         }
         Returns: {
-          id: string
+          avatar_url: string
+          company_id: string
+          company_name: string
+          created_at: string
+          department: string
           email: string
           full_name: string
-          role: string
-          company_id: string
+          id: string
           is_active: boolean
-          created_at: string
+          phone: string
+          role: string
+          updated_at: string
         }[]
       }
     }

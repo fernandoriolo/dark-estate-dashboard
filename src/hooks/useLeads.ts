@@ -28,7 +28,7 @@ export function useLeads() {
     }
   };
 
-  const createLead = async (leadData: Omit<LeadInsert, 'user_id'>): Promise<DatabaseLead | null> => {
+  const createLead = async (leadData: Omit<LeadInsert, 'user_id'> & { id_corretor_responsavel?: string | null }): Promise<DatabaseLead | null> => {
     try {
       // Buscar usuário atual
       const { data: { user } } = await supabase.auth.getUser();
@@ -38,7 +38,11 @@ export function useLeads() {
 
       const { data, error } = await supabase
         .from('leads')
-        .insert([{ ...leadData, user_id: user.id }])
+        .insert([{ 
+          ...leadData, 
+          user_id: user.id,
+          id_corretor_responsavel: leadData.id_corretor_responsavel ?? user.id
+        }])
         .select()
         .single();
 
