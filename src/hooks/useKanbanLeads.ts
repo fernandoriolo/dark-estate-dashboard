@@ -68,7 +68,7 @@ export function useKanbanLeads() {
       // Para corretores, as políticas RLS já filtram automaticamente
       let query = supabase
         .from('leads')
-        .select(`*, corretor:user_profiles!leads_id_corretor_responsavel_fkey(id, full_name, role)`) 
+        .select(`*`) 
         .order('created_at', { ascending: false });
 
       const { data, error } = await query;
@@ -204,9 +204,9 @@ export function useKanbanLeads() {
         estimated_value: leadData.valorEstimado || leadData.valor || null,
         notes: leadData.observacoes || null,
         imovel_interesse: leadData.imovel_interesse || null,
-        // user_id: criador; id_corretor_responsavel: corretor responsável
-        user_id: user.id,
-        id_corretor_responsavel: options?.assignedUserId || null
+        // TODO: Implementar user_id e id_corretor_responsavel quando as colunas forem criadas na tabela leads
+        // user_id: user.id,
+        // id_corretor_responsavel: options?.assignedUserId || null
       };
 
       // Adicionar property_id se existir na estrutura da tabela
@@ -273,9 +273,10 @@ export function useKanbanLeads() {
       if (updates.property_id !== undefined) updateData.property_id = updates.property_id || null;
       if (updates.imovel_interesse !== undefined) updateData.imovel_interesse = updates.imovel_interesse || null;
       if (updates.message !== undefined) updateData.message = updates.message || null;
-      if ((updates as any).id_corretor_responsavel !== undefined) updateData.id_corretor_responsavel = (updates as any).id_corretor_responsavel;
-      if ((updates as any).assigned_user_id !== undefined) updateData.id_corretor_responsavel = (updates as any).assigned_user_id || null;
-      if ((updates as any).id_corretor_responsavel !== undefined) updateData.id_corretor_responsavel = (updates as any).id_corretor_responsavel || null;
+      // TODO: Implementar id_corretor_responsavel quando a coluna for criada na tabela leads
+      // if ((updates as any).id_corretor_responsavel !== undefined) updateData.id_corretor_responsavel = (updates as any).id_corretor_responsavel;
+      // if ((updates as any).assigned_user_id !== undefined) updateData.id_corretor_responsavel = (updates as any).assigned_user_id || null;
+      // if ((updates as any).id_corretor_responsavel !== undefined) updateData.id_corretor_responsavel = (updates as any).id_corretor_responsavel || null;
 
       const { error } = await supabase
         .from('leads')
@@ -331,27 +332,30 @@ export function useKanbanLeads() {
   // Vinculação em massa de leads a um corretor
   const bulkAssignLeads = useCallback(async (leadIds: string[], corretorId: string | null) => {
     try {
-      // Atualizar no banco de dados
-      const { error } = await supabase
-        .from('leads')
-        .update({ 
-          id_corretor_responsavel: corretorId,
-          updated_at: new Date().toISOString()
-        })
-        .in('id', leadIds);
+      // TODO: Implementar quando a coluna id_corretor_responsavel for criada na tabela leads
+      console.log('⚠️ Funcionalidade de atribuição em massa temporariamente desabilitada - coluna id_corretor_responsavel não existe');
+      
+      // // Atualizar no banco de dados
+      // const { error } = await supabase
+      //   .from('leads')
+      //   .update({ 
+      //     id_corretor_responsavel: corretorId,
+      //     updated_at: new Date().toISOString()
+      //   })
+      //   .in('id', leadIds);
 
-      if (error) {
-        throw error;
-      }
+      // if (error) {
+      //   throw error;
+      // }
 
-      // Atualizar estado local
-      setLeads(prevLeads => 
-        prevLeads.map(lead => 
-          leadIds.includes(lead.id) 
-            ? { ...lead, id_corretor_responsavel: corretorId }
-            : lead
-        )
-      );
+      // // Atualizar estado local
+      // setLeads(prevLeads => 
+      //   prevLeads.map(lead => 
+      //     leadIds.includes(lead.id) 
+      //       ? { ...lead, id_corretor_responsavel: corretorId }
+      //       : lead
+      //   )
+      // );
 
       // Fazer log da operação
       logAudit({ 

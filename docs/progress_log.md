@@ -589,3 +589,16 @@ Próximos passos sugeridos:
   - **Deploy realizado**: Edge Function versão 3 deployada com sucesso
 - **Erro resolvido**: 403 Forbidden na exclusão de usuários por gestores corrigido
 - **Resultado**: Gestores agora podem desativar, reativar e excluir usuários corretores, mantendo segurança por empresa
+
+## 2025-01-27 — Migração para Novo Banco Supabase
+- **Configuração do novo banco**: Projeto `ibmyytoyqjoycrgutzef` configurado com sucesso
+- **Arquivos atualizados**:
+  - **`.env.local`**: Criado com novas credenciais (URL + chave anônima)
+  - **`supabase/config.toml`**: Project ID atualizado de `vitiqschibbontjwhiim` para `ibmyytoyqjoycrgutzef`
+  - **`MIGRATION_INSTRUCTIONS.md`**: URLs atualizadas para o novo projeto
+- **Conexão validada**: Teste com Node.js confirmou acesso às tabelas principais
+- **Status das tabelas**: Banco possui estrutura completa (companies, user_profiles, properties, leads, contracts, etc.)
+- **Migrations pendentes**: 56 arquivos de migration identificados para aplicação manual
+- **Guia criado**: `APLICAR_MIGRATIONS_NOVO_BANCO.md` com instruções detalhadas
+- **Próximos passos**: Aplicar migrations via SQL Editor do Supabase Dashboard
+- **Scripts auxiliares**: Criados para verificação e teste do novo banco

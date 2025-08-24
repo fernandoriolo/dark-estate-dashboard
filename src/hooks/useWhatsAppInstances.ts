@@ -22,8 +22,6 @@ export interface WhatsAppInstance {
   created_at: string;
   updated_at: string;
   // Novos campos para sistema de solicitações
-  request_status?: 'requested' | 'approved' | 'active' | 'inactive';
-  requested_by?: string;
   requested_at?: string;
   request_message?: string;
   // Dados do usuário (para gestores verem todas as instâncias)
@@ -97,15 +95,13 @@ export function useWhatsAppInstances() {
         .from('whatsapp_instances')
         .select(`
           *,
-          user_profile:user_profiles!whatsapp_instances_user_id_fkey(full_name, email, role),
-          requester_profile:user_profiles!whatsapp_instances_requested_by_fkey(full_name, email, role)
+          user_profile:user_profiles!whatsapp_instances_user_id_fkey(full_name, email, role)
         `);
 
       // Se for corretor, buscar apenas suas instâncias ATIVAS (não solicitações pendentes)
       if (profile.role === 'corretor') {
         query = query
-          .eq('user_id', profile.id)
-          .neq('request_status', 'requested'); // Excluir solicitações pendentes
+          .eq('user_id', profile.id);
       } 
       // Se for gestor/admin, buscar todas as instâncias (sem filtro extra)
       else if (isManager) {
@@ -413,8 +409,7 @@ export function useWhatsAppInstances() {
         })
         .select(`
           *,
-          user_profile:user_profiles!whatsapp_instances_user_id_fkey(full_name, email, role),
-          requester_profile:user_profiles!whatsapp_instances_requested_by_fkey(full_name, email, role)
+          user_profile:user_profiles!whatsapp_instances_user_id_fkey(full_name, email, role)
         `)
         .single();
 
@@ -479,8 +474,7 @@ export function useWhatsAppInstances() {
         .eq('id', instanceId)
         .select(`
           *,
-          user_profile:user_profiles!whatsapp_instances_user_id_fkey(full_name, email, role),
-          requester_profile:user_profiles!whatsapp_instances_requested_by_fkey(full_name, email, role)
+          user_profile:user_profiles!whatsapp_instances_user_id_fkey(full_name, email, role)
         `)
         .single();
 
@@ -956,22 +950,22 @@ export function useWhatsAppInstances() {
 
       console.log('🔄 Criando solicitação de conexão...');
 
-      // Verificar se usuário já tem solicitação pendente (retornar detalhes)
-      const { data: existingRequests, error: checkError } = await supabase
-        .from('connection_requests')
-        .select('id, status, instance_name, phone_number, created_at, message')
-        .eq('user_id', profile.id)
-        .eq('status', 'pending');
+      // TODO: Implementar verificação de solicitações pendentes quando a tabela connection_requests for criada
+      // const { data: existingRequests, error: checkError } = await supabase
+      //   .from('connection_requests')
+      //   .select('id, status, instance_name, phone_number, created_at, message')
+      //   .eq('user_id', profile.id)
+      //   .eq('status', 'pending');
 
-      if (checkError) throw checkError;
+      // if (checkError) throw checkError;
 
-      if (existingRequests && existingRequests.length > 0) {
-        const pending = existingRequests[0];
-        const err: any = new Error('Você já possui uma solicitação pendente');
-        err.code = 'REQUEST_ALREADY_EXISTS';
-        err.pendingRequest = pending;
-        throw err;
-      }
+      // if (existingRequests && existingRequests.length > 0) {
+      //   const pending = existingRequests[0];
+      //   const err: any = new Error('Você já possui uma solicitação pendente');
+      //   err.code = 'REQUEST_ALREADY_EXISTS';
+      //   err.pendingRequest = pending;
+      //   throw err;
+      // }
 
       // Verificar se usuário já tem instância ativa
       const { data: existingInstances, error: instanceError } = await supabase
@@ -986,26 +980,47 @@ export function useWhatsAppInstances() {
         throw new Error('Você já possui uma instância ativa');
       }
 
-      // Criar solicitação na tabela connection_requests (NÃO em whatsapp_instances)
+      // TODO: Implementar criação de solicitação quando a tabela connection_requests for criada
+      // const { data: newRequest, error: createError } = await supabase
+      //   .from('connection_requests')
+      //   .insert({
+      //     user_id: profile.id,
+      //     company_id: profile.company_id,
+      //     instance_name: instanceData.instance_name,
+      //     phone_number: instanceData.phone_number,
+      //     message: instanceData.message || `Solicitação de conexão WhatsApp de ${profile.full_name}`,
+      //     status: 'pending'
+      //   })
+      //   .select(`
+      //     *,
+      //     user_profile:user_profiles!connection_requests_user_id_fkey(full_name, email, role)
+      //   `)
+      //   .single();
+
+      // if (createError) throw createError;
+
+      // console.log('✅ Solicitação criada:', newRequest);
+      
+      // Por enquanto, criar diretamente na tabela whatsapp_instances
       const { data: newRequest, error: createError } = await supabase
-        .from('connection_requests')
+        .from('whatsapp_instances')
         .insert({
+          instance_name: instanceData.instance_name,
           user_id: profile.id,
           company_id: profile.company_id,
-          instance_name: instanceData.instance_name,
           phone_number: instanceData.phone_number,
-          message: instanceData.message || `Solicitação de conexão WhatsApp de ${profile.full_name}`,
-          status: 'pending'
+          status: 'disconnected',
+          is_active: true
         })
         .select(`
           *,
-          user_profile:user_profiles!connection_requests_user_id_fkey(full_name, email, role)
+          user_profile:user_profiles!whatsapp_instances_user_id_fkey(full_name, email, role)
         `)
         .single();
 
       if (createError) throw createError;
 
-      console.log('✅ Solicitação criada:', newRequest);
+      console.log('✅ Instância criada:', newRequest);
 
       // Notificar gestores via RPC (seguro contra RLS)
       console.log('📬 Notificando gestores via RPC notify_managers_connection_request');
@@ -1031,23 +1046,24 @@ export function useWhatsAppInstances() {
     try {
       if (!profile?.company_id) throw new Error('Perfil do usuário não encontrado');
 
-      // Carregar a solicitação para obter dados de contexto
-      const { data: req, error: reqErr } = await supabase
-        .from('connection_requests')
-        .select('id, user_id, company_id, instance_name, phone_number, message, status')
-        .eq('id', requestId)
-        .single();
+      // TODO: Implementar reenvio de solicitação quando a tabela connection_requests for criada
+      // const { data: req, error: reqErr } = await supabase
+      //   .from('connection_requests')
+      //   .select('id, user_id, company_id, instance_name, phone_number, message, status')
+      //   .eq('id', requestId)
+      //   .single();
 
-      if (reqErr) throw reqErr;
-      if (!req || req.status !== 'pending') throw new Error('Solicitação não está pendente');
+      // if (reqErr) throw reqErr;
+      // if (!req || req.status !== 'pending') throw new Error('Solicitação não está pendente');
 
-      // Reenviar via RPC também
-      const { error: rpcError } = await supabase.rpc('notify_managers_connection_request', {
-        p_request_id: req.id,
-        p_custom_message: `${profile.full_name} reenviou a solicitação${extraMessage ? `: ${extraMessage}` : ''}`
-      });
-      if (rpcError) throw rpcError;
+      // // Reenviar via RPC também
+      // const { error: rpcError } = await supabase.rpc('notify_managers_connection_request', {
+      //   p_request_id: req.id,
+      //   p_custom_message: `${profile.full_name} reenviou a solicitação${extraMessage ? `: ${extraMessage}` : ''}`
+      // });
+      // if (rpcError) throw rpcError;
 
+      console.log('⚠️ Funcionalidade de reenvio temporariamente desabilitada - tabela connection_requests não existe');
       return { ok: true } as const;
     } catch (error) {
       console.error('Erro ao reenviar solicitação:', error);
@@ -1063,14 +1079,12 @@ export function useWhatsAppInstances() {
       const { data: instance, error } = await supabase
         .from('whatsapp_instances')
         .update({
-          request_status: 'approved',
           status: 'qr_code',  // Pronto para gerar QR
         })
         .eq('id', instanceId)
         .select(`
           *,
-          user_profile:user_profiles!whatsapp_instances_user_id_fkey(full_name, email, role),
-          requester_profile:user_profiles!whatsapp_instances_requested_by_fkey(full_name, email, role)
+          user_profile:user_profiles!whatsapp_instances_user_id_fkey(full_name, email, role)
         `)
         .single();
 
@@ -1080,7 +1094,7 @@ export function useWhatsAppInstances() {
       const { error: notifyError } = await supabase
         .from('notifications')
         .insert({
-          user_id: instance.requested_by,
+          user_id: instance.user_id,
           company_id: instance.company_id,
           type: 'connection_approved',
           title: 'Solicitação Aprovada! 🎉',
@@ -1111,7 +1125,8 @@ export function useWhatsAppInstances() {
 
   // Obter solicitações pendentes (para gestores)
   const getPendingRequests = () => {
-    return instances.filter(inst => inst.request_status === 'requested');
+    // TODO: Implementar quando a tabela connection_requests for criada
+    return [];
   };
 
   // Manter função original para compatibilidade (deprecated)

@@ -23,13 +23,13 @@
 ## 🏗️ **PASSO 2: Aplicar Migração no Banco**
 
 ### Opção A: Via Dashboard Supabase (Recomendado)
-1. Acesse: https://supabase.com/dashboard/project/vitiqschibbontjwhiim/sql
+1. Acesse: https://supabase.com/dashboard/project/ibmyytoyqjoycrgutzef/sql
 2. Copie todo o conteúdo do arquivo `supabase/migrations/20250120000001_create_contracts_system.sql`
 3. Cole no editor SQL
 4. Clique em "Run" para executar
 
 ### Opção B: Via Script Node.js
-1. Obtenha sua Service Role Key em: https://supabase.com/dashboard/project/vitiqschibbontjwhiim/settings/api
+1. Obtenha sua Service Role Key em: https://supabase.com/dashboard/project/ibmyytoyqjoycrgutzef/settings/api
 2. Edite o arquivo `apply-migration.js` e substitua `SUA_SERVICE_ROLE_KEY_AQUI`
 3. Execute: `node apply-migration.js`
 
@@ -81,7 +81,7 @@ Com o MCP funcionando, você pode testar:
 
 ### Para regenerar types:
 ```bash
-npx supabase gen types typescript --project-id vitiqschibbontjwhiim > src/integrations/supabase/types.ts
+npx supabase gen types typescript --project-id ibmyytoyqjoycrgutzef > src/integrations/supabase/types.ts
 ```
 
 ## 🎯 **Resultado Final**

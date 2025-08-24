@@ -66,7 +66,7 @@ export function UserManagementView() {
   useEffect(() => { fetchUsers(searchTerm, roleFilter); }, [searchTerm, roleFilter]);
 
   // TODOS OS HOOKS DEVEM VIR PRIMEIRO - NUNCA APÓS RETURNS CONDICIONAIS
-  const { profile, isManager, isAdmin, deactivateUser, activateUser, deleteUser, createNewUser } = useUserProfile();
+  const { profile, isManager, isAdmin, loading: profileLoading, deactivateUser, activateUser, deleteUser, createNewUser } = useUserProfile();
   const [error, setError] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -90,7 +90,17 @@ export function UserManagementView() {
   // Removido: loadUsers/getCompanyUsers (uso substituído por RPC)
 
 
-  // Verificar permissões APÓS todos os hooks
+  // Aguardar carregamento do perfil antes de verificar permissões
+  if (profileLoading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        <span className="ml-3 text-gray-400">Carregando perfil...</span>
+      </div>
+    );
+  }
+
+  // Verificar permissões APÓS carregamento do perfil
   if (!isManager) {
     return (
       <div className="p-6">
@@ -98,6 +108,10 @@ export function UserManagementView() {
           <Shield className="h-4 w-4" />
           <AlertDescription className="text-red-200">
             Você não tem permissão para acessar o gerenciamento de usuários.
+            <br />
+            <small className="text-gray-400 mt-2 block">
+              Perfil: {profile?.email || 'N/A'} | Role: {profile?.role || 'N/A'} | IsManager: {isManager ? 'Sim' : 'Não'}
+            </small>
           </AlertDescription>
         </Alert>
       </div>

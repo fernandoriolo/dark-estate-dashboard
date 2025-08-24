@@ -13,15 +13,39 @@ export type CreateUserPayload = {
   phone?: string;
 };
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+function jsonResponse(data: any, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+      ...corsHeaders,
+    },
+  });
+}
+
 Deno.serve(async (req: Request) => {
+  // Handle CORS preflight requests
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { 
+      status: 200, 
+      headers: corsHeaders 
+    });
+  }
+
   try {
     if (req.method !== "POST") {
-      return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: { "Content-Type": "application/json" } });
+      return jsonResponse({ error: "Method not allowed" }, 405);
     }
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+      return jsonResponse({ error: "Unauthorized" }, 401);
     }
 
     const accessToken = authHeader.replace("Bearer ", "");
@@ -30,7 +54,7 @@ Deno.serve(async (req: Request) => {
     // Identificar o solicitante
     const { data: authUserData, error: authErr } = await adminClient.auth.getUser(accessToken);
     if (authErr || !authUserData.user) {
-      return new Response(JSON.stringify({ error: "Invalid token" }), { status: 401, headers: { "Content-Type": "application/json" } });
+      return jsonResponse({ error: "Invalid token" }, 401);
     }
 
     const requesterId = authUserData.user.id;
@@ -43,21 +67,21 @@ Deno.serve(async (req: Request) => {
       .single();
 
     if (profileErr || !requesterProfile) {
-      return new Response(JSON.stringify({ error: "Requester profile not found" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      return jsonResponse({ error: "Requester profile not found" }, 403);
     }
 
     if (!(["admin", "gestor"].includes(requesterProfile.role))) {
-      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      return jsonResponse({ error: "Forbidden" }, 403);
     }
 
     const payload = (await req.json()) as CreateUserPayload;
     if (!payload?.email || !payload?.password || !payload?.full_name || !payload?.role) {
-      return new Response(JSON.stringify({ error: "Missing fields" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      return jsonResponse({ error: "Missing fields" }, 400);
     }
 
     // Gestor só pode criar corretores
     if (requesterProfile.role === "gestor" && payload.role !== "corretor") {
-      return new Response(JSON.stringify({ error: "Gestor pode criar apenas corretores" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      return jsonResponse({ error: "Gestor pode criar apenas corretores" }, 403);
     }
 
     // Criar usuário confirmado com senha temporária
@@ -73,7 +97,7 @@ Deno.serve(async (req: Request) => {
     });
 
     if (createErr || !created.user) {
-      return new Response(JSON.stringify({ error: createErr?.message || "Erro ao criar usuário" }), { status: 400, headers: { "Content-Type": "application/json" } });
+      return jsonResponse({ error: createErr?.message || "Erro ao criar usuário" }, 400);
     }
 
     // Garantir perfil completo e vínculo de empresa
@@ -86,27 +110,26 @@ Deno.serve(async (req: Request) => {
       company_id: requesterProfile.company_id || null,
     } as Record<string, any>;
 
-    // Tentar atualizar; se não existir, inserir
-    const { error: upErr } = await adminClient
+    // Inserir perfil diretamente (usuário é novo, não existe perfil)
+    const { error: insErr } = await adminClient
       .from("user_profiles")
-      .update(updates)
-      .eq("id", newUserId);
+      .insert({ 
+        id: newUserId, 
+        email: payload.email, 
+        ...updates 
+      });
 
-    if (upErr) {
-      const { error: insErr } = await adminClient
-        .from("user_profiles")
-        .insert({ id: newUserId, email: payload.email, ...updates });
-      if (insErr) {
-        return new Response(JSON.stringify({ error: insErr.message }), { status: 400, headers: { "Content-Type": "application/json" } });
-      }
+    if (insErr) {
+      return jsonResponse({ error: `Erro ao criar perfil: ${insErr.message}` }, 400);
     }
 
-    return new Response(
-      JSON.stringify({ user_id: newUserId, email: payload.email }),
-      { status: 200, headers: { "Content-Type": "application/json" } }
-    );
+    return jsonResponse({
+      user_id: newUserId, 
+      email: payload.email,
+      success: true
+    });
   } catch (e: any) {
-    return new Response(JSON.stringify({ error: e?.message || "Internal error" }), { status: 500, headers: { "Content-Type": "application/json" } });
+    return jsonResponse({ error: e?.message || "Internal error" }, 500);
   }
 });
 

@@ -191,10 +191,12 @@ export function useUserProfile() {
         .from('user_profiles')
         .update(updates)
         .eq('id', profile.id)
-        .select()
-        .single();
+        .select();
 
       if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error('Perfil não encontrado para atualização');
+      }
 
       setProfile(data as UserProfile);
       return data;
@@ -222,10 +224,12 @@ export function useUserProfile() {
           email: user.email,
           ...profileData
         })
-        .select()
-        .single();
+        .select();
 
       if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error('Erro ao criar perfil');
+      }
 
       setProfile(data as UserProfile);
       return data;
@@ -277,10 +281,12 @@ export function useUserProfile() {
         .from('user_profiles')
         .update({ role: newRole })
         .eq('id', userId)
-        .select()
-        .single();
+        .select();
 
       if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error('Usuário não encontrado para alteração de role');
+      }
 
       return data;
     } catch (error: any) {
@@ -296,16 +302,25 @@ export function useUserProfile() {
         throw new Error('Sem permissão para desativar usuários');
       }
 
+      console.log('🔍 DEBUG: Tentando desativar usuário:', userId);
+      console.log('🔍 DEBUG: isManager:', isManager, 'isAdmin:', isAdmin);
+
       const { data, error } = await supabase
         .from('user_profiles')
         .update({ is_active: false })
         .eq('id', userId)
-        .select()
-        .single();
+        .select();
+
+      console.log('🔍 DEBUG: Resultado da atualização:', { data, error });
 
       if (error) throw error;
 
-      return data;
+      // Verificar se o usuário foi encontrado e atualizado
+      if (!data || data.length === 0) {
+        throw new Error('Usuário não encontrado');
+      }
+
+      return data[0]; // Retornar o primeiro (e único) resultado
     } catch (error: any) {
       console.error('Erro ao desativar usuário:', error);
       throw error;
@@ -323,12 +338,16 @@ export function useUserProfile() {
         .from('user_profiles')
         .update({ is_active: true })
         .eq('id', userId)
-        .select()
-        .single();
+        .select();
 
       if (error) throw error;
 
-      return data;
+      // Verificar se o usuário foi encontrado e atualizado
+      if (!data || data.length === 0) {
+        throw new Error('Usuário não encontrado');
+      }
+
+      return data[0]; // Retornar o primeiro (e único) resultado
     } catch (error: any) {
       console.error('Erro ao reativar usuário:', error);
       throw error;
