@@ -19,6 +19,7 @@ interface AgendaEvent {
   type: string;
   status: string;
   corretor?: string; // Campo opcional para identificar o corretor
+  calendarId?: string; // ID do Google Calendar associado ao evento
 }
 
 const mockEvents: AgendaEvent[] = [
@@ -337,17 +338,27 @@ export function AgendaView() {
         ? corretores.map(c => c.id)
         : [selectedAgenda];
 
-      const requestBody = {
+      // Novo contrato de payload
+      const requestBody = isTodos ? {
+        tipo_busca: 'todos',
+        calendar_ids: agendaIds,
         data_inicial: dataInicialFormatada,
         data_final: dataFinalFormatada,
         mes: month + 1,
         ano: year,
         data_inicial_formatada: dataInicial.toLocaleDateString('pt-BR') + ' 00:01',
         data_final_formatada: dataFinal.toLocaleDateString('pt-BR') + ' 23:59',
-        periodo: `${dataInicial.toLocaleDateString('pt-BR')} até ${dataFinal.toLocaleDateString('pt-BR')}`,
-        agenda: selectedAgenda,
-        tipo_busca: isTodos ? 'todos' : 'individual',
-        agenda_ids: agendaIds
+        periodo: `${dataInicial.toLocaleDateString('pt-BR')} até ${dataFinal.toLocaleDateString('pt-BR')}`
+      } : {
+        tipo_busca: 'individual',
+        calendar_id: selectedAgenda,
+        data_inicial: dataInicialFormatada,
+        data_final: dataFinalFormatada,
+        mes: month + 1,
+        ano: year,
+        data_inicial_formatada: dataInicial.toLocaleDateString('pt-BR') + ' 00:01',
+        data_final_formatada: dataFinal.toLocaleDateString('pt-BR') + ' 23:59',
+        periodo: `${dataInicial.toLocaleDateString('pt-BR')} até ${dataFinal.toLocaleDateString('pt-BR')}`
       } as any;
 
       if (!isAutoUpdate) {
@@ -493,12 +504,24 @@ export function AgendaView() {
             else if (descLower.includes('arthur')) corretor = 'Arthur';
           }
           
-          // 6ª prioridade: Se ainda não identificou e não está filtrando por agenda específica, 
-          // usar a agenda selecionada como fallback
+          // 6ª prioridade: Se ainda não identificou e não está filtrando por agenda específica,
+          // usar o nome do corretor vinculado ao calendário selecionado como fallback (não o ID)
           if (corretor === 'Não informado' && selectedAgenda !== 'Todos') {
-            corretor = selectedAgenda;
+            const found = corretores.find(c => c.id === selectedAgenda);
+            corretor = found?.full_name || selectedAgendaName || 'Corretor';
           }
           
+          // Calendar ID do evento (preferir campo do payload; senão inferir por seleção/nomes)
+          let calendarId: string | undefined = event.calendarId || event.calendar_id || event.organizer?.id || event.creator?.id || event.calendar?.id;
+          if (!calendarId) {
+            if (selectedAgenda !== 'Todos') {
+              calendarId = selectedAgenda;
+            } else if (corretor && corretores.length > 0 && corretor !== 'Não informado') {
+              const match = corretores.find(c => (c.full_name || '').toLowerCase().includes(corretor.toLowerCase()));
+              if (match) calendarId = match.id;
+            }
+          }
+
           const processedEvent = {
             id: event.id || `event_${index + 1}`,
             date: eventDate,
@@ -507,7 +530,8 @@ export function AgendaView() {
             address: location,
             type: eventType,
             status: attendeeStatus,
-            corretor: corretor
+            corretor: corretor,
+            calendarId
           };
           
           // Evento processado com sucesso
@@ -534,6 +558,23 @@ export function AgendaView() {
             else if (email.includes('arthur')) corretor = 'Arthur';
           }
           
+          // Fallback: se não identificado e filtrando agenda específica, usar o nome do corretor da agenda
+          if (corretor === 'Não informado' && selectedAgenda !== 'Todos') {
+            const found = corretores.find(c => c.id === selectedAgenda);
+            corretor = found?.full_name || selectedAgendaName || 'Corretor';
+          }
+
+          // Calendar ID (mesma estratégia de inferência)
+          let calendarId: string | undefined = (event as any).calendarId || (event as any).calendar_id || (event as any).organizer?.id || (event as any).creator?.id || (event as any).calendar?.id;
+          if (!calendarId) {
+            if (selectedAgenda !== 'Todos') {
+              calendarId = selectedAgenda;
+            } else if (corretor && corretores.length > 0 && corretor !== 'Não informado') {
+              const match = corretores.find(c => (c.full_name || '').toLowerCase().includes(corretor.toLowerCase()));
+              if (match) calendarId = match.id;
+            }
+          }
+
           return {
             id: event.id || `event_${index + 1}`,
             date: eventDate,
@@ -542,7 +583,8 @@ export function AgendaView() {
             address: 'Endereço será confirmado',
             type: 'Visita',
             status: event.status === 'confirmed' ? 'confirmada' : 'agendada',
-            corretor: corretor
+            corretor: corretor,
+            calendarId
           };
         });
       } else {
@@ -637,34 +679,21 @@ export function AgendaView() {
     })();
   }, [currentMonth, selectedAgenda, profile?.role]);
 
-  // TEMPORARIAMENTE DESABILITADO: UseEffect para atualização automática
-  // Estava causando loop infinito e esgotamento de recursos
-  // useEffect(() => {
-  //   console.log('🔄 INICIANDO ATUALIZAÇÃO AUTOMÁTICA DA AGENDA (a cada 5 segundos)');
-  //   
-  //   // Limpar intervalo anterior se existir
-  //   if (intervalRef.current) {
-  //     clearInterval(intervalRef.current);
-  //   }
-  //   
-  //   // Configurar novo intervalo para atualizar a cada 5 segundos
-  //   intervalRef.current = setInterval(() => {
-  //     console.log('⏰ ATUALIZAÇÃO AUTOMÁTICA: Executando webhook da agenda...');
-  //     console.log('📅 Mês atual:', `${currentMonth.getMonth() + 1}/${currentMonth.getFullYear()}`);
-  //     
-  //     // Chamar o webhook para o mês atual como atualização automática (sem loading)
-  //     fetchAgendaEvents(currentMonth, true);
-  //   }, 5000); // 5 segundos
-
-  //   // Cleanup quando o componente for desmontado ou currentMonth mudar
-  //   return () => {
-  //     console.log('🛑 PARANDO ATUALIZAÇÃO AUTOMÁTICA DA AGENDA');
-  //     if (intervalRef.current) {
-  //       clearInterval(intervalRef.current);
-  //       intervalRef.current = null;
-  //     }
-  //   };
-  // }, [currentMonth, selectedAgenda]); // Restart interval quando o mês ou agenda mudar
+  // Atualização automática a cada 3 segundos enquanto a Agenda estiver aberta
+  useEffect(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+    intervalRef.current = setInterval(() => {
+      fetchAgendaEvents(currentMonth, true);
+    }, 3000);
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [currentMonth, selectedAgenda]);
 
   const handleDateChange = (date: Date) => {
     console.log('📅 Data selecionada no calendário:', date.toLocaleDateString('pt-BR'));
@@ -688,6 +717,11 @@ export function AgendaView() {
     console.log('📅 Mudança de mês detectada:', newMonth.toLocaleDateString('pt-BR'));
     setCurrentMonth(new Date(newMonth.getFullYear(), newMonth.getMonth(), 1));
     // Isto irá disparar o useEffect para buscar eventos do novo mês
+  };
+
+  // Atualização manual solicitada por filhos (ex.: após editar/deletar/criar)
+  const refreshEvents = () => {
+    fetchAgendaEvents(currentMonth, true);
   };
 
   const handleAddEvent = async (eventData: {
@@ -860,6 +894,7 @@ export function AgendaView() {
 
       // Preparar payload para o webhook
       const webhookPayload = {
+        calendar_id: selectedAgenda !== 'Todos' ? selectedAgenda : undefined,
         summary: `${eventData.type} ao ${propertyTitle}`,
         description: `${eventData.type} agendada para o imóvel ${propertyTitle} (${propertyAddress}) com o cliente ${client.name}. Corretor responsável: ${corretorAssignado}`,
         start: {
@@ -993,7 +1028,8 @@ export function AgendaView() {
         address: propertyAddress,
         type: eventData.type,
         status: 'confirmada', // Confirmada porque foi criada no Google Calendar
-        corretor: corretorAssignado // Usar o corretor efetivamente atribuído
+        corretor: corretorAssignado, // Usar o corretor efetivamente atribuído
+        calendarId: selectedAgenda !== 'Todos' ? selectedAgenda : undefined
       };
 
       // Adicionar o evento localmente
@@ -1020,7 +1056,8 @@ export function AgendaView() {
           address: propertyAddress,
           type: eventData.type,
           status: 'agendada', // Status diferente para indicar que não foi sincronizado
-          corretor: corretorBackup // Usar o corretor processado
+          corretor: corretorBackup, // Usar o corretor processado
+          calendarId: selectedAgenda !== 'Todos' ? selectedAgenda : undefined
         };
         
         setEvents(prevEvents => [...prevEvents, backupEvent]);
@@ -1291,6 +1328,7 @@ export function AgendaView() {
         appointments={events} 
         onDateChange={handleDateChange}
         onMonthChange={handleMonthChange}
+        onRefreshRequested={refreshEvents}
         selectedDate={selectedDate}
         currentMonth={currentMonth}
         selectedAgenda={selectedAgenda}

@@ -23,6 +23,7 @@ interface AppointmentCalendarProps {
   appointments?: Appointment[];
   onDateChange?: (date: Date) => void;
   onMonthChange?: (newMonth: Date) => void;
+  onRefreshRequested?: () => void;
   selectedDate?: Date;
   currentMonth?: Date;
   selectedAgenda?: string;
@@ -87,6 +88,7 @@ export function AppointmentCalendar({
   appointments = mockAppointments, 
   onDateChange,
   onMonthChange,
+  onRefreshRequested,
   selectedDate: externalSelectedDate,
   currentMonth: externalCurrentMonth,
   selectedAgenda = "Todos",
@@ -115,6 +117,8 @@ export function AppointmentCalendar({
     message: string;
     onConfirm?: () => void;
     confirmText?: string;
+    showCancel?: boolean;
+    cancelText?: string;
   }>({
     isOpen: false,
     type: 'alert',
@@ -138,6 +142,7 @@ export function AppointmentCalendar({
       type,
       title,
       message,
+      showCancel: false,
     });
   };
 
@@ -149,6 +154,8 @@ export function AppointmentCalendar({
       message,
       onConfirm,
       confirmText,
+      showCancel: true,
+      cancelText: 'Cancelar'
     });
   };
 
@@ -357,10 +364,10 @@ export function AppointmentCalendar({
     const message = `Tem certeza que deseja deletar este evento?\n\nCliente: ${appointment.client}\nImóvel: ${appointment.property}\nData: ${appointment.date.toLocaleDateString('pt-BR')} às ${appointment.date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}\n\nEsta ação não pode ser desfeita!`;
     
     showConfirm(
-      '🗑️ Deletar Evento',
-      message,
+      'Excluir evento da agenda',
+      `Cliente: ${appointment.client}\nImóvel: ${appointment.property}\nData: ${appointment.date.toLocaleDateString('pt-BR')} às ${appointment.date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`,
       () => executeDelete(appointment),
-      'Deletar'
+      'Excluir definitivamente'
     );
   };
 
@@ -375,13 +382,18 @@ export function AppointmentCalendar({
 
       console.log("🗑️ Deletando evento:", payload);
 
-      // Chamar o webhook de deletar
+      // Novo contrato: enviar apenas { calendar_id, evento_id }
+      const deleteBody = {
+        calendar_id: (appointment as any).calendarId || selectedAgenda,
+        evento_id: String(appointment.id)
+      } as any;
+
       const response = await fetch('https://webhooklabz.n8nlabz.com.br/webhook/deletar-evento', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(deleteBody),
       });
 
       if (!response.ok) {
@@ -390,6 +402,8 @@ export function AppointmentCalendar({
 
       console.log("✅ Evento deletado com sucesso");
       showAlert('✅ Sucesso', 'Evento deletado com sucesso!', 'success');
+      // Atualizar agenda após sucesso
+      if (onRefreshRequested) onRefreshRequested();
       
     } catch (error) {
       console.error('❌ Erro ao deletar evento:', error);
@@ -488,6 +502,7 @@ export function AppointmentCalendar({
 
       if (response.ok) {
         console.log("✅ Webhook sincronizado com sucesso!");
+        if (onRefreshRequested) onRefreshRequested();
       } else {
         console.warn("⚠️ Webhook retornou erro, mas alteração local mantida");
       }
@@ -517,97 +532,33 @@ export function AppointmentCalendar({
         throw new Error("Evento não encontrado");
       }
 
-      // Payload para o webhook
-      const payload = {
-        evento_id: eventData.id,
-        dados_anteriores: {
-          cliente: appointmentToEdit.client,
-          imovel: appointmentToEdit.property,
-          endereco: appointmentToEdit.address,
-          tipo: appointmentToEdit.type,
-          status: appointmentToEdit.status,
-          corretor: appointmentToEdit.corretor || "Não especificado",
-          data_anterior: appointmentToEdit.date.toISOString(),
-          horario_anterior: appointmentToEdit.date.toLocaleTimeString('pt-BR', { 
-            hour: '2-digit', 
-            minute: '2-digit' 
-          }),
-          // Formatação anterior para Google Calendar
-          google_calendar_anterior: {
-            // Formato RFC3339 (padrão do Google Calendar)
-            start_datetime: appointmentToEdit.date.toISOString(),
-            end_datetime: new Date(appointmentToEdit.date.getTime() + (60 * 60 * 1000)).toISOString(),
-            
-            // Timezone information
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            timezone_offset: appointmentToEdit.date.getTimezoneOffset(),
-            
-            // Formatos alternativos
-            date_only: appointmentToEdit.date.toISOString().split('T')[0],
-            time_only: appointmentToEdit.date.toLocaleTimeString('pt-BR', { 
-              hour: '2-digit', 
-              minute: '2-digit' 
-            }),
-            
-            // Para referência do evento no Google Calendar
-            summary: `${appointmentToEdit.type} - ${appointmentToEdit.client}`,
-            description: `Imóvel: ${appointmentToEdit.property}\nEndereço: ${appointmentToEdit.address}\nCorretor: ${appointmentToEdit.corretor || 'Não especificado'}`,
-            location: appointmentToEdit.address,
-            
-            // Duração configurável (padrão 1 hora)
-            duration_minutes: 60,
-            
-            // Formatos para diferentes APIs
-            rfc3339_start: appointmentToEdit.date.toISOString(),
-            rfc3339_end: new Date(appointmentToEdit.date.getTime() + (60 * 60 * 1000)).toISOString()
-          }
-        },
-        dados_novos: {
-          nova_data: eventData.newDate.toISOString(),
-          novo_horario: eventData.newTime,
-          data_formatada: eventData.newDate.toLocaleDateString('pt-BR', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-          }),
-          // Formatação específica para Google Calendar
-          google_calendar: {
-            // Formato RFC3339 (padrão do Google Calendar)
-            start_datetime: eventData.newDate.toISOString(),
-            end_datetime: new Date(eventData.newDate.getTime() + (60 * 60 * 1000)).toISOString(), // +1 hora padrão
-            
-            // Timezone information
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            timezone_offset: eventData.newDate.getTimezoneOffset(),
-            
-            // Formatos alternativos
-            date_only: eventData.newDate.toISOString().split('T')[0], // YYYY-MM-DD
-            time_only: eventData.newTime, // HH:MM
-            
-            // Para criação de evento no Google Calendar
-            summary: `${appointmentToEdit.type} - ${appointmentToEdit.client}`,
-            description: `Imóvel: ${appointmentToEdit.property}\nEndereço: ${appointmentToEdit.address}\nCorretor: ${appointmentToEdit.corretor || 'Não especificado'}`,
-            location: appointmentToEdit.address,
-            
-            // Duração configurável (padrão 1 hora)
-            duration_minutes: 60,
-            
-            // Formatos para diferentes APIs
-            rfc3339_start: eventData.newDate.toISOString(),
-            rfc3339_end: new Date(eventData.newDate.getTime() + (60 * 60 * 1000)).toISOString(),
-            
-            // Formato para URL do Google Calendar
-            google_calendar_url: `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(`${appointmentToEdit.type} - ${appointmentToEdit.client}`)}&dates=${eventData.newDate.toISOString().replace(/[-:]/g, '').split('.')[0]}Z/${new Date(eventData.newDate.getTime() + (60 * 60 * 1000)).toISOString().replace(/[-:]/g, '').split('.')[0]}Z&details=${encodeURIComponent(`Imóvel: ${appointmentToEdit.property}\nEndereço: ${appointmentToEdit.address}\nCorretor: ${appointmentToEdit.corretor || 'Não especificado'}`)}&location=${encodeURIComponent(appointmentToEdit.address)}`
-          },
-          timestamp_alteracao: new Date().toISOString()
-        },
-        metadados: {
-          alterado_em: new Date().toISOString(),
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          user_agent: navigator.userAgent
-        }
+      // Novo contrato: enviar apenas { calendar_id, evento_id, update }
+      const newStartISO = eventData.newDate.toISOString();
+      const newEndISO = new Date(eventData.newDate.getTime() + (60 * 60 * 1000)).toISOString();
+
+      // Enviar TODOS os dados novos (mesmo se não alterados)
+      const summary = `${appointmentToEdit.type} - ${appointmentToEdit.client}`;
+      const description = `Imóvel: ${appointmentToEdit.property}\nEndereço: ${appointmentToEdit.address}\nCorretor: ${appointmentToEdit.corretor || 'Não especificado'}`;
+      const location = appointmentToEdit.address;
+      const tipoEvento = appointmentToEdit.type;
+      const horaEvento = eventData.newTime;
+
+      const update: any = {
+        summary,
+        description,
+        location,
+        start: { dateTime: newStartISO, timeZone: 'America/Sao_Paulo' },
+        end:   { dateTime: newEndISO,   timeZone: 'America/Sao_Paulo' },
+        tipo_evento: tipoEvento,
+        data_evento: newStartISO,
+        hora_evento: horaEvento
       };
+
+      const payload = {
+        calendar_id: (appointmentToEdit as any).calendarId || (selectedAgenda !== "Todos" ? selectedAgenda : undefined),
+        evento_id: String(eventData.id),
+        update
+      } as any;
 
       console.log("🔄 Editando evento:", payload);
 
@@ -632,6 +583,8 @@ export function AppointmentCalendar({
       
       // Mostrar sucesso
       showAlert('✅ Sucesso', 'Evento atualizado com sucesso!', 'success');
+      // Atualizar agenda após sucesso
+      if (onRefreshRequested) onRefreshRequested();
       
     } catch (error) {
       console.error('❌ Erro ao editar evento:', error);
@@ -1047,7 +1000,7 @@ export function AppointmentCalendar({
               <p className="text-gray-400 text-base mb-6">
                 {selectedAgenda === "Todos" ? 
                   "Nenhum corretor tem compromissos agendados para este dia" :
-                  `${selectedAgenda} não tem compromissos agendados para este dia`
+                  `${selectedAgendaName || 'Calendário'} não tem compromissos agendados para este dia`
                 }
               </p>
               <div className="max-w-sm mx-auto p-4 bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-xl border border-blue-500/20">

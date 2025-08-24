@@ -170,10 +170,11 @@ export function AddEventModal({
         setCorretorLoading(true);
         console.log('🔍 Buscando corretores com escalas definidas...');
         
-        // Primeiro, buscar IDs dos corretores que têm escalas
+        // Buscar escalas com dados essenciais (user e calendário)
+        // Inclui também escalas sem assigned_user_id (usaremos calendar_name como fallback)
         const { data: escalasData, error: escalasError } = await supabase
           .from('oncall_schedules')
-          .select('assigned_user_id');
+          .select('assigned_user_id, calendar_id, calendar_name');
           
         if (escalasError) {
           console.error('❌ Erro ao buscar escalas:', escalasError);
@@ -181,7 +182,17 @@ export function AddEventModal({
           return;
         }
         
-        const corretoresComEscalaIds = escalasData?.map(e => e.assigned_user_id) || [];
+        const corretoresComEscalaIds = (escalasData?.map(e => e.assigned_user_id) || []).filter(Boolean);
+        // Map auxiliares
+        const idToCalendarInfo = new Map<string, { calendar_id?: string; calendar_name?: string }>();
+        const calendarsWithoutUser: { calendar_id: string; calendar_name: string }[] = [];
+        (escalasData || []).forEach((e: any) => {
+          if (e.assigned_user_id) {
+            idToCalendarInfo.set(e.assigned_user_id, { calendar_id: e.calendar_id, calendar_name: e.calendar_name });
+          } else if (e.calendar_id) {
+            calendarsWithoutUser.push({ calendar_id: e.calendar_id, calendar_name: e.calendar_name });
+          }
+        });
         console.log('📋 IDs de corretores com escalas:', corretoresComEscalaIds);
         
         if (corretoresComEscalaIds.length === 0) {
@@ -200,7 +211,6 @@ export function AddEventModal({
             role,
             company_id
           `)
-          .eq('role', 'corretor')
           .in('id', corretoresComEscalaIds);
         
         if (error) {
@@ -209,11 +219,34 @@ export function AddEventModal({
           return;
         }
         
-        const corretoresFormatados = (corretoresComEscalas || []).map((corretor: any) => ({
-          id: corretor.id,
-          full_name: corretor.full_name || corretor.email,
-          available: false // Será verificado quando data/hora forem selecionadas
-        }));
+        // Combinar perfis com fallback do nome do calendário caso perfil não exista
+        const formattedById = new Map<string, { id: string; full_name: string; available: boolean }>();
+        (corretoresComEscalas || []).forEach((c: any) => {
+          formattedById.set(c.id, { id: c.id, full_name: c.full_name || c.email, available: false });
+        });
+        // Adicionar faltantes com assigned_user_id usando o calendar_name
+        corretoresComEscalaIds.forEach((id) => {
+          if (!formattedById.has(id)) {
+            const calInfo = idToCalendarInfo.get(id) || {} as any;
+            formattedById.set(id, {
+              id,
+              full_name: (calInfo.calendar_name as string) || 'Corretor disponível',
+              available: false
+            });
+          }
+        });
+        // Adicionar escalas sem assigned_user_id usando id sintético baseado no calendar_id
+        calendarsWithoutUser.forEach(({ calendar_id, calendar_name }) => {
+          const syntheticId = `cal:${calendar_id}`;
+          if (!formattedById.has(syntheticId)) {
+            formattedById.set(syntheticId, {
+              id: syntheticId,
+              full_name: calendar_name || 'Agenda disponível',
+              available: false
+            });
+          }
+        });
+        const corretoresFormatados = Array.from(formattedById.values());
         
         console.log(`✅ Encontrados ${corretoresFormatados.length} corretores com escalas:`, 
           corretoresFormatados.map(c => c.full_name));
@@ -238,8 +271,10 @@ export function AddEventModal({
       try {
         setCorretorLoading(true);
         
+        // Revalida partindo do conjunto base (sem poluir o array reativo durante o map)
+        const base = [...corretoresDisponiveis];
         const corretoresComDisponibilidade = await Promise.all(
-          corretoresDisponiveis.map(async (corretor) => {
+          base.map(async (corretor) => {
             const disponivel = await verificarDisponibilidadeCorretor(
               corretor.id, 
               selectedDate, 
@@ -253,6 +288,11 @@ export function AddEventModal({
           })
         );
         
+        // Ordena deixando disponíveis primeiro e ordena alfabeticamente
+        corretoresComDisponibilidade.sort((a, b) => {
+          if (a.available !== b.available) return a.available ? -1 : 1;
+          return a.full_name.localeCompare(b.full_name);
+        });
         setCorretoresDisponiveis(corretoresComDisponibilidade);
       } catch (err) {
         console.error('Erro ao verificar disponibilidade:', err);
@@ -265,7 +305,7 @@ export function AddEventModal({
     // Debounce para evitar muitas chamadas
     const timeoutId = setTimeout(checkAvailability, 1000);
     return () => clearTimeout(timeoutId);
-  }, [selectedDate, time, isOpen]);
+  }, [selectedDate, time, isOpen, corretoresDisponiveis]);
 
   // Cache para escalas (evitar consultas repetidas)
   const escalasCache = useRef<{ [key: string]: any[] }>({});
@@ -294,7 +334,8 @@ export function AddEventModal({
         const { data: escalaData, error } = await supabase
           .from('oncall_schedules')
           .select('*')
-          .eq('assigned_user_id', corretorId);
+          .eq('assigned_user_id', corretorId)
+          .order('updated_at', { ascending: false, nullsFirst: false });
         
         if (error) {
           console.log('❌ Erro ao verificar escalas:', error);
@@ -317,21 +358,32 @@ export function AddEventModal({
       
       // Verificar disponibilidade
       const diaSemana = data.getDay(); // 0=domingo, 1=segunda, etc
-      const horaInt = parseInt(horario.split(':')[0]);
+      const [hStr, mStr] = horario.split(':');
+      const minutosSelecionados = parseInt(hStr) * 60 + parseInt(mStr || '0');
       
       const temEscalaDisponivel = escalas.some(escala => {
         const diaColunas = ['sun_works', 'mon_works', 'tue_works', 'wed_works', 'thu_works', 'fri_works', 'sat_works'];
         const diaStartColunas = ['sun_start', 'mon_start', 'tue_start', 'wed_start', 'thu_start', 'fri_start', 'sat_start'];
         const diaEndColunas = ['sun_end', 'mon_end', 'tue_end', 'wed_end', 'thu_end', 'fri_end', 'sat_end'];
         
-        const trabalhaNodia = (escala as any)[diaColunas[diaSemana]];
+        // Normalizar boolean vindo do banco (pode ser 't'/'f', 'TRUE', 1, etc.)
+        const rawWorks = (escala as any)[diaColunas[diaSemana]];
+        const worksStr = String(rawWorks).toLowerCase();
+        const trabalhaNodia = rawWorks === true || rawWorks === 1 || worksStr === 't' || worksStr === 'true' || worksStr === '1' || worksStr === 'yes';
         
         if (!trabalhaNodia) return false;
         
-        const horaInicio = parseInt(((escala as any)[diaStartColunas[diaSemana]] || '0:00').split(':')[0]);
-        const horaFim = parseInt(((escala as any)[diaEndColunas[diaSemana]] || '23:59').split(':')[0]);
-        
-        return horaInt >= horaInicio && horaInt <= horaFim;
+        const rawIni = (escala as any)[diaStartColunas[diaSemana]];
+        const rawFim = (escala as any)[diaEndColunas[diaSemana]];
+        const iniStr = rawIni ? String(rawIni).slice(0,5) : '00:00';
+        const fimStr = rawFim ? String(rawFim).slice(0,5) : '23:59';
+        const [hIni, mIni] = iniStr.split(':');
+        const [hFim, mFim] = fimStr.split(':');
+        const minutosInicio = parseInt(hIni) * 60 + parseInt(mIni || '0');
+        const minutosFim = parseInt(hFim) * 60 + parseInt(mFim || '0');
+
+        // Dentro do intervalo inclusivo de trabalho
+        return minutosSelecionados >= minutosInicio && minutosSelecionados <= minutosFim;
       });
       
       console.log(`🎯 Resultado para corretor ${corretorId}: ${temEscalaDisponivel ? 'DISPONÍVEL' : 'INDISPONÍVEL'}`);

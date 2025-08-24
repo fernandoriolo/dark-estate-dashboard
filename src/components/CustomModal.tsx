@@ -1,12 +1,12 @@
 import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { CheckCircle, AlertTriangle, X } from "lucide-react";
+import { CheckCircle, AlertTriangle, X, User, Clock, MapPin } from "lucide-react";
 
 interface CustomModalProps {
   isOpen: boolean;
   onClose: () => void;
-  type: 'success' | 'warning' | 'error';
+  type: 'success' | 'warning' | 'error' | 'confirm';
   title: string;
   message: string;
   onConfirm?: () => void;
@@ -34,6 +34,8 @@ export const CustomModal: React.FC<CustomModalProps> = ({
         return <AlertTriangle className="h-12 w-12 text-yellow-400 mx-auto mb-4" />;
       case 'error':
         return <X className="h-12 w-12 text-red-400 mx-auto mb-4" />;
+      case 'confirm':
+        return <AlertTriangle className="h-12 w-12 text-red-400 mx-auto mb-4 animate-pulse" />;
       default:
         return null;
     }
@@ -56,6 +58,11 @@ export const CustomModal: React.FC<CustomModalProps> = ({
           bg: 'bg-red-600/20 border-red-500/30',
           button: 'bg-red-600 hover:bg-red-700'
         };
+      case 'confirm':
+        return {
+          bg: 'bg-red-600/15 border-red-500/30',
+          button: 'bg-red-600 hover:bg-red-700'
+        };
       default:
         return {
           bg: 'bg-gray-600/20 border-gray-500/30',
@@ -66,40 +73,78 @@ export const CustomModal: React.FC<CustomModalProps> = ({
 
   const colors = getColorClasses();
 
+  const lines = (message || '').split('\n').map(l => l.trim()).filter(Boolean);
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="bg-gray-800 border-gray-700 text-white max-w-md">
-        <DialogHeader>
+      <DialogContent className="max-w-md bg-gradient-to-br from-gray-950 to-gray-900 border border-gray-800/80 text-white rounded-2xl shadow-2xl">
+        <DialogHeader className="pb-2 border-b border-gray-700/60">
           <div className="text-center">
             {getIcon()}
-            <DialogTitle className="text-xl font-bold text-white mb-2">
+            <DialogTitle className="text-2xl font-extrabold text-white mb-1 tracking-wide">
               {title}
             </DialogTitle>
             <DialogDescription className="text-gray-300 text-base">
-              {message}
+              {type === 'confirm' ? (
+                <span>Esta ação é irreversível. Revise os detalhes antes de confirmar.</span>
+              ) : (
+                message
+              )}
             </DialogDescription>
           </div>
         </DialogHeader>
-        
-        <div className="flex gap-3 mt-6">
-          {showCancel && (
+
+        <div className="mt-6 space-y-4">
+          {/* Card de detalhes com hierarquia forte */}
+          <div className={`relative p-4 rounded-2xl border ${colors.bg} shadow-inner`}> 
+            {type === 'confirm' && (
+              <div className="absolute -inset-px rounded-2xl border border-red-500/20 pointer-events-none"></div>
+            )}
+            <div className="space-y-2">
+              {lines.length > 0 ? (
+                lines.map((line, idx) => {
+                  let Icon = User as any;
+                  if (/im[oó]vel/i.test(line)) Icon = MapPin;
+                  if (/data/i.test(line)) Icon = Clock;
+                  return (
+                    <div key={idx} className="flex items-start gap-2 text-sm">
+                      <Icon className="h-4 w-4 mt-0.5 text-gray-400" />
+                      <span className="text-gray-200">{line}</span>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="text-gray-400 text-sm">Sem detalhes adicionais.</div>
+              )}
+            </div>
+            {type === 'confirm' && (
+              <div className="mt-3 text-xs text-red-300/90 flex items-center gap-2">
+                <AlertTriangle className="h-3.5 w-3.5 animate-pulse" />
+                <span>Ao confirmar, o evento será removido do Google Calendar e do sistema.</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-3">
+            {showCancel && (
+              <Button
+                variant="outline"
+                onClick={onClose}
+                className="flex-1 border-gray-700 text-gray-300 hover:bg-gray-800 hover:text-white transition-all"
+              >
+                {cancelText}
+              </Button>
+            )}
             <Button
-              variant="outline"
-              onClick={onClose}
-              className="flex-1 border-gray-600 text-gray-300 hover:bg-gray-700"
+              onClick={() => {
+                if (onConfirm) onConfirm();
+                onClose();
+              }}
+              className={`flex-1 ${colors.button} shadow-md hover:shadow-lg transition-transform hover:scale-[1.02]`}
             >
-              {cancelText}
+              {confirmText}
             </Button>
-          )}
-          <Button
-            onClick={() => {
-              if (onConfirm) onConfirm();
-              onClose();
-            }}
-            className={`flex-1 ${colors.button}`}
-          >
-            {confirmText}
-          </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
