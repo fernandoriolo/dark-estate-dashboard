@@ -1,4 +1,4 @@
-import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare } from "lucide-react";
+import { Building2, Home, BarChart3, Settings, Users, TrendingUp, FileText, Calendar, Wifi, ChevronDown, ChevronRight, LogOut, UserCheck, Database, ShieldCheck, Bot, Send, MessageSquare, RefreshCw } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
@@ -151,7 +151,7 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const { profile, isAdmin } = useUserProfile();
-  const { hasPermission } = usePermissions();
+  const { hasPermission, forceRefreshPermissions } = usePermissions();
   const { settings } = useCompanySettings();
   const { 
     isPreviewMode,
@@ -491,16 +491,34 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
               </div>
             </div>
           </div>
-          <Button 
-            onClick={async () => {
-              await supabase.auth.signOut();
-            }}
-            variant="outline"
-            className="w-full border-gray-700 text-red-400 hover:text-red-300 hover:bg-gray-800"
-          >
-            <LogOut className="mr-2 h-4 w-4" />
-            Sair
-          </Button>
+          <div className="space-y-2">
+            <Button 
+              onClick={async () => {
+                if (forceRefreshPermissions) {
+                  await forceRefreshPermissions();
+                  console.log('🔄 Permissões atualizadas pelo usuário');
+                }
+              }}
+              variant="ghost"
+              size="sm"
+              className="w-full text-xs text-gray-500 hover:text-gray-400 hover:bg-gray-800/50"
+              title="Forçar atualização das permissões"
+            >
+              <RefreshCw className="mr-1 h-3 w-3" />
+              Atualizar Permissões
+            </Button>
+            
+            <Button 
+              onClick={async () => {
+                await supabase.auth.signOut();
+              }}
+              variant="outline"
+              className="w-full border-gray-700 text-red-400 hover:text-red-300 hover:bg-gray-800"
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              Sair
+            </Button>
+          </div>
         </div>
       </SidebarFooter>
     </Sidebar>

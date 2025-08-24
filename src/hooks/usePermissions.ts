@@ -159,25 +159,72 @@ export function usePermissions() {
     }
   }, [profile, loadPermissions]);
 
-  // Subscription para mudanças em tempo real (apenas para gerenciadores de permissões)
+  // Subscription para mudanças em tempo real (todos os usuários precisam receber updates)
   useEffect(() => {
-    if (!profile || !canAccessPermissionsModule(profile.role)) return;
+    if (!profile) return;
 
     const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const subscription = supabase
-      .channel(`permissions_changes-${profile.role}-${uniqueSuffix}`)
+    
+    // Subscription principal para mudanças no role específico do usuário
+    const userRoleSubscription = supabase
+      .channel(`permissions_user_role-${profile.role}-${uniqueSuffix}`)
       .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'role_permissions' },
-        () => {
-          loadPermissions(); // Recarregar quando houver mudanças
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'role_permissions',
+          filter: `role=eq.${profile.role}` // Filtrar apenas mudanças relevantes para o role do usuário
+        },
+        (payload) => {
+          console.log(`🔐 REALTIME USER: Permissão alterada para role ${profile.role}:`, payload);
+          loadPermissions(); // Recarregar quando houver mudanças relevantes
         }
       )
       .subscribe();
 
+    console.log(`🔐 REALTIME: Subscription ativa para role ${profile.role}`);
+
+    // Subscription adicional para gestores/admins que podem ver mudanças em outros roles
+    let managerSubscription: any = null;
+    if (canAccessPermissionsModule(profile.role)) {
+      const managedRoles = getManagedRoles(profile.role);
+      if (managedRoles.length > 0) {
+        managerSubscription = supabase
+          .channel(`permissions_managed_roles-${profile.role}-${uniqueSuffix}`)
+          .on('postgres_changes', 
+            { 
+              event: '*', 
+              schema: 'public', 
+              table: 'role_permissions'
+              // Sem filtro específico para que gestores vejam mudanças em todos os roles que gerenciam
+            },
+            (payload) => {
+              console.log(`🔐 REALTIME MANAGER: Permissão alterada (gestão):`, payload);
+              loadPermissions(); // Recarregar para atualizar visão de gestão
+            }
+          )
+          .subscribe();
+        
+        console.log(`🔐 REALTIME: Subscription de gestão ativa para roles: ${managedRoles.join(', ')}`);
+      }
+    }
+
     return () => {
-      subscription.unsubscribe();
+      console.log(`🔐 REALTIME: Removendo subscriptions para role ${profile.role}`);
+      userRoleSubscription.unsubscribe();
+      if (managerSubscription) {
+        managerSubscription.unsubscribe();
+      }
     };
   }, [profile, loadPermissions]);
+
+  // Função para forçar refresh completo das permissões (útil após mudanças no sistema)
+  const forceRefreshPermissions = useCallback(async () => {
+    console.log('🔄 FORCE REFRESH: Forçando recarregamento completo das permissões...');
+    setLoading(true);
+    setError(null);
+    await loadPermissions();
+  }, [loadPermissions]);
 
   return {
     permissions,
@@ -188,6 +235,7 @@ export function usePermissions() {
     updatePermission,
     getPermissionsByRole,
     getPermissionsByCategory,
-    refreshPermissions: loadPermissions
+    refreshPermissions: loadPermissions,
+    forceRefreshPermissions
   };
 }
