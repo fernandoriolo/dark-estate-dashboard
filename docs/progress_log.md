@@ -13,6 +13,22 @@
 - Criada tabela `oncall_schedules` com RLS e índices para armazenar escala por calendário (segunda a domingo).
 - Atualizado `docs/schema-db-imobipro.md` com a nova tabela e políticas.
 
+## 2025-01-14
+
+**CORREÇÃO CRÍTICA: Erro no menu Plantão - Aba Escala do Plantão**
+
+- **Problema identificado**: Erro ao clicar em "Configurar" na aba "Escala do Plantão" após selecionar uma agenda.
+- **Causa raiz**: A tabela `oncall_schedules` não existia no banco de dados, apesar das migrations terem sido criadas.
+- **Solução aplicada**:
+  1. Aplicada migration `create_oncall_schedules_fixed` para criar a tabela `oncall_schedules` com todas as colunas necessárias
+  2. Aplicada migration `add_oncall_schedules_policies` para configurar as políticas RLS adequadas
+  3. Aplicada migration `add_assigned_user_to_oncall_schedules` para adicionar a coluna `assigned_user_id`
+- **Estrutura da tabela criada**:
+  - Campos para cada dia da semana (mon/tue/wed/thu/fri/sat/sun) com `_works` (boolean), `_start` e `_end` (time)
+  - Campos de controle: `user_id`, `company_id`, `calendar_id`, `calendar_name`, `assigned_user_id`
+  - RLS habilitado com políticas para SELECT e modificação baseadas em hierarquia de usuários
+- **Funcionalidade restaurada**: Agora é possível configurar agendas e vincular corretores sem erros.
+
 Próximos passos:
 - Enriquecer `InquilinatoView` com conteúdo e referências oficiais (busca, filtros, links).
 - Ajustar catálogo de eventos caso haja automações relacionadas (n/a por ora).
