@@ -34,6 +34,9 @@ export default defineConfig(({ mode }) => ({
   optimizeDeps: {
     include: ['react-pdf'],
   },
+  esbuild: {
+    drop: mode === 'production' ? ['console', 'debugger'] : [],
+  },
   build: {
     rollupOptions: {
       external: [],
