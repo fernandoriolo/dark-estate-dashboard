@@ -34,6 +34,23 @@ Próximos passos:
 - Ajustar catálogo de eventos caso haja automações relacionadas (n/a por ora).
 # ImobiPRO Dashboard — progress_log.md
 
+## 2025-01-17
+
+**CONFIGURAÇÃO DE USUÁRIO ADMIN**
+
+- **Problema**: Usuário criado na Authentication do Supabase (1992tiagofranca@gmail.com) precisa ser configurado na tabela `user_profiles` com role 'admin'.
+- **Soluções implementadas**:
+  1. **Migration SQL**: Criada `supabase/migrations/20250117000000_add_admin_user.sql` para adicionar o usuário admin automaticamente
+  2. **Script manual**: Criado `scripts/add_admin_user.sql` para execução direta no SQL Editor do Supabase Dashboard
+  3. **Edge Function**: Atualizada `supabase/functions/admin-create-user/index.ts` para permitir criação programática de usuários
+  4. **Script de teste**: Criado `scripts/test_admin_user.http` para testar a funcionalidade via HTTP
+- **Estrutura do usuário admin**:
+  - `user_id`: UUID do usuário na auth.users
+  - `email`: 1992tiagofranca@gmail.com
+  - `role`: 'admin'
+  - `company_id`: NULL (admin não tem empresa específica)
+- **Próximos passos**: Executar o script SQL no Supabase Dashboard ou aplicar a migration via CLI
+
 ## Banco de Dados (Supabase) — Inventário e Relações
 
 Este documento descreve o esquema atual do banco de dados no projeto Supabase "imobipro" (região us-east-2), incluindo tabelas, colunas-chave, relacionamentos (PK/FK), índices relevantes, políticas RLS e a hierarquia de acessos aplicada pelas políticas. Mantido como único artefato de rastreio.

@@ -10,9 +10,35 @@ import { formatCurrencyCompact, monthLabel } from '@/lib/charts/formatters';
 import { chartPalette, pieChartColors } from '@/lib/charts/palette';
 import { gridStyle, tooltipSlotProps, vgvTooltipSlotProps, currencyValueFormatter, numberValueFormatter } from '@/lib/charts/config';
 import { supabase } from '@/integrations/supabase/client';
-import { fetchDistribuicaoPorTipo, fetchFunilLeads, fetchHeatmapConversas, fetchCorretoresComConversas, fetchHeatmapConversasPorCorretor, fetchLeadsPorCanalTop8, fetchLeadsPorCorretor, fetchLeadsCorretorEstagio, fetchLeadsPorTempo, fetchLeadsSemCorretor, fetchTaxaOcupacao, fetchImoveisMaisProcurados, fetchVgvByPeriod, VgvPeriod, TimeRange } from '@/services/metrics';
+import { 
+  fetchDistribuicaoPorTipo, 
+  fetchFunilLeads, 
+  fetchHeatmapConversas, 
+  fetchCorretoresComConversas, 
+  fetchHeatmapConversasPorCorretor, 
+  fetchLeadsPorCanalTop8, 
+  fetchLeadsPorCorretor, 
+  fetchLeadsCorretorEstagio, 
+  fetchLeadsPorTempo, 
+  fetchLeadsSemCorretor, 
+  fetchTaxaOcupacao, 
+  fetchImoveisMaisProcurados, 
+  fetchVgvByPeriod,
+  generateTemporalFallback,
+  type VgvPeriod, 
+  type TimeRange 
+} from '@/services/dashboardAdapter';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { 
+  ChartEmpty, 
+  ChartError, 
+  ChartSkeleton,
+  ChartEmptyVariants,
+  ChartErrorVariants,
+  ChartSkeletonVariants
+} from '@/components/chart';
+import { useRealtimeDashboard } from '@/hooks/useRealtimeMetrics';
 
 export const DashboardCharts: React.FC = () => {
 	const [vgv, setVgv] = React.useState<{ month: string; vgv: number; qtd: number }[]>([]);
@@ -53,6 +79,83 @@ export const DashboardCharts: React.FC = () => {
 	// Estados para hover card de propriedade
 	const [hoveredProperty, setHoveredProperty] = React.useState<any>(null);
 	const [hoverPosition, setHoverPosition] = React.useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+	// Estados de loading e error
+	const [isLoading, setIsLoading] = React.useState(false);
+	const [errors, setErrors] = React.useState<Record<string, Error | null>>({});
+
+	// Função para buscar dados do heatmap com filtro de corretor
+	const refetchHeatmapData = React.useCallback(() => {
+		fetchHeatmapConversasPorCorretor(selectedBrokerForHeat || undefined)
+			.then(setHeat)
+			.catch(() => setHeat([]));
+	}, [selectedBrokerForHeat]);
+
+	// Função centralizada para recarregar todos os dados
+	const refetchAllData = React.useCallback(async () => {
+		setIsLoading(true);
+		setErrors({});
+
+		try {
+			const fetchTasks = [
+				{ key: 'vgv', task: () => fetchVgvByPeriod(vgvPeriod).then(setVgv) },
+				{ key: 'canal', task: () => fetchLeadsPorCanalTop8().then(setCanal) },
+				{ key: 'tipos', task: () => fetchDistribuicaoPorTipo().then(setTipos) },
+				{ key: 'funil', task: () => fetchFunilLeads().then(setFunil) },
+				{ key: 'brokers', task: () => fetchLeadsPorCorretor().then(setBrokers) },
+				{ key: 'brokersStages', task: () => fetchLeadsCorretorEstagio().then(setBrokersStages) },
+				{ key: 'unassigned', task: () => fetchLeadsSemCorretor().then(setUnassignedLeads) },
+				{ key: 'gauge', task: () => fetchTaxaOcupacao().then(setGauge) },
+				{ key: 'imoveis', task: () => fetchImoveisMaisProcurados().then(setImoveisProcurados) },
+				{ key: 'availableBrokers', task: () => fetchCorretoresComConversas().then(setAvailableBrokers) }
+			];
+
+			const results = await Promise.allSettled(
+				fetchTasks.map(({ task }) => task())
+			);
+
+			// Capturar erros específicos
+			const newErrors: Record<string, Error | null> = {};
+			results.forEach((result, index) => {
+				if (result.status === 'rejected') {
+					const { key } = fetchTasks[index];
+					newErrors[key] = result.reason instanceof Error ? result.reason : new Error(String(result.reason));
+					
+					// Definir valores padrão em caso de erro
+					switch (key) {
+						case 'vgv': setVgv([]); break;
+						case 'canal': setCanal([]); break;
+						case 'tipos': setTipos([]); break;
+						case 'funil': setFunil([]); break;
+						case 'brokers': setBrokers([]); break;
+						case 'brokersStages': setBrokersStages(new Map()); break;
+						case 'unassigned': setUnassignedLeads(0); break;
+						case 'gauge': setGauge({ ocupacao: 0, total: 0, disponiveis: 0 } as any); break;
+						case 'imoveis': setImoveisProcurados([]); break;
+						case 'availableBrokers': setAvailableBrokers([]); break;
+					}
+				}
+			});
+
+			setErrors(newErrors);
+			
+			// Buscar dados do heatmap separadamente
+			try {
+				await refetchHeatmapData();
+			} catch (error) {
+				setErrors(prev => ({ ...prev, heatmap: error instanceof Error ? error : new Error(String(error)) }));
+			}
+
+		} catch (error) {
+			console.error('Erro geral ao carregar dados:', error);
+			setErrors({ general: error instanceof Error ? error : new Error('Erro desconhecido') });
+		} finally {
+			setIsLoading(false);
+		}
+	}, [vgvPeriod, refetchHeatmapData]);
+
+	// Hook de realtime para atualizações automáticas
+	const { isConnected: isRealtimeConnected, lastUpdate, updateCount } = useRealtimeDashboard(refetchAllData);
 
 	// Effect para atualizar VGV quando período muda
 	React.useEffect(() => {
@@ -106,46 +209,10 @@ export const DashboardCharts: React.FC = () => {
 		setHoveredProperty(null);
 	};
 
-	// Função para buscar dados do heatmap com filtro de corretor
-	const refetchHeatmapData = React.useCallback(() => {
-		fetchHeatmapConversasPorCorretor(selectedBrokerForHeat || undefined)
-			.then(setHeat)
-			.catch(() => setHeat([]));
-	}, [selectedBrokerForHeat]);
-
-	// Effect para atualizar heatmap quando filtro de corretor mudar
+	// Effect inicial para carregar dados
 	React.useEffect(() => {
-		refetchHeatmapData();
-	}, [refetchHeatmapData]);
-
-	React.useEffect(() => {
-		const refetchAll = () => {
-			Promise.all([
-				fetchVgvByPeriod(vgvPeriod).then(setVgv).catch(() => setVgv([])),
-				fetchLeadsPorCanalTop8().then(setCanal).catch(() => setCanal([])),
-				fetchDistribuicaoPorTipo().then(setTipos).catch(() => setTipos([])),
-				fetchFunilLeads().then(setFunil).catch(() => setFunil([])),
-				fetchLeadsPorCorretor().then(setBrokers).catch(() => setBrokers([])),
-				fetchLeadsCorretorEstagio().then(setBrokersStages).catch(() => setBrokersStages(new Map())),
-				fetchLeadsSemCorretor().then(setUnassignedLeads).catch(() => setUnassignedLeads(0)),
-				fetchTaxaOcupacao().then(setGauge).catch(() => setGauge({ ocupacao: 0, total: 0, disponiveis: 0 } as any)),
-				fetchImoveisMaisProcurados().then(setImoveisProcurados).catch(() => setImoveisProcurados([])),
-				// Buscar corretores disponíveis para filtro
-				fetchCorretoresComConversas().then(setAvailableBrokers).catch(() => setAvailableBrokers([])),
-			]);
-			// Buscar dados do heatmap separadamente para considerar filtro
-			refetchHeatmapData();
-		};
-		refetchAll();
-		const channel = supabase
-			.channel(`dashboard_charts_${Date.now()}`)
-			.on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, refetchAll)
-			.on('postgres_changes', { event: '*', schema: 'public', table: 'contracts' }, refetchAll)
-			.on('postgres_changes', { event: '*', schema: 'public', table: 'imoveisvivareal' }, refetchAll)
-			.on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_messages' }, refetchAll)
-			.subscribe();
-		return () => { supabase.removeChannel(channel); };
-	}, [vgvPeriod, refetchHeatmapData]);
+		refetchAllData();
+	}, [refetchAllData]);
 
 	const months = React.useMemo(() => vgv.map(v => {
 		if (vgvPeriod === 'diario' || vgvPeriod === 'semanal') return v.month;
@@ -155,18 +222,8 @@ export const DashboardCharts: React.FC = () => {
 	// Dados de fallback para o gráfico temporal se não houver dados
 	const tempoData = React.useMemo(() => {
 		if (leadsTempo.length > 0) return leadsTempo;
-		// Fallback com últimos 6 meses e dados zerados
-		const fallback = [];
-		for (let i = 5; i >= 0; i--) {
-			const date = new Date();
-			date.setMonth(date.getMonth() - i);
-			const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-			fallback.push({
-				month: monthLabel(key),
-				count: 0
-			});
-		}
-		return fallback;
+		// Usar helper function para gerar fallback
+		return generateTemporalFallback(6);
 	}, [leadsTempo]);
 
 	// Processar dados dos corretores para gráfico de barras
@@ -299,6 +356,43 @@ export const DashboardCharts: React.FC = () => {
 		}
 	}, [vgv, vgvChartType]);
 
+	// Helper para renderizar gráfico com estados de loading/error/empty
+	const renderChartWithStates = (
+		chartKey: string,
+		data: any[],
+		renderChart: () => React.ReactNode,
+		emptyVariant: (height?: number) => React.ReactNode,
+		height: number = 320
+	) => {
+		// Loading
+		if (isLoading) {
+			return ChartSkeletonVariants[chartKey as keyof typeof ChartSkeletonVariants]?.(height) || 
+				   <ChartSkeleton height={height} />;
+		}
+		
+		// Error
+		if (errors[chartKey]) {
+			return (
+				<ChartError 
+					height={height}
+					error={errors[chartKey]}
+					onRetry={() => {
+						// Implementar retry específico aqui se necessário
+						window.location.reload();
+					}}
+				/>
+			);
+		}
+		
+		// Empty
+		if (!data || data.length === 0) {
+			return emptyVariant(height);
+		}
+		
+		// Render normal
+		return renderChart();
+	};
+
 	const xAxisMonths = React.useMemo(() => [{ scaleType: 'band' as const, data: months, position: 'bottom' as const, valueFormatter: (v: string) => v }], [months]);
 	const yAxisCurrency = React.useMemo(() => [{ 
 		scaleType: 'linear' as const, 
@@ -343,11 +437,28 @@ export const DashboardCharts: React.FC = () => {
 	}, [heat]);
 
 	return (
-		<div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+		<div className="grid grid-cols-1 xl:grid-cols-12 gap-6 p-6">  {/* Adicionar padding consistente */}
 			<Card className="bg-gray-800/50 border-gray-700/50 xl:col-span-8">
 				<CardHeader>
 					<div className="flex items-center justify-between">
-						<CardTitle className="text-white">VGV e Imóveis</CardTitle>
+						<div className="flex items-center gap-3">
+							<CardTitle className="text-white text-lg font-semibold">VGV e Imóveis</CardTitle>
+							{/* Indicador de status realtime */}
+							<div className="flex items-center gap-2">
+								<div 
+									className={`w-2 h-2 rounded-full ${isRealtimeConnected ? 'bg-green-400' : 'bg-red-400'} animate-pulse`}
+									title={isRealtimeConnected ? 'Conectado - atualizações em tempo real' : 'Desconectado'}
+								/>
+								<span className="text-xs text-gray-400">
+									{isRealtimeConnected ? 'Tempo real' : 'Offline'}
+								</span>
+								{updateCount > 0 && (
+									<span className="text-xs text-green-400">
+										{updateCount} atualizações
+									</span>
+								)}
+							</div>
+						</div>
 						<div className="flex items-center gap-2">
 							{/* Filtro de período */}
 							<ToggleGroup 
@@ -380,7 +491,11 @@ export const DashboardCharts: React.FC = () => {
 				</CardHeader>
 				<CardContent>
 					<div className="h-80 flex justify-center items-center" style={{ overflow: 'visible' }}>
-						<ChartContainer
+						{renderChartWithStates(
+							'vgv',
+							vgv,
+							() => (
+								<ChartContainer
 							xAxis={xAxisMonths}
 							yAxis={[{ 
 								...yAxisCurrency[0],
@@ -419,6 +534,10 @@ export const DashboardCharts: React.FC = () => {
 							<ChartsLegend direction="horizontal" />
 							<ChartsTooltip />
 						</ChartContainer>
+							),
+							() => ChartEmptyVariants.vgv(320),
+							320
+						)}
 					</div>
 				</CardContent>
 			</Card>
@@ -450,7 +569,11 @@ export const DashboardCharts: React.FC = () => {
 				<CardContent>
 					<div className="h-72 relative">
 						{showAvailabilityChart ? (
-							<PieChart
+							renderChartWithStates(
+								'gauge',
+								gauge?.breakdown || [],
+								() => (
+									<PieChart
 								series={[{ 
 									data: (gauge?.breakdown || []).map((item, i) => ({ 
 										id: item.status, 
@@ -458,14 +581,22 @@ export const DashboardCharts: React.FC = () => {
 										value: item.total,
 										color: pieChartColors[i % pieChartColors.length]  // Usar paleta diferenciada
 									})),
-									innerRadius: 60,
-									outerRadius: 100,
-									paddingAngle: 3,  // Aumentar espaçamento entre fatias
-									cornerRadius: 8   // Bordas mais arredondadas
+									innerRadius: 65,    // Ajustado conforme diretrizes
+									outerRadius: 110,   // Ajustado conforme diretrizes
+									paddingAngle: 3,    // Mantido conforme especificado
+									cornerRadius: 10    // Bordas mais suaves
 								}]}
 								margin={{ top: 40, bottom: 40, left: 80, right: 80 }}  // Margem para acomodar legenda
 							/>
+								),
+								() => ChartEmptyVariants.occupancy(288),
+								288
+							)
 						) : (
+							renderChartWithStates(
+								'imoveis',
+								imoveisProcurados,
+								() => (
 							<div className="flex flex-col h-full">
 								{/* Gráfico de barras horizontais */}
 								<div className="flex-1">
@@ -536,6 +667,10 @@ export const DashboardCharts: React.FC = () => {
 									})}
 								</div>
 							</div>
+								),
+								() => ChartEmptyVariants.searchedProperties(288),
+								288
+							)
 						)}
 						
 						{/* Hover card com informações do imóvel */}
@@ -603,7 +738,7 @@ export const DashboardCharts: React.FC = () => {
 
 			<Card className="bg-gray-800/50 border-gray-700/50 xl:col-span-8">
 				<CardHeader>
-					<CardTitle className="text-white font-semibold">Entrada de Leads</CardTitle>
+					<CardTitle className="text-white text-lg font-semibold">Entrada de Leads</CardTitle>
 				</CardHeader>
 				<CardContent>
 					<div className="grid grid-cols-2 gap-8 h-72">
@@ -611,7 +746,11 @@ export const DashboardCharts: React.FC = () => {
 						<div className="flex flex-col">
 							<h4 className="text-base font-semibold text-gray-300 mb-4 text-center">Por Canal</h4>
 							<div className="flex-1 flex items-center justify-center" style={{ overflow: 'visible' }}>
-								<ChartContainer
+								{renderChartWithStates(
+									'canal',
+									canal,
+									() => (
+										<ChartContainer
 									xAxis={[{ 
 										scaleType: 'linear', 
 										position: 'bottom', 
@@ -644,7 +783,7 @@ export const DashboardCharts: React.FC = () => {
 									})}
 									height={240}
 									margin={{
-										left: 120,
+										left: 120,  // Mantido conforme diretrizes
 										right: 40,
 										top: 20,
 										bottom: 30
@@ -654,6 +793,10 @@ export const DashboardCharts: React.FC = () => {
 									<ChartsAxis />
 									<ChartsTooltip />
 								</ChartContainer>
+									),
+									() => ChartEmptyVariants.leads(240),
+									240
+								)}
 							</div>
 						</div>
 
@@ -676,7 +819,11 @@ export const DashboardCharts: React.FC = () => {
 								</div>
 							</div>
 							<div className="flex-1 flex items-center justify-center" style={{ overflow: 'visible' }}>
-								<ChartContainer
+								{renderChartWithStates(
+									'leadsTempo',
+									tempoData,
+									() => (
+										<ChartContainer
 									xAxis={[{ 
 										scaleType: 'band', 
 										position: 'bottom', 
@@ -725,6 +872,10 @@ export const DashboardCharts: React.FC = () => {
 									<ChartsAxis />
 									<ChartsTooltip />
 								</ChartContainer>
+									),
+									() => ChartEmptyVariants.temporal(240),
+									240
+								)}
 							</div>
 						</div>
 					</div>
@@ -733,11 +884,15 @@ export const DashboardCharts: React.FC = () => {
 
 			<Card className="bg-gray-800/50 border-gray-700/50 xl:col-span-4">
 				<CardHeader>
-					<CardTitle className="text-white font-semibold">Distribuição por tipo</CardTitle>
+					<CardTitle className="text-white text-lg font-semibold">Distribuição por tipo</CardTitle>
 				</CardHeader>
 				<CardContent>
 					<div className="h-72">
-						<PieChart
+						{renderChartWithStates(
+							'tipos',
+							tipos,
+							() => (
+								<PieChart
 							series={[{ 
 								data: tipos.map((t, i) => ({ 
 									id: t.name, 
@@ -745,33 +900,35 @@ export const DashboardCharts: React.FC = () => {
 									value: t.value,
 									color: pieChartColors[i % pieChartColors.length]  // Usar paleta diferenciada
 								})),
-								innerRadius: 60,
-								outerRadius: 100,
-								paddingAngle: 3,  // Aumentar espaçamento entre fatias
-								cornerRadius: 8   // Bordas mais arredondadas
+								innerRadius: 65,    // Ajustado conforme diretrizes
+								outerRadius: 110,   // Ajustado conforme diretrizes
+								paddingAngle: 3,     // Mantido conforme especificado
+								cornerRadius: 10     // Bordas mais suaves
 							}]}
 							margin={{ top: 40, bottom: 40, left: 80, right: 80 }}  // Margem para acomodar legenda
 						/>
+							),
+							() => ChartEmptyVariants.properties(288),
+							288
+						)}
 					</div>
 				</CardContent>
 			</Card>
 
 			<Card className="bg-gray-800/50 border-gray-700/50 xl:col-span-6">
 				<CardHeader>
-					<CardTitle className="text-white font-semibold">Funis e Corretores</CardTitle>
+					<CardTitle className="text-white text-lg font-semibold">Funis e Corretores</CardTitle>
 				</CardHeader>
 				<CardContent>
 					<div className="h-[48rem] flex flex-col">
 						{/* Gráfico de curvas vertical do funil */}
 						<div className="h-80 mb-8">
 							<h4 className="text-lg font-semibold text-gray-300 mb-4">Funil de Estágios</h4>
-							{/* Debug: mostrar dados do funil */}
-							{process.env.NODE_ENV === 'development' && (
-								<div className="text-xs text-gray-500 mb-2">
-									Debug: {funil.map(f => f.name).join(', ')}
-								</div>
-							)}
-						<ChartContainer
+							{renderChartWithStates(
+								'funil',
+								funil,
+								() => (
+									<ChartContainer
 							xAxis={[{
 								scaleType: 'band',
 								position: 'bottom',
@@ -782,9 +939,7 @@ export const DashboardCharts: React.FC = () => {
 									fontWeight: 600,
 									fontFamily: 'Inter, system-ui, sans-serif',
 									textAnchor: 'middle'
-								},
-								tickLabelInterval: 0,
-								tickRotation: -45
+								}
 							}]}
 							yAxis={[{ 
 								scaleType: 'linear', 
@@ -814,11 +969,12 @@ export const DashboardCharts: React.FC = () => {
 									bottom: 100
 								}}
 							>
-								{/* Gradiente para área do funil */}
+								{/* Gradiente suavizado para área do funil */}
 							<defs>
 									<linearGradient id="funil-area-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-										<stop offset="0%" stopColor={chartPalette.accent} stopOpacity={0.6} />
-										<stop offset="100%" stopColor={chartPalette.accent} stopOpacity={0.1} />
+										<stop offset="0%" stopColor={chartPalette.accent} stopOpacity={0.8} />
+										<stop offset="50%" stopColor={chartPalette.accent} stopOpacity={0.4} />
+										<stop offset="100%" stopColor={chartPalette.accent} stopOpacity={0.05} />
 								</linearGradient>
 							</defs>
 							
@@ -828,7 +984,11 @@ export const DashboardCharts: React.FC = () => {
 							<ChartsAxis position="bottom" />
 							<ChartsAxis position="left" />
 								<ChartsTooltip />
-						</ChartContainer>
+									</ChartContainer>
+								),
+								() => ChartEmptyVariants.funnel(320),
+								320
+							)}
 						</div>
 						
 						{/* Gráfico de corretores por leads */}
@@ -885,53 +1045,55 @@ export const DashboardCharts: React.FC = () => {
 								
 								{/* Gráfico de barras verticais */}
 								<div className="flex-1">
-									{brokersChartData.length > 0 ? (
-										<ChartContainer
-											xAxis={[{ 
-												scaleType: 'band', 
-												position: 'bottom', 
-												data: brokersChartData.map(d => d.name),
-												tickLabelStyle: { 
-													fill: chartPalette.textPrimary, 
-													fontSize: '0.8rem', 
-													fontWeight: 500 
-												}
-											}]}
-											yAxis={[{ 
-												scaleType: 'linear', 
-												position: 'left',
-												label: 'Qtd. Leads',
-												valueFormatter: numberValueFormatter,
-												tickLabelStyle: { 
-													fill: chartPalette.textSecondary, 
-													fontSize: '0.8rem' 
-												},
-												min: 0
-											}]}
-											series={brokersChartData.map((item, index) => ({
-												type: 'bar' as const,
-												id: `bar-${index}`,
-												data: brokersChartData.map((_, i) => i === index ? item.value : 0),
-												color: item.isUnassigned ? '#ef4444' : chartPalette.secondary,
-												label: item.tooltip // Usar tooltip como label da série
-											}))}
-											height={showBrokerSelection ? 280 : 320}
-											margin={{
-												left: 60,
-												right: 30,
-												top: 30,
-												bottom: 60
-											}}
-										>
-											<ChartsGrid horizontal style={gridStyle} />
-											<BarPlot />
-											<ChartsAxis />
-											<ChartsTooltip />
-										</ChartContainer>
-									) : (
-										<div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
-											Nenhum dado de corretor disponível
-										</div>
+									{renderChartWithStates(
+										'brokers',
+										brokersChartData,
+										() => (
+											<ChartContainer
+												xAxis={[{ 
+													scaleType: 'band', 
+													position: 'bottom', 
+													data: brokersChartData.map(d => d.name),
+													tickLabelStyle: { 
+														fill: chartPalette.textPrimary, 
+														fontSize: '0.8rem', 
+														fontWeight: 500 
+													}
+												}]}
+												yAxis={[{ 
+													scaleType: 'linear', 
+													position: 'left',
+													label: 'Qtd. Leads',
+													valueFormatter: numberValueFormatter,
+													tickLabelStyle: { 
+														fill: chartPalette.textSecondary, 
+														fontSize: '0.8rem' 
+													},
+													min: 0
+												}]}
+												series={brokersChartData.map((item, index) => ({
+													type: 'bar' as const,
+													id: `bar-${index}`,
+													data: brokersChartData.map((_, i) => i === index ? item.value : 0),
+													color: item.isUnassigned ? '#ef4444' : chartPalette.secondary,
+													label: item.tooltip // Usar tooltip como label da série
+												}))}
+												height={showBrokerSelection ? 280 : 320}
+												margin={{
+													left: 60,
+													right: 30,
+													top: 30,
+													bottom: 60
+												}}
+											>
+												<ChartsGrid horizontal style={gridStyle} />
+												<BarPlot />
+												<ChartsAxis />
+												<ChartsTooltip />
+											</ChartContainer>
+										),
+										() => ChartEmptyVariants.brokers(showBrokerSelection ? 280 : 320),
+										showBrokerSelection ? 280 : 320
 									)}
 									
 									{/* Legenda explicativa */}

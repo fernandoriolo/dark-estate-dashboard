@@ -1,0 +1,33 @@
+### Teste para adicionar usuário admin
+### Execute este script no VS Code com a extensão REST Client
+
+### 1. Primeiro, faça login para obter o token
+POST https://zldxpndslomjccbilowh.supabase.co/auth/v1/token?grant_type=password
+Content-Type: application/json
+
+{
+  "email": "1992tiagofranca@gmail.com",
+  "password": "SUA_SENHA_AQUI"
+}
+
+### 2. Adicionar usuário admin via Edge Function
+POST https://zldxpndslomjccbilowh.supabase.co/functions/v1/admin-create-user
+Content-Type: application/json
+Authorization: Bearer SEU_ACCESS_TOKEN_AQUI
+
+{
+  "email": "1992tiagofranca@gmail.com",
+  "role": "admin",
+  "company_id": null
+}
+
+### 3. Verificar se o usuário foi criado (execute no SQL Editor do Supabase)
+# SELECT 
+#   up.id,
+#   up.user_id,
+#   up.email,
+#   up.role,
+#   up.company_id,
+#   up.created_at
+# FROM public.user_profiles up
+# WHERE up.email = '1992tiagofranca@gmail.com';
