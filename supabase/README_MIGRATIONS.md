@@ -103,12 +103,12 @@ SUPABASE_ANON_KEY=sua-anon-key-aqui
 ### Tabelas Principais
 - `companies` - Empresas/imobiliárias
 - `user_profiles` - Perfis de usuário  
-- `properties` - Propriedades/imóveis
+- `imoveisvivareal` - Propriedades/imóveis (tabela principal)
 - `leads` - Leads de clientes
 - `contracts` - Contratos
 - `contract_templates` - Templates de contrato
-- `whatsapp_*` - Sistema de WhatsApp
-- `oncall_events` - Sistema de plantão
+- `imobipro_messages` - Sistema de mensagens/WhatsApp
+- `oncall_schedules` - Sistema de plantão
 - `role_permissions` - Permissões por role
 
 ### Recursos Configurados
@@ -221,11 +221,16 @@ Se você aplicou o `seed.sql`, terá:
 
 ### Verificar Tabelas
 ```sql
--- Contar tabelas criadas
+-- Contar tabelas criadas (deve ser 16 tabelas principais)
 SELECT schemaname, tablename 
 FROM pg_tables 
 WHERE schemaname = 'public' 
 ORDER BY tablename;
+
+-- Verificar tabelas principais
+SELECT tablename FROM pg_tables 
+WHERE schemaname = 'public' 
+  AND tablename IN ('companies', 'user_profiles', 'imoveisvivareal', 'leads', 'contracts', 'contract_templates', 'imobipro_messages', 'oncall_schedules', 'role_permissions');
 ```
 
 ### Verificar RLS
@@ -319,6 +324,10 @@ supabase db reset
 
 ---
 
-**Versão:** 1.0.0  
+**Versão:** 1.0.1  
 **Data:** 2025-01-25  
 **Compatibilidade:** Supabase CLI 1.x+, PostgreSQL 15+
+
+**Nota:** Schema atualizado para remover tabelas não utilizadas:
+- Removidas: `properties`, `property_images`, `whatsapp_chats`, `whatsapp_messages`, `oncall_events`
+- Usando: `imoveisvivareal` para propriedades, `imobipro_messages` para WhatsApp

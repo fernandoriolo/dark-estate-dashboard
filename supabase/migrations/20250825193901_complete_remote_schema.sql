@@ -257,29 +257,7 @@ CREATE TABLE public.leads (
     company_id UUID DEFAULT 'd8387240-f150-4cf4-ae21-28e1f95f453c'::uuid
 );
 
--- Oncall events table
-CREATE TABLE public.oncall_events (
-    id TEXT NOT NULL DEFAULT (gen_random_uuid())::text,
-    title TEXT NOT NULL,
-    description TEXT,
-    starts_at TIMESTAMPTZ NOT NULL,
-    ends_at TIMESTAMPTZ,
-    client_name TEXT,
-    client_phone TEXT,
-    client_email TEXT,
-    property_id TEXT,
-    property_title TEXT,
-    address TEXT,
-    type TEXT DEFAULT 'Visita'::text,
-    status TEXT DEFAULT 'Aguardando confirmação'::text,
-    google_event_id TEXT,
-    webhook_source TEXT,
-    company_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    assigned_user_id TEXT,
-    created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now()
-);
+-- Oncall events table (REMOVED - events are fetched via API endpoints)
 
 -- Oncall schedules table
 CREATE TABLE public.oncall_schedules (
@@ -314,40 +292,9 @@ CREATE TABLE public.oncall_schedules (
     assigned_user_id UUID
 );
 
--- Properties table
-CREATE TABLE public.properties (
-    id TEXT NOT NULL,
-    title TEXT NOT NULL,
-    type TEXT NOT NULL,
-    price NUMERIC(12,2) NOT NULL,
-    area NUMERIC(10,2) NOT NULL,
-    bedrooms INTEGER,
-    bathrooms INTEGER,
-    address TEXT NOT NULL,
-    city TEXT NOT NULL,
-    state TEXT NOT NULL,
-    status TEXT,
-    description TEXT,
-    created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now(),
-    property_purpose TEXT DEFAULT 'Aluguel'::text,
-    proprietario_nome TEXT,
-    proprietario_estado_civil TEXT,
-    proprietario_cpf TEXT,
-    proprietario_endereco TEXT,
-    proprietario_email TEXT,
-    company_id UUID,
-    user_id UUID
-);
+-- Properties table (REMOVED - using imoveisvivareal instead)
 
--- Property images table
-CREATE TABLE public.property_images (
-    id UUID NOT NULL DEFAULT uuid_generate_v4(),
-    property_id TEXT,
-    image_url TEXT NOT NULL,
-    image_order INTEGER DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT now()
-);
+-- Property images table (REMOVED - using imoveisvivareal instead)
 
 -- Role permissions table
 CREATE TABLE public.role_permissions (
@@ -378,64 +325,11 @@ CREATE TABLE public.user_profiles (
     chat_instance TEXT
 );
 
--- WhatsApp chats table
-CREATE TABLE public.whatsapp_chats (
-    id UUID NOT NULL DEFAULT gen_random_uuid(),
-    instance_id UUID,
-    user_id UUID,
-    contact_phone TEXT NOT NULL,
-    contact_name TEXT,
-    contact_avatar TEXT,
-    last_message TEXT,
-    last_message_time TIMESTAMPTZ,
-    unread_count INTEGER DEFAULT 0,
-    is_archived BOOLEAN DEFAULT false,
-    tags TEXT[],
-    lead_id UUID,
-    property_id TEXT,
-    created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now()
-);
+-- WhatsApp chats table (REMOVED - using imobipro_messages instead)
 
--- WhatsApp instances table
-CREATE TABLE public.whatsapp_instances (
-    id UUID NOT NULL DEFAULT gen_random_uuid(),
-    instance_name TEXT NOT NULL,
-    user_id UUID,
-    company_id UUID,
-    phone_number TEXT,
-    profile_name TEXT,
-    profile_pic_url TEXT,
-    status TEXT DEFAULT 'disconnected'::text,
-    webhook_url TEXT,
-    api_key TEXT,
-    last_seen TIMESTAMPTZ,
-    chat_count INTEGER DEFAULT 0,
-    contact_count INTEGER DEFAULT 0,
-    message_count INTEGER DEFAULT 0,
-    is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now()
-);
+-- WhatsApp instances table (REMOVED - using imobipro_messages instead)
 
--- WhatsApp messages table
-CREATE TABLE public.whatsapp_messages (
-    id UUID NOT NULL DEFAULT gen_random_uuid(),
-    chat_id UUID,
-    instance_id UUID,
-    user_id UUID,
-    message_id TEXT,
-    from_me BOOLEAN NOT NULL,
-    contact_phone TEXT,
-    message_type TEXT,
-    content TEXT,
-    media_url TEXT,
-    caption TEXT,
-    timestamp TIMESTAMPTZ,
-    read_at TIMESTAMPTZ,
-    delivered_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT now()
-);
+-- WhatsApp messages table (REMOVED - using imobipro_messages instead)
 
 -- =============================================================================
 -- CONSTRAINTS AND INDEXES
@@ -454,15 +348,9 @@ ALTER TABLE public.imoveisvivareal ADD CONSTRAINT imoveisvivareal_pkey PRIMARY K
 ALTER TABLE public.inquilinato_conversations ADD CONSTRAINT inquilinato_conversations_pkey PRIMARY KEY (id);
 ALTER TABLE public.inquilinato_messages ADD CONSTRAINT inquilinato_messages_pkey PRIMARY KEY (id);
 ALTER TABLE public.leads ADD CONSTRAINT leads_pkey PRIMARY KEY (id);
-ALTER TABLE public.oncall_events ADD CONSTRAINT oncall_events_pkey PRIMARY KEY (id);
 ALTER TABLE public.oncall_schedules ADD CONSTRAINT oncall_schedules_pkey PRIMARY KEY (id);
-ALTER TABLE public.properties ADD CONSTRAINT properties_pkey PRIMARY KEY (id);
-ALTER TABLE public.property_images ADD CONSTRAINT property_images_pkey PRIMARY KEY (id);
 ALTER TABLE public.role_permissions ADD CONSTRAINT role_permissions_pkey PRIMARY KEY (id);
 ALTER TABLE public.user_profiles ADD CONSTRAINT user_profiles_pkey PRIMARY KEY (id);
-ALTER TABLE public.whatsapp_chats ADD CONSTRAINT whatsapp_chats_pkey PRIMARY KEY (id);
-ALTER TABLE public.whatsapp_instances ADD CONSTRAINT whatsapp_instances_pkey PRIMARY KEY (id);
-ALTER TABLE public.whatsapp_messages ADD CONSTRAINT whatsapp_messages_pkey PRIMARY KEY (id);
 
 -- Foreign Key Constraints
 ALTER TABLE public.audit_logs ADD CONSTRAINT audit_logs_actor_id_fkey FOREIGN KEY (actor_id) REFERENCES public.user_profiles(id);
@@ -470,7 +358,6 @@ ALTER TABLE public.company_features ADD CONSTRAINT company_features_company_id_f
 ALTER TABLE public.company_settings ADD CONSTRAINT company_settings_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
 ALTER TABLE public.contract_templates ADD CONSTRAINT contract_templates_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
 ALTER TABLE public.contract_templates ADD CONSTRAINT contract_templates_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.user_profiles(id);
-ALTER TABLE public.contracts ADD CONSTRAINT contracts_property_id_fkey FOREIGN KEY (property_id) REFERENCES public.properties(id);
 ALTER TABLE public.contracts ADD CONSTRAINT contracts_template_id_fkey FOREIGN KEY (template_id) REFERENCES public.contract_templates(id);
 ALTER TABLE public.dispatch_configurations ADD CONSTRAINT dispatch_configurations_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
 ALTER TABLE public.dispatch_configurations ADD CONSTRAINT dispatch_configurations_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.user_profiles(id);
@@ -481,31 +368,20 @@ ALTER TABLE public.inquilinato_messages ADD CONSTRAINT inquilinato_messages_comp
 ALTER TABLE public.inquilinato_messages ADD CONSTRAINT inquilinato_messages_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.inquilinato_conversations(id);
 ALTER TABLE public.leads ADD CONSTRAINT leads_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
 ALTER TABLE public.leads ADD CONSTRAINT leads_id_corretor_responsavel_fkey FOREIGN KEY (id_corretor_responsavel) REFERENCES public.user_profiles(id);
-ALTER TABLE public.leads ADD CONSTRAINT leads_property_id_fkey FOREIGN KEY (property_id) REFERENCES public.properties(id);
+-- Property reference removed - using imoveisvivareal instead
 ALTER TABLE public.leads ADD CONSTRAINT leads_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.user_profiles(id);
-ALTER TABLE public.oncall_events ADD CONSTRAINT oncall_events_property_id_fkey FOREIGN KEY (property_id) REFERENCES public.properties(id);
+-- Oncall events table removed - events fetched via API
 ALTER TABLE public.oncall_schedules ADD CONSTRAINT oncall_schedules_assigned_user_id_fkey FOREIGN KEY (assigned_user_id) REFERENCES public.user_profiles(id);
 ALTER TABLE public.oncall_schedules ADD CONSTRAINT oncall_schedules_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
 ALTER TABLE public.oncall_schedules ADD CONSTRAINT oncall_schedules_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.user_profiles(id);
-ALTER TABLE public.properties ADD CONSTRAINT properties_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
-ALTER TABLE public.properties ADD CONSTRAINT properties_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.user_profiles(id);
-ALTER TABLE public.property_images ADD CONSTRAINT property_images_property_id_fkey FOREIGN KEY (property_id) REFERENCES public.properties(id);
+-- Property tables removed - using imoveisvivareal instead
 ALTER TABLE public.user_profiles ADD CONSTRAINT user_profiles_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
-ALTER TABLE public.whatsapp_chats ADD CONSTRAINT whatsapp_chats_instance_id_fkey FOREIGN KEY (instance_id) REFERENCES public.whatsapp_instances(id);
-ALTER TABLE public.whatsapp_chats ADD CONSTRAINT whatsapp_chats_lead_id_fkey FOREIGN KEY (lead_id) REFERENCES public.leads(id);
-ALTER TABLE public.whatsapp_chats ADD CONSTRAINT whatsapp_chats_property_id_fkey FOREIGN KEY (property_id) REFERENCES public.properties(id);
-ALTER TABLE public.whatsapp_chats ADD CONSTRAINT whatsapp_chats_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.user_profiles(id);
-ALTER TABLE public.whatsapp_instances ADD CONSTRAINT whatsapp_instances_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id);
-ALTER TABLE public.whatsapp_instances ADD CONSTRAINT whatsapp_instances_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.user_profiles(id);
-ALTER TABLE public.whatsapp_messages ADD CONSTRAINT whatsapp_messages_chat_id_fkey FOREIGN KEY (chat_id) REFERENCES public.whatsapp_chats(id);
-ALTER TABLE public.whatsapp_messages ADD CONSTRAINT whatsapp_messages_instance_id_fkey FOREIGN KEY (instance_id) REFERENCES public.whatsapp_instances(id);
-ALTER TABLE public.whatsapp_messages ADD CONSTRAINT whatsapp_messages_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.user_profiles(id);
+-- WhatsApp tables removed - using imobipro_messages instead
 
 -- Unique Constraints
 ALTER TABLE public.company_settings ADD CONSTRAINT company_settings_company_id_key UNIQUE (company_id);
 ALTER TABLE public.contracts ADD CONSTRAINT contracts_numero_key UNIQUE (numero);
-ALTER TABLE public.oncall_events ADD CONSTRAINT oncall_events_google_event_id_key UNIQUE (google_event_id);
-ALTER TABLE public.whatsapp_instances ADD CONSTRAINT whatsapp_instances_instance_name_key UNIQUE (instance_name);
+-- Unique constraints removed for deleted tables
 
 -- Check Constraints
 ALTER TABLE public.company_settings ADD CONSTRAINT company_settings_language_check CHECK (language = ANY (ARRAY['pt-BR'::text, 'en-US'::text, 'es-ES'::text]));
@@ -517,9 +393,7 @@ ALTER TABLE public.dispatch_configurations ADD CONSTRAINT dispatch_configuration
 ALTER TABLE public.dispatch_configurations ADD CONSTRAINT dispatch_configurations_max_messages_per_hour_check CHECK (max_messages_per_hour > 0);
 ALTER TABLE public.dispatch_configurations ADD CONSTRAINT dispatch_configurations_assigned_brokers_check CHECK (jsonb_typeof(assigned_brokers) = 'array'::text);
 ALTER TABLE public.dispatch_configurations ADD CONSTRAINT dispatch_configurations_time_windows_check CHECK (jsonb_typeof(time_windows) = 'object'::text);
-ALTER TABLE public.oncall_events ADD CONSTRAINT oncall_events_type_check CHECK (type = ANY (ARRAY['Visita'::text, 'Avaliação'::text, 'Apresentação'::text, 'Vistoria'::text, 'Reunião'::text, 'Ligação'::text, 'Outro'::text]));
-ALTER TABLE public.oncall_events ADD CONSTRAINT oncall_events_status_check CHECK (status = ANY (ARRAY['Confirmado'::text, 'Aguardando confirmação'::text, 'Cancelado'::text, 'Talvez'::text]));
-ALTER TABLE public.properties ADD CONSTRAINT properties_property_purpose_check CHECK (property_purpose = ANY (ARRAY['Aluguel'::text, 'Venda'::text]));
+-- Check constraints removed for deleted tables
 
 -- =============================================================================
 -- CUSTOM FUNCTIONS
@@ -837,13 +711,10 @@ CREATE TRIGGER update_dispatch_configurations_updated_at BEFORE UPDATE ON public
 CREATE TRIGGER update_imoveisvivareal_updated_at BEFORE UPDATE ON public.imoveisvivareal FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 CREATE TRIGGER update_inquilinato_conversations_updated_at BEFORE UPDATE ON public.inquilinato_conversations FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 CREATE TRIGGER update_leads_updated_at BEFORE UPDATE ON public.leads FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
-CREATE TRIGGER update_oncall_events_updated_at BEFORE UPDATE ON public.oncall_events FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 CREATE TRIGGER update_oncall_schedules_updated_at BEFORE UPDATE ON public.oncall_schedules FOR EACH ROW EXECUTE FUNCTION public.update_oncall_schedules_updated_at();
-CREATE TRIGGER update_properties_updated_at BEFORE UPDATE ON public.properties FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 CREATE TRIGGER update_role_permissions_updated_at BEFORE UPDATE ON public.role_permissions FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 CREATE TRIGGER update_user_profiles_updated_at BEFORE UPDATE ON public.user_profiles FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
-CREATE TRIGGER update_whatsapp_chats_updated_at BEFORE UPDATE ON public.whatsapp_chats FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
-CREATE TRIGGER update_whatsapp_instances_updated_at BEFORE UPDATE ON public.whatsapp_instances FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+-- WhatsApp triggers removed - using imobipro_messages instead
 
 -- Special triggers
 CREATE TRIGGER set_contract_template_defaults_trigger BEFORE INSERT ON public.contract_templates FOR EACH ROW EXECUTE FUNCTION public.set_contract_template_defaults();
@@ -864,15 +735,10 @@ ALTER TABLE public.imoveisvivareal ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inquilinato_conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inquilinato_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.oncall_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.oncall_schedules ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.properties ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.property_images ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.role_permissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.whatsapp_chats ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.whatsapp_instances ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.whatsapp_messages ENABLE ROW LEVEL SECURITY;
+-- WhatsApp RLS removed - using imobipro_messages instead
 
 -- Audit logs policies
 CREATE POLICY "audit_logs_insert_system" ON public.audit_logs
@@ -1051,65 +917,9 @@ CREATE POLICY "role_permissions_all" ON public.role_permissions
     USING (true)
     WITH CHECK (true);
 
-CREATE POLICY "whatsapp_chats_all" ON public.whatsapp_chats
-    FOR ALL
-    TO public
-    USING (true)
-    WITH CHECK (true);
+-- WhatsApp policies removed - using imobipro_messages instead
 
-CREATE POLICY "whatsapp_instances_all" ON public.whatsapp_instances
-    FOR ALL
-    TO public
-    USING (true)
-    WITH CHECK (true);
-
-CREATE POLICY "whatsapp_messages_all" ON public.whatsapp_messages
-    FOR ALL
-    TO public
-    USING (true)
-    WITH CHECK (true);
-
--- Properties policies (permissive for now)
-CREATE POLICY "Anyone can view properties" ON public.properties
-    FOR SELECT
-    TO public
-    USING (true);
-
-CREATE POLICY "Anyone can create properties" ON public.properties
-    FOR INSERT
-    TO public
-    WITH CHECK (true);
-
-CREATE POLICY "Anyone can update properties" ON public.properties
-    FOR UPDATE
-    TO public
-    USING (true);
-
-CREATE POLICY "Anyone can delete properties" ON public.properties
-    FOR DELETE
-    TO public
-    USING (true);
-
--- Property images policies (permissive for now)  
-CREATE POLICY "Anyone can view property images" ON public.property_images
-    FOR SELECT
-    TO public
-    USING (true);
-
-CREATE POLICY "Anyone can create property images" ON public.property_images
-    FOR INSERT
-    TO public
-    WITH CHECK (true);
-
-CREATE POLICY "Anyone can update property images" ON public.property_images
-    FOR UPDATE
-    TO public
-    USING (true);
-
-CREATE POLICY "Anyone can delete property images" ON public.property_images
-    FOR DELETE
-    TO public
-    USING (true);
+-- Properties and property_images tables removed - using imoveisvivareal instead
 
 -- Leads policies (complex role-based)
 CREATE POLICY "leads_select_admin_global" ON public.leads
@@ -1200,37 +1010,7 @@ CREATE POLICY "user_profiles_delete_own" ON public.user_profiles
     TO public
     USING ((id = auth.uid()));
 
--- Oncall events policies
-CREATE POLICY "oncall_events_select" ON public.oncall_events
-    FOR SELECT
-    TO public
-    USING ((company_id = ( SELECT (user_profiles.company_id)::text AS company_id
-   FROM user_profiles
-  WHERE (user_profiles.id = auth.uid()))));
-
-CREATE POLICY "oncall_events_insert" ON public.oncall_events
-    FOR INSERT
-    TO public
-    WITH CHECK (((company_id = ( SELECT (user_profiles.company_id)::text AS company_id
-   FROM user_profiles
-  WHERE (user_profiles.id = auth.uid()))) AND (user_id = (auth.uid())::text)));
-
-CREATE POLICY "oncall_events_update" ON public.oncall_events
-    FOR UPDATE
-    TO public
-    USING ((((user_id = (auth.uid())::text) OR (assigned_user_id = (auth.uid())::text)) AND (company_id = ( SELECT (user_profiles.company_id)::text AS company_id
-   FROM user_profiles
-  WHERE (user_profiles.id = auth.uid())))))
-    WITH CHECK ((company_id = ( SELECT (user_profiles.company_id)::text AS company_id
-   FROM user_profiles
-  WHERE (user_profiles.id = auth.uid()))));
-
-CREATE POLICY "oncall_events_delete" ON public.oncall_events
-    FOR DELETE
-    TO public
-    USING (((user_id = (auth.uid())::text) AND (company_id = ( SELECT (user_profiles.company_id)::text AS company_id
-   FROM user_profiles
-  WHERE (user_profiles.id = auth.uid())))));
+-- Oncall events policies removed - events fetched via API
 
 -- Oncall schedules policies
 CREATE POLICY "oncall_select" ON public.oncall_schedules
@@ -1269,12 +1049,13 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs(create
 
 -- This migration contains the complete schema state as of 2025-01-25 19:39:01
 -- Total components:
--- - 21 Tables with proper structure
+-- - 16 Tables with proper structure (removed unused tables)
 -- - All Primary Key, Foreign Key, and Unique constraints
 -- - Check constraints for data validation  
 -- - 15+ Custom functions for business logic
 -- - Comprehensive RLS policies for security
 -- - Performance indexes on key columns
 -- - Triggers for automatic field updates
+-- - Removed: properties, property_images, whatsapp_*, oncall_events (using imoveisvivareal and imobipro_messages)
 
 COMMENT ON SCHEMA public IS 'Complete ImobiPro database schema - ready for deployment';

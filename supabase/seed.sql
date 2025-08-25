@@ -27,11 +27,11 @@ INSERT INTO public.company_settings (id, company_id, setting_key, setting_value,
 (gen_random_uuid(), '550e8400-e29b-41d4-a716-446655440002', 'timezone', 'America/Sao_Paulo', NOW()),
 (gen_random_uuid(), '550e8400-e29b-41d4-a716-446655440002', 'currency', 'BRL', NOW());
 
--- Demo properties
-INSERT INTO public.properties (id, company_id, title, description, property_type, property_purpose, price, location, neighborhood, city, state, zip_code, bedrooms, bathrooms, garage_spaces, area_m2, active, created_at) VALUES
-(gen_random_uuid(), '550e8400-e29b-41d4-a716-446655440001', 'Apartamento 2 Quartos - Demo', 'Apartamento demonstrativo com 2 quartos, sala, cozinha e banheiro. Localização privilegiada.', 'Apartamento', 'Aluguel', 2500.00, 'Rua das Flores, 123', 'Centro', 'São Paulo', 'SP', '01000-000', 2, 1, 1, 65.50, true, NOW()),
-(gen_random_uuid(), '550e8400-e29b-41d4-a716-446655440001', 'Casa 3 Quartos - Exemplo', 'Casa de exemplo com 3 quartos, 2 banheiros, sala, cozinha e quintal.', 'Casa', 'Venda', 450000.00, 'Av. Principal, 789', 'Jardim Exemplo', 'São Paulo', 'SP', '01200-000', 3, 2, 2, 120.00, true, NOW()),
-(gen_random_uuid(), '550e8400-e29b-41d4-a716-446655440002', 'Loft Moderno - Demo', 'Loft moderno e funcional, ideal para jovens profissionais.', 'Loft', 'Aluguel', 1800.00, 'Rua Moderna, 456', 'Vila Nova', 'Rio de Janeiro', 'RJ', '20000-000', 1, 1, 1, 45.00, true, NOW());
+-- Demo properties (using imoveisvivareal table)
+INSERT INTO public.imoveisvivareal (id, listing_id, tipo_categoria, tipo_imovel, descricao, preco, tamanho_m2, quartos, banheiros, garagem, cidade, bairro, endereco, numero, cep, user_id, company_id, modalidade, disponibilidade, created_at) VALUES
+(nextval('imoveisvivareal_id_seq'), 'DEMO001', 'Residencial', 'Apartamento', 'Apartamento demonstrativo com 2 quartos, sala, cozinha e banheiro. Localização privilegiada.', 2500.00, 65.50, 2, 1, 1, 'São Paulo', 'Centro', 'Rua das Flores', '123', '01000-000', NULL, '550e8400-e29b-41d4-a716-446655440001', 'Aluguel', 'disponivel', NOW()),
+(nextval('imoveisvivareal_id_seq'), 'DEMO002', 'Residencial', 'Casa', 'Casa de exemplo com 3 quartos, 2 banheiros, sala, cozinha e quintal.', 450000.00, 120.00, 3, 2, 2, 'São Paulo', 'Jardim Exemplo', 'Av. Principal', '789', '01200-000', NULL, '550e8400-e29b-41d4-a716-446655440001', 'Venda', 'disponivel', NOW()),
+(nextval('imoveisvivareal_id_seq'), 'DEMO003', 'Residencial', 'Loft', 'Loft moderno e funcional, ideal para jovens profissionais.', 1800.00, 45.00, 1, 1, 1, 'Rio de Janeiro', 'Vila Nova', 'Rua Moderna', '456', '20000-000', NULL, '550e8400-e29b-41d4-a716-446655440002', 'Aluguel', 'disponivel', NOW());
 
 -- Demo contract templates  
 INSERT INTO public.contract_templates (id, company_id, name, template_type, content, active, created_at) VALUES
