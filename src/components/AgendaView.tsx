@@ -262,9 +262,9 @@ export function AgendaView() {
         status: eventData.status,
         google_event_id: eventData.event_id.startsWith('local_') ? null : eventData.event_id,
         webhook_source: eventData.event_id.startsWith('local_') ? 'local' : 'google',
-        company_id: profile.company_id,
-        user_id: user.id,
-        assigned_user_id: assignedUserId
+        company_id: profile.company_id.toString(),
+        user_id: user.id.toString(),
+        assigned_user_id: assignedUserId ? assignedUserId.toString() : null
       };
 
       console.log('📤 Dados para inserção na oncall_events:', insertData);

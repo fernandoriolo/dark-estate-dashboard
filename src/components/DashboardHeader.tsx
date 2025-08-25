@@ -30,6 +30,7 @@ export function DashboardHeader() {
   // Sincronizar estados locais com o perfil atualizado
   useEffect(() => {
     if (profile) {
+      console.log('🔄 DashboardHeader: Perfil atualizado, novo avatar:', profile.avatar_url);
       setFullName(profile.full_name || "");
       setPhone(profile.phone || "");
       setAvatarUrl(profile.avatar_url || "");

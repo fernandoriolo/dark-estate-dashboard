@@ -198,8 +198,9 @@ export function useUserProfile() {
         throw new Error('Perfil não encontrado para atualização');
       }
 
-      setProfile(data as UserProfile);
-      return data;
+      const updatedProfile = data[0] as UserProfile;
+      setProfile(updatedProfile);
+      return updatedProfile;
     } catch (error: any) {
       console.error('Erro ao atualizar perfil:', error);
       throw error;

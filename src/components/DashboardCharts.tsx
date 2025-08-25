@@ -590,7 +590,12 @@ export const DashboardCharts: React.FC = () => {
 			<Card className="bg-gray-800/50 border-gray-700/50 xl:col-span-4">
 				<CardHeader className="flex flex-row items-center justify-between">
 					<CardTitle className="text-white">
-						{showAvailabilityChart ? 'Taxa de Disponibilidade' : 'Imóveis mais Procurados (por ID)'}
+						{showAvailabilityChart ? 'Taxa de Disponibilidade' : (
+							<>
+								Imóveis mais Procurados<br />
+								(por ID)
+							</>
+						)}
 					</CardTitle>
 					<div className="flex items-center gap-2">
 						<Button

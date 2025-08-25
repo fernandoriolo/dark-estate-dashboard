@@ -6,7 +6,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { KeyRound, Mail, Upload, Camera } from 'lucide-react';
-import { toast } from './ui/sonner';
+import { toast } from 'sonner';
 
 export function UserProfileView() {
   const { profile, updateProfile } = useUserProfile();
@@ -43,29 +43,74 @@ export function UserProfileView() {
       console.log('Iniciando upload do arquivo:', file.name);
       setUploading(true);
       setError(null);
+
+      // Validações do arquivo
+      const maxSize = 2 * 1024 * 1024; // 2MB
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+
+      if (file.size > maxSize) {
+        throw new Error('Arquivo muito grande. Máximo 2MB.');
+      }
+
+      if (!allowedTypes.includes(file.type)) {
+        throw new Error('Formato não suportado. Use JPG, PNG, WebP ou GIF.');
+      }
+
+      // Verificar se o bucket existe (apenas verificação, não criação)
+      console.log('🔍 Verificando bucket avatars...');
+      const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
+      
+      if (bucketsError) {
+        console.warn('⚠️ Não foi possível verificar buckets:', bucketsError);
+        // Continuar mesmo assim, pois o bucket pode existir
+      } else {
+        const avatarsBucket = buckets.find(bucket => bucket.name === 'avatars');
+        if (avatarsBucket) {
+          console.log('✅ Bucket avatars encontrado');
+        } else {
+          console.warn('⚠️ Bucket avatars não encontrado na listagem, mas tentando upload mesmo assim');
+        }
+      }
       
       const fileExt = file.name.split('.').pop();
-      const filePath = `avatars/${profile?.id}/${Date.now()}.${fileExt}`;
+      const filePath = `${profile?.id}/${Date.now()}.${fileExt}`;
       console.log('Caminho do arquivo:', filePath);
 
+      console.log('📤 Iniciando upload para bucket avatars...');
       const { error: upErr } = await supabase.storage.from('avatars').upload(filePath, file, {
         upsert: true,
         contentType: file.type,
       });
       
       if (upErr) {
-        console.error('Erro no upload:', upErr);
-        throw upErr;
+        console.error('❌ Erro no upload:', upErr);
+        
+        // Mensagens de erro mais específicas
+        if (upErr.message?.includes('Bucket not found')) {
+          throw new Error('Bucket de avatars não configurado. Entre em contato com o administrador.');
+        } else if (upErr.message?.includes('policy')) {
+          throw new Error('Sem permissão para upload. Verifique se você está logado corretamente.');
+        } else if (upErr.message?.includes('size')) {
+          throw new Error('Arquivo muito grande. Máximo permitido: 2MB.');
+        } else {
+          throw new Error(`Erro no upload: ${upErr.message || 'Erro desconhecido'}`);
+        }
       }
 
       const { data: pub } = supabase.storage.from('avatars').getPublicUrl(filePath);
-      const url = pub?.publicUrl || '';
+      let url = pub?.publicUrl || '';
+      
+      // Adicionar timestamp para evitar cache do browser
+      if (url) {
+        url += `?t=${Date.now()}`;
+      }
+      
       console.log('URL pública gerada:', url);
       
       setAvatarUrl(url);
       
       const updatedProfile = await updateProfile({ avatar_url: url });
-      console.log('Perfil atualizado:', updatedProfile);
+      console.log('✅ Perfil atualizado com nova URL:', updatedProfile);
       
       toast.success('Avatar atualizado com sucesso!');
     } catch (e: any) {

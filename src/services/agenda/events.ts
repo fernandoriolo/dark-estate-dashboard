@@ -211,6 +211,52 @@ async function fetchOncallEvents(startDate: Date, endDate: Date): Promise<Agenda
 	}
 }
 
+// Função para buscar eventos próximos diretamente do endpoint ver-agenda
+async function fetchAgendaFromEndpoint(startDate: Date, endDate: Date, selectedAgenda: string = "Todos"): Promise<AgendaEvent[]> {
+	const startIso = startDate.toISOString();
+	const endIso = endDate.toISOString();
+
+	const body = {
+		data_inicial: startIso,
+		data_final: endIso,
+		mes: startDate.getMonth() + 1,
+		ano: startDate.getFullYear(),
+		data_inicial_formatada: "",
+		data_final_formatada: "",
+		periodo: "",
+		agenda: selectedAgenda
+	};
+
+	console.log('📤 Chamando endpoint ver-agenda com período específico:', {
+		data_inicial: startIso,
+		data_final: endIso,
+		agenda: selectedAgenda
+	});
+
+	const response = await fetch('https://webhooklabz.n8nlabz.com.br/webhook/ver-agenda', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body)
+	});
+
+	if (!response.ok) throw new Error(`Erro na API ver-agenda: ${response.status}`);
+	const json = await response.json();
+	const _ = WebhookResponseSchema.parse(json);
+
+	const data = Array.isArray(json) ? json : [];
+	const processed: AgendaEvent[] = data
+		.map((item, idx) => mapWebhookItemToAgendaEvent(item, idx, selectedAgenda))
+		.filter((e): e is AgendaEvent => Boolean(e));
+
+	console.log(`📋 Eventos processados do endpoint: ${processed.length}`);
+	processed.forEach((event, index) => {
+		console.log(`${index + 1}. ${event.client} - ${event.date.toLocaleString('pt-BR')} - ${event.type}`);
+	});
+
+	// validar campos essenciais
+	return processed.filter(e => e.id && e.date && e.property);
+}
+
 export async function fetchUpcomingFromAgenda(daysAhead: number = 7, limit: number = 5, selectedAgenda: string = "Todos"): Promise<AgendaEvent[]> {
 	console.log(`🔍 Buscando próximos eventos (${daysAhead} dias, limite ${limit}, agenda: ${selectedAgenda})`);
 	
@@ -223,47 +269,27 @@ export async function fetchUpcomingFromAgenda(daysAhead: number = 7, limit: numb
 		limite: limitDate.toLocaleString('pt-BR')
 	});
 
-	// PRIORIDADE 1: Buscar eventos locais da tabela oncall_events (dados confiáveis)
-	const oncallEvents = await fetchOncallEvents(now, limitDate);
-	console.log(`📊 Eventos encontrados na oncall_events: ${oncallEvents.length}`);
-	
-	// PRIORIDADE 2: Buscar eventos do Google Calendar (fallback/complemento)
-	let monthEvents: AgendaEvent[] = [];
+	// Buscar eventos do endpoint ver-agenda como fonte principal
+	let agendaEvents: AgendaEvent[] = [];
 	try {
-		monthEvents = await fetchAgendaMonth(now, selectedAgenda);
-		console.log(`📊 Eventos encontrados no Google Calendar: ${monthEvents.length}`);
+		agendaEvents = await fetchAgendaFromEndpoint(now, limitDate, selectedAgenda);
+		console.log(`📊 Eventos encontrados no endpoint ver-agenda: ${agendaEvents.length}`);
 	} catch (error) {
-		console.warn('⚠️ Erro ao buscar Google Calendar, usando apenas oncall_events:', error);
+		console.warn('⚠️ Erro ao buscar endpoint ver-agenda:', error);
 	}
 	
-	// Combinar priorizando oncall_events e removendo duplicatas
-	const allEvents: AgendaEvent[] = [...oncallEvents]; // Começar com eventos locais
-	
-	// Adicionar eventos do Google Calendar apenas se não forem duplicatas
-	monthEvents.forEach(gcalEvent => {
-		const isDuplicate = oncallEvents.some(oncallEvent => {
-			// Verificar se é duplicata por ID, cliente ou proximidade de tempo
-			if (gcalEvent.id === oncallEvent.id.replace('oncall_', '')) return true;
-			
-			const clientMatch = gcalEvent.client.toLowerCase().includes(oncallEvent.client.toLowerCase()) ||
-							   oncallEvent.client.toLowerCase().includes(gcalEvent.client.toLowerCase());
-							   
-			const timeDiff = Math.abs(gcalEvent.date.getTime() - oncallEvent.date.getTime());
-			const isNearTime = timeDiff < 60 * 60 * 1000; // 1 hora de tolerância
-			
-			return clientMatch && isNearTime;
-		});
-		
-		if (!isDuplicate) {
-			allEvents.push({
-				...gcalEvent,
-				id: `gcal_${gcalEvent.id}` // Prefixo para identificar origem
-			});
+	// FALLBACK: Buscar eventos locais da tabela oncall_events apenas se não houver eventos do endpoint
+	if (agendaEvents.length === 0) {
+		try {
+			agendaEvents = await fetchOncallEvents(now, limitDate);
+			console.log(`📊 Eventos encontrados na oncall_events (fallback): ${agendaEvents.length}`);
+		} catch (error) {
+			console.warn('⚠️ Erro ao buscar oncall_events:', error);
 		}
-	});
+	}
 
 	// Filtrar apenas eventos futuros e ordenar por data
-	const upcomingEvents = allEvents
+	const upcomingEvents = agendaEvents
 		.filter(event => {
 			const isFuture = event.date >= now;
 			const isWithinRange = event.date <= limitDate;
@@ -283,7 +309,7 @@ export async function fetchUpcomingFromAgenda(daysAhead: number = 7, limit: numb
 
 	console.log(`✅ Total de próximos eventos retornados: ${upcomingEvents.length}`);
 	upcomingEvents.forEach((event, index) => {
-		console.log(`${index + 1}. ${event.client} - ${event.date.toLocaleString('pt-BR')} - ${event.type} (${event.id.includes('oncall_') ? 'DB' : 'GCal'})`);
+		console.log(`${index + 1}. ${event.client} - ${event.date.toLocaleString('pt-BR')} - ${event.type} (endpoint)`);
 	});
 
 	return upcomingEvents;
