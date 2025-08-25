@@ -21,11 +21,13 @@ export function useKanbanLeads() {
   const userIdRef = useRef<string | null>(null);
   const userRoleRef = useRef<string>('corretor');
   const updateBufferRef = useRef<Map<string, number>>(new Map());
+  const leadsRef = useRef<KanbanLead[]>([]);
 
   // Telemetria apenas em DEV (pode ser controlada por flag VITE_FEATURE_RT_DEBUG_LEADS)
   const rtDebugEnabled = (import.meta as any)?.env?.DEV && (import.meta as any)?.env?.VITE_FEATURE_RT_DEBUG_LEADS !== 'false';
   const rtLog = (...args: any[]) => { if (rtDebugEnabled) console.info('RT(leads):', ...args); };
   const rtWarn = (...args: any[]) => { if (rtDebugEnabled) console.warn('RT(leads):', ...args); };
+  const transferFixEnabled = (import.meta as any)?.env?.DEV && ((import.meta as any)?.env?.VITE_FEATURE_RT_TRANSFER_FIX !== 'false');
 
   // Verificar role do usuário
   const checkUserRole = useCallback(async () => {
@@ -152,6 +154,7 @@ export function useKanbanLeads() {
         : enriched;
 
       setLeads(visibleLeads);
+      leadsRef.current = visibleLeads;
       
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Erro ao carregar leads';
@@ -343,7 +346,11 @@ export function useKanbanLeads() {
       }
 
       // Remover do estado local
-      setLeads(prevLeads => prevLeads.filter(lead => lead.id !== leadId));
+      setLeads(prevLeads => {
+        const next = prevLeads.filter(lead => lead.id !== leadId);
+        leadsRef.current = next;
+        return next;
+      });
       logAudit({ action: 'lead.deleted', resource: 'lead', resourceId: leadId, meta: null });
 
       return true;
@@ -440,16 +447,28 @@ export function useKanbanLeads() {
         if (userRoleRef.current === 'corretor' && userIdRef.current) {
           return next.filter(l => l.id_corretor_responsavel === userIdRef.current);
         }
+        leadsRef.current = next;
         return next;
       });
     };
 
-    const applyUpdate = (updatedLead: KanbanLead) => {
+    const applyUpdateUpsert = (updatedLead: KanbanLead) => {
       setLeads(prev => {
-        const next = prev.map(l => (l.id === updatedLead.id ? updatedLead : l));
-        if (userRoleRef.current === 'corretor' && userIdRef.current) {
-          return next.filter(l => l.id_corretor_responsavel === userIdRef.current);
+        const exists = prev.some(l => l.id === updatedLead.id);
+        let next: KanbanLead[];
+        if (exists) {
+          next = prev.map(l => (l.id === updatedLead.id ? updatedLead : l));
+        } else {
+          // Inserir no topo quando não existe (ex.: novo dono recebendo o UPDATE)
+          next = [updatedLead, ...prev];
         }
+
+        // Fail-safe para corretores: manter apenas os próprios leads
+        if (userRoleRef.current === 'corretor' && userIdRef.current) {
+          next = next.filter(l => l.id_corretor_responsavel === userIdRef.current);
+        }
+
+        leadsRef.current = next;
         return next;
       });
     };
@@ -464,10 +483,33 @@ export function useKanbanLeads() {
       const existing = updateBufferRef.current.get(key);
       if (existing) clearTimeout(existing);
       const t = window.setTimeout(() => {
-        applyUpdate(updatedLead);
+        applyUpdateUpsert(updatedLead);
         updateBufferRef.current.delete(key);
       }, 75);
       updateBufferRef.current.set(key, t);
+    };
+
+    // Hidratar label do novo corretor quando houver transferência
+    const hydrateBrokerIfTransferred = async (prevOwnerId: string | undefined, newOwnerId: string | undefined, leadId: string) => {
+      if (!newOwnerId || prevOwnerId === newOwnerId) return;
+      try {
+        const { data, error } = await supabase
+          .from('user_profiles')
+          .select('id, full_name, role')
+          .eq('id', newOwnerId)
+          .single();
+        if (error || !data) return;
+        setLeads(prev => {
+          const next = prev.map(l => {
+            if (l.id !== leadId) return l;
+            return { ...l, corretor: { id: data.id, nome: data.full_name, role: data.role } as any };
+          });
+          leadsRef.current = next;
+          return next;
+        });
+      } catch (_) {
+        // silencioso
+      }
     };
 
     // Setup assíncrono do canal
@@ -526,6 +568,16 @@ export function useKanbanLeads() {
                     notes: payload.new.notes || null,
                     updated_at: payload.new.updated_at || null
                   });
+                  // Detectar transferência de responsável
+                  const prevLead = leadsRef.current.find(l => l.id === updatedLead.id);
+                  const oldOwner = prevLead?.id_corretor_responsavel;
+                  const newOwner = (payload.new as any)?.id_corretor_responsavel as string | undefined;
+                  if (oldOwner !== newOwner) {
+                    rtLog('transfer', id, oldOwner, '→', newOwner);
+                    // Hidratar corretor do novo dono
+                    hydrateBrokerIfTransferred(oldOwner, newOwner, updatedLead.id);
+                  }
+
                   scheduleCoalescedUpdate(updatedLead);
                   break;
                 }
@@ -553,6 +605,33 @@ export function useKanbanLeads() {
 
     setup();
 
+    // Adicionar refetch on focus/visibility e intervalo (apenas corretores)
+    let intervalId: number | null = null;
+    const onVisibility = () => {
+      if (!transferFixEnabled) return;
+      if (document.visibilityState === 'visible' && userRoleRef.current === 'corretor') {
+        rtLog('refetch:onFocus');
+        fetchLeads();
+      }
+    };
+    const onFocus = () => {
+      if (!transferFixEnabled) return;
+      if (userRoleRef.current === 'corretor') {
+        rtLog('refetch:onFocus');
+        fetchLeads();
+      }
+    };
+    if (transferFixEnabled) {
+      window.addEventListener('focus', onFocus);
+      document.addEventListener('visibilitychange', onVisibility);
+      if (userRoleRef.current === 'corretor') {
+        intervalId = window.setInterval(() => {
+          rtLog('refetch:interval');
+          fetchLeads();
+        }, 60000);
+      }
+    }
+
     // Cleanup
     return () => {
       rtLog('cleanup: unsubscribe + removeChannel');
@@ -560,6 +639,14 @@ export function useKanbanLeads() {
       try {
         updateBufferRef.current.forEach((t) => clearTimeout(t));
         updateBufferRef.current.clear();
+      } catch (_) {}
+      // Remover listeners/interval
+      try {
+        if (transferFixEnabled) {
+          window.removeEventListener('focus', onFocus);
+          document.removeEventListener('visibilitychange', onVisibility);
+          if (intervalId) clearInterval(intervalId);
+        }
       } catch (_) {}
       cleanupChannel();
     };
