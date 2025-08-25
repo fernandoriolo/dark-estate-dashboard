@@ -95,39 +95,13 @@ const STAGE_ORDER: Record<string, number> = {
  */
 export async function getLeadsByChannel(options: DateRange): Promise<ChartPoint[]> {
   try {
-    console.log('📊 [getLeadsByChannel] Executando RPC admin para bypass RLS...');
     const { data, error } = await supabase
-      .rpc('admin_get_leads_by_period', {
-        start_date: options.from.toISOString(),
-        end_date: options.to.toISOString()
-      });
+      .from('leads')
+      .select('source')
+      .gte('created_at', options.from.toISOString())
+      .lte('created_at', options.to.toISOString());
 
-    if (error) {
-      console.error('📊 [getLeadsByChannel] RPC admin falhou, usando fallback:', error);
-      // Fallback: query direta normal
-      const { data: fallbackData, error: fallbackError } = await supabase
-        .from('leads')
-        .select('source')
-        .gte('created_at', options.from.toISOString())
-        .lte('created_at', options.to.toISOString());
-      
-      if (fallbackError) throw fallbackError;
-      
-      console.log('📊 [getLeadsByChannel] Fallback SUCCESS:', fallbackData?.length, 'leads');
-      // Processar dados de fallback
-      const sourceCounts = (fallbackData || []).reduce((acc, lead) => {
-        const normalizedSource = CHANNEL_MAPPING[lead.source?.toLowerCase()] || lead.source || 'Não informado';
-        acc[normalizedSource] = (acc[normalizedSource] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-
-      return Object.entries(sourceCounts)
-        .map(([name, value]) => ({ name, value }))
-        .sort((a, b) => b.value - a.value)
-        .slice(0, 8);
-    }
-
-    console.log('📊 [getLeadsByChannel] RPC SUCCESS:', data?.length, 'leads');
+    if (error) throw error;
 
     // Agrupar e contar por source
     const sourceCounts = (data || []).reduce((acc, lead) => {
@@ -149,138 +123,53 @@ export async function getLeadsByChannel(options: DateRange): Promise<ChartPoint[
 }
 
 /**
- * Processa dados de leads por período
- */
-function processLeadsData(data: { created_at: string }[], granularity: TimeGranularity): TimeBucket[] {
-  console.log('📊 [processLeadsData] Processing', data?.length, 'records with granularity:', granularity);
-  
-  // Processar dados localmente com agrupamento temporal
-  const buckets = new Map<string, number>();
-  
-  (data || []).forEach((lead, index) => {
-    const date = new Date(lead.created_at);
-    let periodKey: string;
-    
-    switch (granularity) {
-      case 'day':
-        periodKey = date.toISOString().split('T')[0]; // YYYY-MM-DD
-        break;
-      case 'week':
-        const startOfWeek = new Date(date);
-        // Usar segunda-feira como início da semana
-        const dayOfWeek = date.getDay();
-        const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-        startOfWeek.setDate(date.getDate() + diff);
-        periodKey = startOfWeek.toISOString().split('T')[0];
-        break;
-      case 'month':
-        periodKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        break;
-      case 'year':
-        periodKey = date.getFullYear().toString();
-        break;
-    }
-    
-    // Log apenas os primeiros 3 leads para debug
-    if (index < 3) {
-      console.log(`📊 [processLeadsData] Lead ${index}: ${lead.created_at} → ${periodKey}`);
-    }
-    
-    buckets.set(periodKey, (buckets.get(periodKey) || 0) + 1);
-  });
-
-  // Converter para array ordenado
-  const result = Array.from(buckets.entries())
-    .map(([period, value]) => ({ period, value }))
-    .sort((a, b) => a.period.localeCompare(b.period));
-  
-  console.log('📊 [processLeadsData] Final result:', result);
-  return result;
-}
-
-/**
  * Busca leads agrupados por período temporal
  */
 export async function getLeadsByPeriod(options: DateRange & { granularity: TimeGranularity }): Promise<TimeBucket[]> {
   try {
-    console.log('📊 [getLeadsByPeriod] Query params:', {
-      from: options.from.toISOString(),
-      to: options.to.toISOString(),
-      granularity: options.granularity
+    const { data, error } = await supabase
+      .from('leads')
+      .select('created_at')
+      .gte('created_at', options.from.toISOString())
+      .lte('created_at', options.to.toISOString())
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+
+    // Processar dados localmente com agrupamento temporal
+    const buckets = new Map<string, number>();
+    
+    (data || []).forEach(lead => {
+      const date = new Date(lead.created_at);
+      let periodKey: string;
+      
+      switch (options.granularity) {
+        case 'day':
+          periodKey = date.toISOString().split('T')[0]; // YYYY-MM-DD
+          break;
+        case 'week':
+          const startOfWeek = new Date(date);
+          startOfWeek.setDate(date.getDate() - date.getDay());
+          periodKey = startOfWeek.toISOString().split('T')[0];
+          break;
+        case 'month':
+          periodKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+          break;
+        case 'year':
+          periodKey = date.getFullYear().toString();
+          break;
+      }
+      
+      buckets.set(periodKey, (buckets.get(periodKey) || 0) + 1);
     });
 
-    // Debug: verificar autenticação
-    const { data: authUser, error: authError } = await supabase.auth.getUser();
-    console.log('🔐 [getLeadsByPeriod] Auth user:', authUser?.user?.id, authError);
-
-    // SOLUÇÃO: Query com SQL direto para bypass RLS completo
-    console.log('🔧 [getLeadsByPeriod] Executando SQL direto para bypass RLS...');
-    const { data, error } = await supabase
-      .rpc('admin_get_leads_by_period', {
-        start_date: options.from.toISOString(),
-        end_date: options.to.toISOString()
-      });
-    
-    if (error) {
-      console.error('📊 [getLeadsByPeriod] RPC admin query failed:', error);
-      // Fallback: tentar query direta normal
-      console.log('🔧 [getLeadsByPeriod] Tentando query direta normal...');
-      const { data: fallbackData, error: fallbackError } = await supabase
-        .from('leads')
-        .select('created_at')
-        .gte('created_at', options.from.toISOString())
-        .lte('created_at', options.to.toISOString())
-        .order('created_at', { ascending: true });
-      
-      if (fallbackError) {
-        console.error('📊 [getLeadsByPeriod] Fallback query também falhou:', fallbackError);
-        // Usar dados de exemplo como último recurso
-        console.log('🎯 [getLeadsByPeriod] USANDO DADOS DE EXEMPLO como último recurso');
-        const exampleData = [
-          { created_at: '2025-03-15T10:00:00Z' },
-          { created_at: '2025-04-10T14:30:00Z' },
-          { created_at: '2025-04-25T09:15:00Z' },
-          { created_at: '2025-05-05T16:45:00Z' },
-          { created_at: '2025-05-20T11:20:00Z' },
-          { created_at: '2025-06-12T08:30:00Z' },
-          { created_at: '2025-06-28T15:15:00Z' },
-          { created_at: '2025-07-08T12:45:00Z' },
-          { created_at: '2025-07-22T17:30:00Z' },
-          { created_at: '2025-08-03T09:00:00Z' },
-          { created_at: '2025-08-18T14:15:00Z' },
-          { created_at: '2025-08-25T11:45:00Z' }
-        ];
-        console.log('📊 [getLeadsByPeriod] Using example data:', exampleData.length, 'records');
-        return processLeadsData(exampleData, options.granularity);
-      }
-      
-      console.log('📊 [getLeadsByPeriod] Fallback query SUCCESS:', fallbackData?.length, 'records');
-      
-      if (fallbackData && fallbackData.length > 0) {
-        console.log('🎉 [getLeadsByPeriod] DADOS REAIS via fallback!', fallbackData.length, 'leads');
-        return processLeadsData(fallbackData, options.granularity);
-      }
-      
-      console.log('📊 [getLeadsByPeriod] Nenhum lead no período (fallback)');
-      return [];
-    }
-    
-    console.log('📊 [getLeadsByPeriod] RPC admin query SUCCESS:', data?.length, 'records');
-    
-    // Se retornou dados via RPC, processar normalmente
-    if (data && data.length > 0) {
-      console.log('🎉 [getLeadsByPeriod] DADOS REAIS via RPC ADMIN!', data.length, 'leads');
-      // Converter dados RPC para formato esperado (usando lead_id em vez de id)
-      const formattedData = data.map(lead => ({ created_at: lead.created_at }));
-      return processLeadsData(formattedData, options.granularity);
-    }
-    
-    // Se não há dados no período, isso é válido
-    console.log('📊 [getLeadsByPeriod] Nenhum lead encontrado no período via RPC');
-    return [];
+    // Converter para array ordenado
+    return Array.from(buckets.entries())
+      .map(([period, value]) => ({ period, value }))
+      .sort((a, b) => a.period.localeCompare(b.period));
       
   } catch (error) {
-    console.error('📊 [getLeadsByPeriod] Erro ao buscar leads por período:', error);
+    console.error('Erro ao buscar leads por período:', error);
     return [];
   }
 }

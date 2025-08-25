@@ -1,136 +1,105 @@
 // deno-lint-ignore-file no-explicit-any
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-export type CreateUserPayload = {
-  email: string;
-  password: string;
-  full_name: string;
-  role: "corretor" | "gestor" | "admin";
-  phone?: string;
-};
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-
-function jsonResponse(data: any, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "Content-Type": "application/json",
-      ...corsHeaders,
-    },
-  });
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-Deno.serve(async (req: Request) => {
+serve(async (req) => {
   // Handle CORS preflight requests
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { 
-      status: 200, 
-      headers: corsHeaders 
-    });
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    if (req.method !== "POST") {
-      return jsonResponse({ error: "Method not allowed" }, 405);
+    // Create a Supabase client with the Auth context of the function
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      {
+        global: {
+          headers: { Authorization: req.headers.get('Authorization')! },
+        },
+      }
+    )
+
+    // Get the user from the JWT token
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
+    
+    if (userError || !user) {
+      throw new Error('Unauthorized')
     }
 
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return jsonResponse({ error: "Unauthorized" }, 401);
+    // Check if the user is admin
+    const { data: userProfile, error: profileError } = await supabaseClient
+      .from('user_profiles')
+      .select('role')
+      .eq('user_id', user.id)
+      .single()
+
+    if (profileError || userProfile?.role !== 'admin') {
+      throw new Error('Forbidden: Only admins can create users')
     }
 
-    const accessToken = authHeader.replace("Bearer ", "");
-    const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+    // Get request body
+    const { email, role = 'corretor', company_id = null } = await req.json()
 
-    // Identificar o solicitante
-    const { data: authUserData, error: authErr } = await adminClient.auth.getUser(accessToken);
-    if (authErr || !authUserData.user) {
-      return jsonResponse({ error: "Invalid token" }, 401);
+    if (!email) {
+      throw new Error('Email is required')
     }
 
-    const requesterId = authUserData.user.id;
-
-    // Buscar perfil do solicitante para validar role e empresa
-    const { data: requesterProfile, error: profileErr } = await adminClient
-      .from("user_profiles")
-      .select("id, role, company_id")
-      .eq("id", requesterId)
-      .single();
-
-    if (profileErr || !requesterProfile) {
-      return jsonResponse({ error: "Requester profile not found" }, 403);
+    // Check if user already exists in auth.users
+    const { data: existingUser, error: existingError } = await supabaseClient.auth.admin.getUserByEmail(email)
+    
+    if (existingError || !existingUser.user) {
+      throw new Error('User not found in auth.users. Please create the user in Authentication first.')
     }
 
-    if (!(["admin", "gestor"].includes(requesterProfile.role))) {
-      return jsonResponse({ error: "Forbidden" }, 403);
+    // Insert or update user profile
+    const { data: profileData, error: insertError } = await supabaseClient
+      .from('user_profiles')
+      .upsert({
+        user_id: existingUser.user.id,
+        email: email,
+        role: role,
+        company_id: company_id,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'user_id'
+      })
+      .select()
+      .single()
+
+    if (insertError) {
+      throw new Error(`Failed to create user profile: ${insertError.message}`)
     }
 
-    const payload = (await req.json()) as CreateUserPayload;
-    if (!payload?.email || !payload?.password || !payload?.full_name || !payload?.role) {
-      return jsonResponse({ error: "Missing fields" }, 400);
-    }
+    return new Response(
+      JSON.stringify({
+        success: true,
+        message: 'User profile created/updated successfully',
+        data: profileData
+      }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      }
+    )
 
-    // Gestor só pode criar corretores
-    if (requesterProfile.role === "gestor" && payload.role !== "corretor") {
-      return jsonResponse({ error: "Gestor pode criar apenas corretores" }, 403);
-    }
-
-    // Criar usuário confirmado com senha temporária
-    const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
-      email: payload.email,
-      password: payload.password,
-      email_confirm: true,
-      user_metadata: {
-        full_name: payload.full_name,
-        role: payload.role,
-        phone: payload.phone || "",
-      },
-    });
-
-    if (createErr || !created.user) {
-      return jsonResponse({ error: createErr?.message || "Erro ao criar usuário" }, 400);
-    }
-
-    // Garantir perfil completo e vínculo de empresa
-    const newUserId = created.user.id;
-    const updates = {
-      full_name: payload.full_name,
-      role: payload.role,
-      phone: payload.phone || null,
-      is_active: true,
-      company_id: requesterProfile.company_id || null,
-    } as Record<string, any>;
-
-    // Inserir perfil diretamente (usuário é novo, não existe perfil)
-    const { error: insErr } = await adminClient
-      .from("user_profiles")
-      .insert({ 
-        id: newUserId, 
-        email: payload.email, 
-        ...updates 
-      });
-
-    if (insErr) {
-      return jsonResponse({ error: `Erro ao criar perfil: ${insErr.message}` }, 400);
-    }
-
-    return jsonResponse({
-      user_id: newUserId, 
-      email: payload.email,
-      success: true
-    });
-  } catch (e: any) {
-    return jsonResponse({ error: e?.message || "Internal error" }, 500);
+  } catch (error) {
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: error.message
+      }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      }
+    )
   }
-});
+})
 
 
