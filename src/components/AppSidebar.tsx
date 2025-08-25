@@ -34,7 +34,7 @@ const menuItems = [
     permissionKey: "menu_properties",
   },
   {
-    title: "Contratos",
+    title: "Contratos (MVP)",
     url: "#",
     icon: FileText,
     view: "contracts" as const,

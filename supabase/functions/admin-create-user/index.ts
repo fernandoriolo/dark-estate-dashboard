@@ -32,15 +32,15 @@ serve(async (req) => {
       throw new Error('Unauthorized')
     }
 
-    // Check if the user is admin
+    // Check if the user is admin or gestor
     const { data: userProfile, error: profileError } = await supabaseClient
       .from('user_profiles')
       .select('role')
       .eq('user_id', user.id)
       .single()
 
-    if (profileError || userProfile?.role !== 'admin') {
-      throw new Error('Forbidden: Only admins can create users')
+    if (profileError || !['admin', 'gestor'].includes(userProfile?.role)) {
+      throw new Error('Forbidden: Only admins and gestores can create users')
     }
 
     // Get request body
@@ -48,6 +48,11 @@ serve(async (req) => {
 
     if (!email) {
       throw new Error('Email is required')
+    }
+
+    // Gestor só pode criar corretores e gestores
+    if (userProfile?.role === 'gestor' && !['corretor', 'gestor'].includes(role)) {
+      throw new Error('Gestores podem criar apenas usuários com role corretor ou gestor')
     }
 
     // Check if user already exists in auth.users

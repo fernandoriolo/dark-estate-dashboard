@@ -400,9 +400,9 @@ export function useUserProfile() {
         throw new Error('Sem permissão para criar usuários');
       }
 
-      // Gestor só pode criar corretores
-      if (profile?.role === 'gestor' && userData.role !== 'corretor') {
-        throw new Error('Gestor pode criar apenas usuários com role corretor');
+      // Gestor pode criar corretores e gestores
+      if (profile?.role === 'gestor' && !['corretor', 'gestor'].includes(userData.role)) {
+        throw new Error('Gestor pode criar apenas usuários com role corretor ou gestor');
       }
 
       // Preferir criação via Edge Function com service_role (invocação direta via supabase.functions)

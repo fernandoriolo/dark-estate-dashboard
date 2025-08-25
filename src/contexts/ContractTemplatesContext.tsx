@@ -181,9 +181,8 @@ export const ContractTemplatesProvider: React.FC<ContractTemplatesProviderProps>
         file_path: uploadResult.filePath!,
         file_size: file.size,
         file_type: file.type,
-        user_id: user?.id || null,
-        created_by: user?.id || null,
         is_active: true
+        // user_id, company_id e created_by são preenchidos automaticamente pelo trigger
       };
 
       const { data, error } = await supabase

@@ -910,15 +910,10 @@ export function UserManagementView() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {/* Gestor só pode criar corretores */}
-                  {!isAdmin && <SelectItem value="corretor">Corretor</SelectItem>}
-                  {isAdmin && (
-                    <>
-                      <SelectItem value="corretor">Corretor</SelectItem>
-                      <SelectItem value="gestor">Gestor</SelectItem>
-                      <SelectItem value="admin">Administrador</SelectItem>
-                    </>
-                  )}
+                  {/* Gestor pode criar corretores e gestores */}
+                  <SelectItem value="corretor">Corretor</SelectItem>
+                  {(isManager || isAdmin) && <SelectItem value="gestor">Gestor</SelectItem>}
+                  {isAdmin && <SelectItem value="admin">Administrador</SelectItem>}
                 </SelectContent>
               </Select>
             </div>
