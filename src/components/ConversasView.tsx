@@ -15,6 +15,9 @@ import { ConversationActionsMenu } from './ConversationActionsMenu';
 import { SummaryModalAnimated } from './SummaryModalAnimated';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+
+if ((import.meta as any).env?.DEV) { (window as any).supabase = supabase; }
 
 // Tipos para as estruturas de dados
 interface WhatsAppInstance {
@@ -58,7 +61,7 @@ export function ConversasView() {
   }>({ isOpen: false, data: null });
   
   const { conversas, loading: loadingConversas, error: errorConversas, updateConversation } = useConversasList(selectedInstance);
-  const { messages, loading: loadingMessages, error: errorMessages, addMessage } = useConversaMessages(selectedConversation);
+  const { messages, loading: loadingMessages, error: errorMessages, openSession, refetch } = useConversaMessages();
   const endOfMessagesRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
@@ -195,7 +198,7 @@ export function ConversasView() {
     onMessageUpdate: (sessionId: string, message: any) => {
       // Se a conversa aberta é a mesma da nova mensagem, adicionar à timeline
       if (selectedConversation === sessionId) {
-        addMessage(message);
+        refetch();
       }
     }
   });
@@ -346,7 +349,7 @@ export function ConversasView() {
                 conversas.map((conversa) => (
                   <div
                     key={conversa.sessionId}
-                    onClick={() => setSelectedConversation(conversa.sessionId)}
+                    onClick={() => { setSelectedConversation(conversa.sessionId); openSession(conversa.sessionId); }}
                     className={`
                       p-4 cursor-pointer transition-all duration-200 border-b border-gray-800/50
                       ${selectedConversation === conversa.sessionId 
@@ -507,11 +510,22 @@ export function ConversasView() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {messages.map((message) => (
+                    {(() => {
+                      const idxHandoff = messages.findIndex((m: any) => m && m.before_handoff === false);
+                      return messages.map((message: any, i: number) => (
                       <div
                         key={message.id}
                         className={`flex ${message.message.type === 'ai' ? 'justify-end' : 'justify-start'}`}
                       >
+                        {i === idxHandoff && idxHandoff > 0 && (
+                          <div className="flex items-center gap-2 my-2 w-full">
+                            <div className="h-px flex-1 bg-gray-700/60" />
+                            <span className="text-[11px] text-gray-400 whitespace-nowrap">
+                              Atendido pelo SDR até aqui
+                            </span>
+                            <div className="h-px flex-1 bg-gray-700/60" />
+                          </div>
+                        )}
                         <div
                           className={`
                             max-w-xs lg:max-w-md px-4 py-3 rounded-lg
@@ -556,7 +570,8 @@ export function ConversasView() {
                           </p>
                         </div>
                       </div>
-                    ))}
+                    ));
+                    })()}
                     <div ref={endOfMessagesRef} />
                   </div>
                 )}
@@ -615,6 +630,7 @@ export function ConversasView() {
           </div>
         )}
       </Card>
+
 
       {/* Modal de Resumo */}
               <SummaryModalAnimated

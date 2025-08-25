@@ -21,6 +21,9 @@ import { ConversationActionsMenu } from './ConversationActionsMenu';
 import { SummaryModalAnimated } from './SummaryModalAnimated';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+
+if ((import.meta as any).env?.DEV) { (window as any).supabase = supabase; }
 
 // Variants de animação exatas
 const list = { 
@@ -447,7 +450,7 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
   // Hooks de dados
   const { instances, loading: loadingInstances, error: errorInstances, refresh: refetchInstances, scopedInstance } = useChatInstancesFromMessages();
   const { conversas, loading: loadingConversas, error: errorConversas, refetch: refetchConversas, updateConversation } = useConversasList(selectedInstance || scopedInstance);
-  const { messages, loading: loadingMessages, error: errorMessages, refetch: refetchMessages, addMessage, removeMessage } = useConversaMessages(selectedConversation);
+  const { messages, loading: loadingMessages, error: errorMessages, openSession, refetch: refetchMessages } = useConversaMessages();
 
   // Realtime (única assinatura): novas mensagens e deleções
   useConversasRealtime({
@@ -457,8 +460,7 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
     },
     onMessageUpdate: (sessionId, message) => {
       if (sessionId === selectedConversation) {
-        addMessage(message);
-        // Animação pop + glow para nova mensagem
+        refetchMessages();
         controls.start('highlight');
         setTimeout(() => controls.start('visible'), 250);
       }
@@ -466,9 +468,9 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
       updateConversation(sessionId);
     },
     onMessageDelete: (_sessionId, messageId) => {
-      // Remover imediatamente do painel direito (se estiver visível)
-      removeMessage(messageId);
-      // Atualizar contadores e lista
+      if (_sessionId === selectedConversation) {
+        refetchMessages();
+      }
       refetchConversas();
       refetchInstances();
     }
@@ -825,7 +827,7 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
                         }
                       `}
                       data-active={selectedConversation === conversa.sessionId}
-                      onClick={() => setSelectedConversation(conversa.sessionId)}
+                      onClick={() => { setSelectedConversation(conversa.sessionId); openSession(conversa.sessionId); }}
                     >
                       <div className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-fuchsia-400/30 to-sky-400/30 text-sm font-medium text-white ring-1 ring-white/10 group-hover:scale-[1.02] transition">
                         {conversa.displayName.charAt(0).toUpperCase()}
@@ -946,13 +948,24 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
                           animate="visible" 
                           className="flex flex-col gap-2.5 px-1.5 pb-3"
                         >
-                          {messages.map((row: any) => (
+                          {(() => {
+                            const idxHandoff = messages.findIndex((m: any) => m && m.before_handoff === false);
+                            return messages.map((row: any, i: number) => (
                             <motion.div 
                               key={row.id} 
                               variants={bubble} 
                               layout
                               animate={controls}
                             >
+                              {i === idxHandoff && idxHandoff > 0 && (
+                                <div className="flex items-center gap-2 my-2">
+                                  <div className="h-px flex-1 bg-zinc-700/60" />
+                                  <span className="text-[11px] text-zinc-400 whitespace-nowrap">
+                                    Atendido pelo SDR até aqui
+                                  </span>
+                                  <div className="h-px flex-1 bg-zinc-700/60" />
+                                </div>
+                              )}
                               <MessageBubble row={row} />
                               
                               <div className={(() => {
@@ -969,7 +982,8 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
                                 {formatHour(row.data)}
                               </div>
                             </motion.div>
-                          ))}
+                          ));
+                          })()}
                           <div ref={endOfMessagesRef} />
                         </motion.div>
                       </AnimatePresence>
