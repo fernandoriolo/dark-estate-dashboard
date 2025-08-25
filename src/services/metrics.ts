@@ -691,6 +691,40 @@ export async function getAvailableBrokers(): Promise<Array<{ id: string; name: s
   }
 }
 
+/**
+ * Busca o VGV (Valor Geral de Imóveis) e a quantidade de imóveis por período.
+ * Utiliza a tabela `imoveisvivareal` e a coluna `preco` através de uma função RPC.
+ */
+export async function getVgvImoveisByPeriod(params: {
+  from: string; 
+  to: string;
+  granularity: 'day' | 'week' | 'month' | 'year' | 'total';
+}): Promise<{ bucket: string | null; vgv: number; imoveis: number }[]> {
+  const { from, to, granularity } = params;
+  try {
+    const { data, error } = await supabase
+      .rpc('get_imoveis_for_dashboard', {
+        start_date: from,
+        end_date: to,
+        trunc_type: granularity
+      });
+
+    if (error) {
+      console.error(`📊 [getVgvImoveisByPeriod] RPC falhou para granularidade '${granularity}':`, error);
+      throw error;
+    }
+
+    return (data || []).map(r => ({
+      bucket: r.bucket,
+      vgv: Number(r.vgv ?? 0),
+      imoveis: Number(r.imoveis ?? 0),
+    }));
+  } catch (error) {
+    console.error(`Erro ao buscar VGV de imóveis (granularidade: ${granularity}):`, error);
+    return [];
+  }
+}
+
 // Helper functions para ranges de data
 export function getLastDays(days: number): DateRange {
   const to = new Date();

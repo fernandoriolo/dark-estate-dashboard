@@ -24,10 +24,64 @@ import {
   type DateRange
 } from './metrics';
 import { monthLabel } from '@/lib/charts/formatters';
+import { normalizePropertyType, mapChannelName, normalizeLeadStage } from '@/lib/charts/normalizers';
+import { getVgvImoveisByPeriod } from './metrics';
 
 // Types esperados pelo componente atual
-export type VgvPeriod = 'todo' | 'anual' | 'mensal' | 'semanal' | 'diario';
+export type VgvPeriod = 'anual' | 'mensal' | 'semanal' | 'diario' | 'todo';
 export type TimeRange = 'total' | 'year' | 'month' | 'week' | 'day';
+
+// ============================================================================
+// Funções de Data (Helpers)
+// ============================================================================
+const getCurrentYear = (): { from: Date, to: Date } => {
+  const now = new Date();
+  return {
+    from: new Date(now.getFullYear(), 0, 1),
+    to: new Date(now.getFullYear(), 11, 31)
+  };
+};
+
+const getCurrentMonth = (): { from: Date, to: Date } => {
+  const now = new Date();
+  return {
+    from: new Date(now.getFullYear(), now.getMonth(), 1),
+    to: new Date(now.getFullYear(), now.getMonth() + 1, 0)
+  };
+};
+
+const getCurrentWeek = (): { from: Date, to: Date } => {
+  const now = new Date();
+  const dayOfWeek = now.getDay(); // 0 for Sunday, 6 for Saturday
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - dayOfWeek);
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(startOfWeek.getDate() + 6);
+  return {
+    from: startOfWeek,
+    to: endOfWeek
+  };
+};
+
+const getToday = (): { from: Date, to: Date } => {
+  const now = new Date();
+  const from = new Date(now);
+  from.setDate(now.getDate() - 6); // Começa 6 dias atrás para ter um range de 7 dias
+  from.setHours(0, 0, 0, 0);
+
+  const to = new Date(now);
+  to.setHours(23, 59, 59, 999);
+
+  return { from, to };
+};
+
+const getTotal = (): { from: Date, to: Date } => {
+  const now = new Date();
+  return {
+    from: new Date(now.getFullYear() - 2, 0, 1), // 2 anos atrás
+    to: now
+  };
+};
 
 // Mapeamento de períodos VGV para configurações do novo serviço
 function getVgvDateRange(period: VgvPeriod): DateRange & { granularity: TimeGranularity } {
@@ -126,33 +180,78 @@ function getTimeRangeConfig(timeRange: TimeRange): DateRange & { granularity: Ti
   }
 }
 
+function getVgvPeriodConfig(period: VgvPeriod) {
+  const now = new Date();
+  let from: Date = new Date(now);
+  let to: Date = new Date(now);
+  let granularity: 'day' | 'week' | 'month' | 'year';
+
+  switch (period) {
+    case 'anual':
+      // Últimos 3 anos + ano atual = 4 anos próximos à data atual
+      from.setFullYear(now.getFullYear() - 3);
+      from.setMonth(0, 1); // 1º de janeiro
+      to.setFullYear(now.getFullYear());
+      to.setMonth(11, 31); // 31 de dezembro do ano atual
+      granularity = 'year';
+      break;
+    case 'mensal':
+      // Últimos 12 meses a partir do mês atual
+      from.setMonth(now.getMonth() - 11);
+      from.setDate(1); // Primeiro dia do mês
+      to.setDate(new Date(to.getFullYear(), to.getMonth() + 1, 0).getDate()); // Último dia do mês atual
+      granularity = 'month';
+      break;
+    case 'semanal':
+      // Últimas 8 semanas a partir da semana atual
+      from.setDate(now.getDate() - (8 * 7));
+      granularity = 'week';
+      break;
+    case 'diario':
+      // Últimos 30 dias a partir de hoje
+      from.setDate(now.getDate() - 30);
+      granularity = 'day';
+      break;
+    default: // 'todo'
+      // Últimos 2 anos completos + ano atual (período mais recente e relevante)
+      from.setFullYear(now.getFullYear() - 2);
+      from.setMonth(0, 1); // 1º de janeiro de 2 anos atrás
+      granularity = 'year';
+      break;
+  }
+
+  // Normalizar datas para início/fim do dia
+  from.setHours(0, 0, 0, 0);
+  to.setHours(23, 59, 59, 999);
+
+  console.log(`📅 [getVgvPeriodConfig] Período "${period}":`, {
+    from: from.toISOString().split('T')[0],
+    to: to.toISOString().split('T')[0],
+    granularity
+  });
+
+  return { from, to, granularity };
+}
+
 /**
- * Adapter para VGV - simula dados de contratos (será implementado futuramente)
+ * Busca o VGV total e a quantidade total de imóveis.
  */
-export async function fetchVgvByPeriod(period: VgvPeriod): Promise<{ month: string; vgv: number; qtd: number }[]> {
+export async function fetchVgvTotals(): Promise<{ totalVgv: number; totalImoveis: number }> {
   try {
-    const config = getVgvDateRange(period);
-    const data = await getLeadsByPeriod(config);
-    
-    // Por enquanto simula VGV baseado nos leads
-    // TODO: Implementar consulta real de contratos quando tabela estiver disponível
-    return data.map(item => {
-      const fakeVgv = item.value * 150000; // R$ 150k por lead (simulação)
-      const qtd = Math.max(1, Math.floor(item.value / 3)); // 1 imóvel a cada 3 leads
-      
-      return {
-        month: item.period,
-        vgv: fakeVgv,
-        qtd
-      };
-    });
-    
+    const from = new Date('2000-01-01').toISOString();
+    const to = new Date().toISOString();
+    const rows = await getVgvImoveisByPeriod({ from, to, granularity: 'total' });
+    const row = rows[0] ?? { vgv: 0, imoveis: 0 };
+    return { totalVgv: row.vgv, totalImoveis: row.imoveis };
   } catch (error) {
-    console.error('Erro ao buscar VGV:', error);
-    return [];
+    console.error('Erro ao buscar VGV total de imóveis:', error);
+    return { totalVgv: 0, totalImoveis: 0 };
   }
 }
 
+// ============================================================================
+// Funções de Leads
+// ============================================================================
 /**
  * Adapter para leads por canal (já compatível)
  */
@@ -363,4 +462,87 @@ export function generateTemporalFallback(months: number = 6): { month: string; c
 // Função legada mantida para compatibilidade - apenas placeholder
 export async function fetchHeatmapConversas(): Promise<number[][]> {
   return fetchHeatmapConversasPorCorretor();
+}
+
+/**
+ * Fetch VGV e Qtd de Imóveis por período com preenchimento de lacunas
+ */
+export async function fetchVgvByPeriod(period: VgvPeriod): Promise<{ month: string; vgv: number; qtd: number }[]> {
+  try {
+    const config = getVgvPeriodConfig(period);
+    const sparseData = await getVgvImoveisByPeriod({
+      from: config.from.toISOString(),
+      to: config.to.toISOString(),
+      granularity: config.granularity,
+    });
+
+    const dataMap = new Map(
+      sparseData
+        .filter(item => item.bucket)
+        .map(item => {
+          const date = new Date(item.bucket!);
+          const key = date.toISOString().split('T')[0];
+          return [key, { vgv: item.vgv, qtd: item.imoveis }];
+        })
+    );
+
+    const filledData: { month: string; vgv: number; qtd: number }[] = [];
+    const iterator = new Date(config.from);
+    iterator.setUTCHours(0, 0, 0, 0);
+
+    const endDate = new Date(config.to);
+    endDate.setUTCHours(0, 0, 0, 0);
+
+    let weekCounter = 1;
+    const startOfFirstWeek = new Date(config.from);
+
+    while (iterator <= endDate) {
+      const key = iterator.toISOString().split('T')[0];
+      const dataPoint = dataMap.get(key) || { vgv: 0, qtd: 0 };
+      
+      let label = key;
+      switch (config.granularity) {
+        case 'year':
+          label = iterator.getUTCFullYear().toString();
+          break;
+        case 'month':
+          label = `${iterator.getUTCFullYear()}-${String(iterator.getUTCMonth() + 1).padStart(2, '0')}`;
+          break;
+        case 'week':
+          // Calcular número da semana baseado no início do período
+          const weeksDiff = Math.floor((iterator.getTime() - startOfFirstWeek.getTime()) / (7 * 24 * 60 * 60 * 1000));
+          label = `Sem ${weekCounter + weeksDiff}`;
+          break;
+        case 'day':
+          // Formato DD/MM para dias
+          label = iterator.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+          break;
+        default:
+          label = key;
+      }
+
+      filledData.push({ month: label, ...dataPoint });
+
+      switch (config.granularity) {
+        case 'year':
+          iterator.setUTCFullYear(iterator.getUTCFullYear() + 1);
+          break;
+        case 'month':
+          iterator.setUTCMonth(iterator.getUTCMonth() + 1);
+          break;
+        case 'week':
+          iterator.setUTCDate(iterator.getUTCDate() + 7);
+          break;
+        default: // day
+          iterator.setUTCDate(iterator.getUTCDate() + 1);
+          break;
+      }
+    }
+    
+    return filledData;
+
+  } catch (error) {
+    console.error('Erro ao buscar VGV por período:', error);
+    return [];
+  }
 }

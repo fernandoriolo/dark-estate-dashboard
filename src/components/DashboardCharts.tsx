@@ -98,7 +98,15 @@ export const DashboardCharts: React.FC = () => {
 
 		try {
 			const fetchTasks = [
-				{ key: 'vgv', task: () => fetchVgvByPeriod(vgvPeriod).then(setVgv) },
+				{ 
+					key: 'vgv', 
+					task: async () => {
+						console.log('📈 [refetchAllData] Buscando VGV para período:', vgvPeriod);
+						const result = await fetchVgvByPeriod(vgvPeriod);
+						console.log('📈 [refetchAllData] Resultado VGV:', result);
+						setVgv(result);
+					}
+				},
 				{ key: 'canal', task: () => fetchLeadsPorCanalTop8().then(setCanal) },
 				{ key: 'tipos', task: () => fetchDistribuicaoPorTipo().then(setTipos) },
 				{ key: 'funil', task: () => fetchFunilLeads().then(setFunil) },
@@ -165,12 +173,13 @@ export const DashboardCharts: React.FC = () => {
 	// Hook de realtime para atualizações automáticas
 	const { isConnected: isRealtimeConnected, lastUpdate, updateCount } = useRealtimeDashboard(refetchAllData);
 
-	// Effect para atualizar VGV quando período muda
+	// Effect para carregar todos os dados (incluindo VGV)
 	React.useEffect(() => {
-		fetchVgvByPeriod(vgvPeriod).then(setVgv).catch(() => setVgv([]));
-	}, [vgvPeriod]);
+		refetchAllData();
+	}, [refetchAllData]);
 
-	// Dados temporais agora são carregados via refetchAllData
+	// REMOVIDO: useEffect duplicado que buscava apenas VGV.
+	// A busca agora está centralizada em refetchAllData.
 
 	// Função para buscar informações básicas do imóvel no hover
 	const handlePropertyHover = async (imovelId: string, event: React.MouseEvent) => {
@@ -295,73 +304,66 @@ export const DashboardCharts: React.FC = () => {
 		const vgvData = vgv.map(v => v.vgv);
 		const qtdData = vgv.map(v => v.qtd);
 
-		// Definição de gradientes
-		const vgvGradient = `url(#vgv-gradient)`;
-		const barGradient = `url(#bar-gradient)`;
+		console.log('🔧 [vgvSeriesConfig] Configurando séries para tipo:', vgvChartType);
+		console.log('🔧 [vgvSeriesConfig] VGV Data:', vgvData);
+		console.log('🔧 [vgvSeriesConfig] QTD Data:', qtdData);
+
+		// Definição de cores sólidas
+		const vgvColor = chartPalette.primaryAlt;
+		const barColor = chartPalette.accent;
+
+		const baseLineConfig = {
+			type: 'line' as const,
+			id: 'vgv',
+			label: 'VGV',
+			data: vgvData,
+			color: vgvColor,
+			curve: 'monotoneX' as any,
+			connectNulls: true
+		};
+
+		const baseBarConfig = {
+			type: 'bar' as const,
+			id: 'qtd',
+			label: 'Qtd. Imóveis',
+			data: qtdData,
+			color: barColor
+		};
 
 		switch (vgvChartType) {
 			case 'line':
 				return {
-					vgvSeries: [{ 
-						type: 'line' as const, 
-						id: 'vgv', 
-						label: 'VGV', 
-						data: vgvData, 
-						color: chartPalette.primaryAlt, 
-						showMark: true, 
-						curve: 'monotoneX' as any, 
-						lineWidth: 3 as any 
+					vgvSeries: [{
+						...baseLineConfig,
+						showMark: true,
+						lineWidth: 3
 					}],
-					convSeries: [] as any[]
+					convSeries: []
 				};
 			case 'area':
 				return {
-					vgvSeries: [{ 
-						type: 'line' as const, 
-						id: 'vgv', 
-						label: 'VGV', 
-						data: vgvData, 
-						color: vgvGradient, 
-						area: true as any, 
-						showMark: false as any, 
-						curve: 'monotoneX' as any, 
-						lineWidth: 2 as any 
+					vgvSeries: [{
+						...baseLineConfig,
+						area: true,
+						showMark: false,
+						lineWidth: 2
 					}],
-					convSeries: [] as any[]
+					convSeries: []
 				};
 			case 'bar':
 				return {
-					vgvSeries: [{ 
-						type: 'bar' as const, 
-						id: 'vgv', 
-						label: 'VGV', 
-						data: vgvData, 
-						color: barGradient, 
-						borderRadius: 6 as any 
-					}],
-					convSeries: [] as any[]
+					vgvSeries: [baseBarConfig],
+					convSeries: []
 				};
 			default: // combined
 				return {
-					vgvSeries: [{ 
-						type: 'line' as const, 
-						id: 'vgv', 
-						label: 'VGV', 
-						data: vgvData, 
-						color: vgvGradient, 
-						area: true as any, 
-						showMark: false as any, 
-						curve: 'monotoneX' as any, 
-						lineWidth: 2 as any 
+					vgvSeries: [{
+						...baseLineConfig,
+						area: true,
+						showMark: false,
+						lineWidth: 2
 					}],
-					convSeries: [{ 
-						type: 'bar' as const, 
-						id: 'conv', 
-						label: 'Imóveis', 
-						data: qtdData, 
-						color: barGradient, 
-						borderRadius: 4 as any 
-					}]
+					convSeries: [baseBarConfig]
 				};
 		}
 	}, [vgv, vgvChartType]);
@@ -506,44 +508,82 @@ export const DashboardCharts: React.FC = () => {
 							vgv,
 							() => (
 								<ChartContainer
-							xAxis={xAxisMonths}
-							yAxis={[{ 
-								...yAxisCurrency[0],
-								width: 60  // Reduzido para dar mais espaço ao gráfico
-							}]}
-							series={[...vgvSeriesConfig.vgvSeries, ...(vgvSeriesConfig.convSeries.length > 0 ? [{ ...vgvSeriesConfig.convSeries[0], axisId: 'y2' as any }] : [])]}
-							width={undefined as any}
-							height={320}
-							margin={{ 
-								left: 80,   // Reduzido para centralizar melhor
-								right: 40,  // Aumentado para equilibrar
-								top: 20,    // Reduzido
-								bottom: 50  // Aumentado para rótulos do eixo X
-							}}
-							style={{ width: '100%', maxWidth: '100%' }}
-						>
-							{/* Gradientes SVG */}
-							<defs>
-								<linearGradient id="vgv-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-									<stop offset="0%" stopColor={chartPalette.primaryAlt} stopOpacity={0.8} />
-									<stop offset="50%" stopColor={chartPalette.primaryAlt} stopOpacity={0.4} />
-									<stop offset="100%" stopColor={chartPalette.primaryAlt} stopOpacity={0.1} />
-								</linearGradient>
-								<linearGradient id="bar-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-									<stop offset="0%" stopColor={chartPalette.accent} stopOpacity={1} />
-									<stop offset="100%" stopColor={chartPalette.accent} stopOpacity={0.7} />
-								</linearGradient>
-							</defs>
-							
-							<ChartsGrid vertical style={gridStyle} />
-							{(vgvChartType === 'area' || vgvChartType === 'combined') && <AreaPlot />}
-							{(vgvChartType === 'line' || vgvChartType === 'combined') && <LinePlot />}
-							{(vgvChartType === 'bar' || vgvChartType === 'combined') && <BarPlot />}
-							<ChartsAxis />
-							<ChartsAxisHighlight x="line" />
-							<ChartsLegend direction="horizontal" />
-							<ChartsTooltip />
-						</ChartContainer>
+									xAxis={[{ 
+										scaleType: 'band', 
+										data: vgv.map(v => v.month), 
+										valueFormatter: (v: string) => {
+											// Não aplicar monthLabel para dias e semanas
+											if (v.includes('Sem ') || v.includes('/')) {
+												return v;
+											}
+											// Aplicar monthLabel apenas para anos e meses
+											return monthLabel(v);
+										},
+										tickLabelStyle: { fill: chartPalette.textSecondary, fontSize: 10 }
+									}]}
+									yAxis={[
+										{ 
+											id: 'y1', 
+											scaleType: 'linear', 
+											position: 'left', 
+											valueFormatter: (value: number) => `R$ ${(value / 1000000).toFixed(1)}M`,
+											tickLabelStyle: { fill: chartPalette.textSecondary, fontSize: 10 }
+										},
+										{ 
+											id: 'y2', 
+											scaleType: 'linear', 
+											position: 'right', 
+											valueFormatter: (value: number) => `${value}`,
+											tickLabelStyle: { fill: chartPalette.textSecondary, fontSize: 10 }
+										}
+									]}
+									series={(() => {
+										const series = [];
+										
+										// Adicionar série principal (VGV)
+										if (vgvSeriesConfig.vgvSeries.length > 0) {
+											series.push({
+												...vgvSeriesConfig.vgvSeries[0],
+												yAxisKey: 'y1'
+											});
+										}
+										
+										// Adicionar série secundária (Qtd) apenas no modo combined
+										if (vgvChartType === 'combined' && vgvSeriesConfig.convSeries.length > 0) {
+											series.push({
+												...vgvSeriesConfig.convSeries[0],
+												yAxisKey: 'y2'
+											});
+										}
+										
+										console.log('📊 [ChartContainer] Séries configuradas:', series);
+										return series;
+									})()}
+									height={320}
+									margin={{ left: 60, right: 60, top: 40, bottom: 30 }}
+								>
+									{/* Gradientes SVG */}
+									<defs>
+										<linearGradient id="vgv-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+											<stop offset="0%" stopColor={chartPalette.primaryAlt} stopOpacity={0.8} />
+											<stop offset="50%" stopColor={chartPalette.primaryAlt} stopOpacity={0.4} />
+											<stop offset="100%" stopColor={chartPalette.primaryAlt} stopOpacity={0.1} />
+										</linearGradient>
+										<linearGradient id="bar-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+											<stop offset="0%" stopColor={chartPalette.accent} stopOpacity={1} />
+											<stop offset="100%" stopColor={chartPalette.accent} stopOpacity={0.7} />
+										</linearGradient>
+									</defs>
+									
+									<ChartsGrid vertical style={gridStyle} />
+                                    {(vgvChartType === 'bar' || vgvChartType === 'combined') && <BarPlot />}
+                                    {(vgvChartType === 'line' || vgvChartType === 'area' || vgvChartType === 'combined') && <LinePlot />}
+                                    {(vgvChartType === 'area' || vgvChartType === 'combined') && <AreaPlot />}
+									<ChartsAxis />
+									<ChartsAxisHighlight x="line" />
+									<ChartsLegend />
+									<ChartsTooltip />
+								</ChartContainer>
 							),
 							() => ChartEmptyVariants.vgv(320),
 							320
