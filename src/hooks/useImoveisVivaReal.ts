@@ -193,14 +193,19 @@ export function useImoveisVivaReal(initial?: {
 
   const updateImovel = async (id: number, updates: Partial<ImovelVivaReal>) => {
     try {
-      const { data, error: updateError } = await supabase
+      const { error: updateError } = await supabase
         .from('imoveisvivareal')
         .update(updates)
-        .eq('id', id)
-        .select()
-        .single();
+        .eq('id', id);
 
       if (updateError) throw updateError;
+
+      // Buscar o registro atualizado separadamente se necessário
+      const { data } = await supabase
+        .from('imoveisvivareal')
+        .select('id, listing_id, tipo_imovel, cidade, bairro, disponibilidade, disponibilidade_observacao')
+        .eq('id', id)
+        .single();
 
       // Log de auditoria
       try {

@@ -144,19 +144,29 @@ export function DashboardContent({ properties, loading, onNavigateToAgenda }: Da
         prevTotalsLeadsPromise,
       ]);
 
-      // Agora simular VGV baseado nos dados de leads (substituindo views)
-      // TODO: Implementar consulta real quando tabela contracts estiver disponível
-      const vgvNowRes = { data: { soma_vgv: (leadsRes.count || 0) * 150000 } };
-      const vgvPrevRes = { 
-        data: (prevLeadsRes.count || 0) > 0 ? [{ mes: firstDayThisMonthISO, soma_vgv: (prevLeadsRes.count || 0) * 150000 }] : [],
-        error: null
-      };
+      // Buscar VGV real da tabela imoveisvivareal
+      const vgvNowPromise = supabase
+        .from('imoveisvivareal')
+        .select('preco')
+        .not('preco', 'is', null);
+      
+      const vgvPrevPromise = supabase
+        .from('imoveisvivareal')
+        .select('preco')
+        .lt('created_at', firstDayThisMonthISO)
+        .not('preco', 'is', null);
+      
+      const [vgvNowRes, vgvPrevRes] = await Promise.all([vgvNowPromise, vgvPrevPromise]);
 
       const totalProps = (totalRes.count || 0);
       const availProps = (dispRes.count || 0);
       const leadsTotal = (leadsRes.count || 0);
-      const vgvNow = Number((vgvNowRes as any)?.data?.soma_vgv || 0);
-      const vgvPrev = Array.isArray((vgvPrevRes as any)?.data) ? Number((vgvPrevRes as any).data[0]?.soma_vgv || 0) : 0;
+      
+      // Calcular VGV atual (soma de todos os preços)
+      const vgvNow = vgvNowRes.data?.reduce((sum, item) => sum + (Number(item.preco) || 0), 0) || 0;
+      
+      // Calcular VGV anterior (soma dos preços até o mês passado)
+      const vgvPrev = vgvPrevRes.data?.reduce((sum, item) => sum + (Number(item.preco) || 0), 0) || 0;
 
       setTotalProperties(totalProps);
       setAvailableProperties(availProps);

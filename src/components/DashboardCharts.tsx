@@ -219,10 +219,43 @@ export const DashboardCharts: React.FC = () => {
 		refetchAllData();
 	}, [refetchAllData]);
 
-	const months = React.useMemo(() => vgv.map(v => {
-		if (vgvPeriod === 'diario' || vgvPeriod === 'semanal') return v.month;
-		return monthLabel(v.month);
-	}), [vgv, vgvPeriod]);
+	const months = React.useMemo(() => {
+		console.log('🎯 [DashboardCharts] months useMemo - vgv:', vgv);
+		const result = vgv.map(v => {
+			console.log('🎯 [DashboardCharts] Processando período:', v.month, 'para filtro:', vgvPeriod);
+			
+			// Formatação baseada no tipo de período
+			switch (vgvPeriod) {
+				case 'anual':
+					return v.month; // "2025" -> "2025"
+				case 'mensal':
+					try {
+						return monthLabel(v.month); // "2025-08" -> "ago/25"
+					} catch {
+						return v.month;
+					}
+				case 'semanal':
+					// "2025-W8-18" -> "Sem 8/25"
+					if (v.month.includes('-W')) {
+						const parts = v.month.split('-');
+						return `Sem ${parts[2]}/${parts[0].slice(-2)}`;
+					}
+					return v.month;
+				case 'diario':
+					// "2025-08-24" -> "24/08"
+					try {
+						const date = new Date(v.month);
+						return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+					} catch {
+						return v.month;
+					}
+				default:
+					return v.month;
+			}
+		});
+		console.log('🎯 [DashboardCharts] months result:', result);
+		return result;
+	}, [vgv, vgvPeriod]);
 	
 	// Dados de fallback para o gráfico temporal se não houver dados
 	const tempoData = React.useMemo(() => {
@@ -292,8 +325,11 @@ export const DashboardCharts: React.FC = () => {
 	}, [brokers, selectedBrokers, unassignedLeads]);
 
 	const vgvSeriesConfig = React.useMemo(() => {
+		console.log('🎯 [DashboardCharts] vgv data:', vgv);
 		const vgvData = vgv.map(v => v.vgv);
 		const qtdData = vgv.map(v => v.qtd);
+		console.log('🎯 [DashboardCharts] vgvData:', vgvData);
+		console.log('🎯 [DashboardCharts] qtdData:', qtdData);
 
 		// Definição de gradientes
 		const vgvGradient = `url(#vgv-gradient)`;
@@ -477,7 +513,6 @@ export const DashboardCharts: React.FC = () => {
 								onValueChange={(value) => value && setVgvPeriod(value as VgvPeriod)}
 								className="h-8"
 							>
-								<ToggleGroupItem value="todo" className="h-8 text-xs px-2 text-white data-[state=on]:bg-blue-600 data-[state=on]:text-white">Todo</ToggleGroupItem>
 								<ToggleGroupItem value="anual" className="h-8 text-xs px-2 text-white data-[state=on]:bg-blue-600 data-[state=on]:text-white">Anual</ToggleGroupItem>
 								<ToggleGroupItem value="mensal" className="h-8 text-xs px-2 text-white data-[state=on]:bg-blue-600 data-[state=on]:text-white">Mensal</ToggleGroupItem>
 								<ToggleGroupItem value="semanal" className="h-8 text-xs px-2 text-white data-[state=on]:bg-blue-600 data-[state=on]:text-white">Semanal</ToggleGroupItem>

@@ -288,6 +288,9 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
     setFilters,
     total,
     refetch: refetchImoveisList,
+    createImovel,
+    updateImovel,
+    deleteImovel,
   } = useImoveisVivaReal();
   const [searchTerm, setSearchTerm] = useState(filters.search ?? '');
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
@@ -516,7 +519,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
     setIsVivaRealEditOpen(true);
   };
 
-  const { updateImovel, deleteImovel, refetch: refetchImoveis } = useImoveisVivaReal();
+
 
   const submitVivaRealEdit = async () => {
     try {
@@ -534,7 +537,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
       toast({ title: 'Imóvel atualizado com sucesso' });
       setIsVivaRealEditOpen(false);
       setEditId(null);
-      refetchImoveis();
+      refetchImoveisList();
     } catch (err) {
       toast({ title: 'Erro ao atualizar', description: err instanceof Error ? err.message : 'Tente novamente', variant: 'destructive' });
     }
@@ -545,7 +548,7 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
       const ok = await deleteImovel(Number(property.id));
       if (!ok) throw new Error('Falha ao excluir');
       toast({ title: 'Imóvel excluído com sucesso' });
-      refetchImoveis();
+      refetchImoveisList();
     } catch (err) {
       toast({ title: 'Erro ao excluir', description: err instanceof Error ? err.message : 'Tente novamente', variant: 'destructive' });
     }
@@ -1795,32 +1798,44 @@ export function PropertyList({ properties, loading, onAddNew, refetch }: Propert
                 onClick={async () => {
                   try {
                     if (!availabilityTarget) return;
-                    // Quando exibindo itens do VivaReal, toda a lista vem de `imoveisvivareal`
-                    const isViva = isVivaRealMode;
-                    const table = isViva ? 'imoveisvivareal' : 'properties';
-                    const idCol = isViva ? 'id' : 'id';
+                    
                     // Regra de negócio: observação obrigatória quando indisponível ou reforma
                     if ((availabilityValue === 'indisponivel' || availabilityValue === 'reforma') && (!availabilityNote || availabilityNote.trim().length === 0)) {
                       toast({ title: 'Observação obrigatória', description: 'Descreva o motivo ao marcar como Indisponível ou Reforma.', variant: 'destructive' });
                       return;
                     }
-                    const updates: any = { disponibilidade: availabilityValue, disponibilidade_observacao: availabilityNote || null };
-                    const { error, data } = await supabase
-                      .from(table)
-                      .update(updates)
-                      .eq(idCol, isViva ? Number(availabilityTarget.id) : availabilityTarget.id)
-                      .select('id, disponibilidade, disponibilidade_observacao')
-                      .maybeSingle();
-                    if (error) throw error;
+
+                    const isViva = isVivaRealMode;
+                    
+                    if (isViva) {
+                      // Usar updateImovel do hook para imóveis VivaReal
+                      const result = await updateImovel(Number(availabilityTarget.id), {
+                        disponibilidade: availabilityValue,
+                        disponibilidade_observacao: availabilityNote || null
+                      });
+                      
+                      if (!result) {
+                        throw new Error('Erro ao atualizar disponibilidade do imóvel');
+                      }
+                    } else {
+                      // Atualizar tabela properties diretamente para propriedades legadas
+                      const { error } = await supabase
+                        .from('properties')
+                        .update({
+                          disponibilidade: availabilityValue,
+                          disponibilidade_observacao: availabilityNote || null
+                        })
+                        .eq('id', availabilityTarget.id);
+                      
+                      if (error) throw error;
+                      
+                      // Atualizar lista de propriedades legadas se necessário
+                      if (refetch) refetch();
+                    }
+
                     toast({ title: 'Disponibilidade atualizada com sucesso' });
                     setAvailabilityDialogOpen(false);
-                    if (isViva) {
-                      // Atualiza a lista do VivaReal imediatamente
-                      refetchImoveisList();
-                    } else if (refetch) {
-                      // Atualiza a lista de `properties` se o parent tiver passado refetch
-                      refetch();
-                    }
+                    
                   } catch (err: any) {
                     toast({ title: 'Erro ao atualizar', description: err.message || 'Tente novamente', variant: 'destructive' });
                   }
