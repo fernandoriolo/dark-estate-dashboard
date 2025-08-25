@@ -492,21 +492,9 @@ export function AppSidebar({ currentView, onViewChange }: AppSidebarProps) {
             </div>
           </div>
           <div className="space-y-2">
-            <Button 
-              onClick={async () => {
-                if (forceRefreshPermissions) {
-                  await forceRefreshPermissions();
-                  console.log('🔄 Permissões atualizadas pelo usuário');
-                }
-              }}
-              variant="ghost"
-              size="sm"
-              className="w-full text-xs text-gray-500 hover:text-gray-400 hover:bg-gray-800/50"
-              title="Forçar atualização das permissões"
-            >
-              <RefreshCw className="mr-1 h-3 w-3" />
-              Atualizar Permissões
-            </Button>
+            <div className="px-1 text-[10px] text-gray-500 text-center" title="Versão da aplicação">
+              Versão 1.0.0
+            </div>
             
             <Button 
               onClick={async () => {
