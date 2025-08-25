@@ -249,6 +249,49 @@ export async function fetchVgvTotals(): Promise<{ totalVgv: number; totalImoveis
   }
 }
 
+/**
+ * Busca todos os KPIs para os cards do dashboard
+ */
+export async function fetchDashboardKpis(): Promise<{
+  vgv: number;
+  totalImoveis: number;
+  imoveisDisponiveis: number;
+  totalLeads: number;
+}> {
+  try {
+    console.log('📊 [fetchDashboardKpis] Iniciando busca de todos os KPIs...');
+    
+    // Importações dinâmicas para evitar dependências circulares
+    const { getTotalLeads, getAvailableProperties, getTotalProperties } = await import('./metrics');
+    
+    const [vgvData, totalLeads, availableProperties, totalProperties] = await Promise.all([
+      fetchVgvTotals(),
+      getTotalLeads(),
+      getAvailableProperties(),
+      getTotalProperties()
+    ]);
+
+    const result = {
+      vgv: vgvData.totalVgv,
+      totalImoveis: totalProperties, // Usar função específica em vez do VGV
+      imoveisDisponiveis: availableProperties,
+      totalLeads: totalLeads
+    };
+
+    console.log('📊 [fetchDashboardKpis] KPIs consolidados:', result);
+    return result;
+    
+  } catch (error) {
+    console.error('Erro ao buscar KPIs do dashboard:', error);
+    return {
+      vgv: 0,
+      totalImoveis: 0,
+      imoveisDisponiveis: 0,
+      totalLeads: 0
+    };
+  }
+}
+
 // ============================================================================
 // Funções de Leads
 // ============================================================================

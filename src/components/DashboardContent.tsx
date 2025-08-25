@@ -11,7 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { UpcomingAppointments } from "@/components/UpcomingAppointments";
 import { RecentActivitiesCard } from "@/components/RecentActivitiesCard";
 import { DashboardCharts } from "@/components/DashboardCharts";
-import { fetchVgvTotals } from '@/services/dashboardAdapter';
+import { fetchDashboardKpis } from '@/services/dashboardAdapter';
 import React from 'react';
 
 export function DashboardContent() {
@@ -26,23 +26,13 @@ export function DashboardContent() {
   const fetchKpis = async () => {
     try {
       setLoadingKpis(true);
+      console.log('📊 [DashboardContent] Iniciando busca de KPIs...');
 
-      const vgvPromise = fetchVgvTotals();
-      const leadsPromise = supabase.from('leads').select('id', { count: 'exact', head: true });
-      const imoveisDisponiveisPromise = supabase.from('imoveisvivareal').select('id', { count: 'exact', head: true }).eq('disponibilidade', 'disponivel');
+      const kpis = await fetchDashboardKpis();
 
-      const [vgvResult, leadsResult, imoveisDisponiveisResult] = await Promise.all([
-        vgvPromise,
-        leadsPromise,
-        imoveisDisponiveisPromise
-      ]);
+      console.log('📊 [DashboardContent] KPIs recebidos:', kpis);
       
-      setKpi({
-        vgv: vgvResult.totalVgv,
-        totalImoveis: vgvResult.totalImoveis,
-        totalLeads: leadsResult.count ?? 0,
-        imoveisDisponiveis: imoveisDisponiveisResult.count ?? 0
-      });
+      setKpi(kpis);
 
     } catch (error) {
       console.error('💥 Erro ao carregar KPIs:', error);

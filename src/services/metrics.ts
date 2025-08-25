@@ -753,3 +753,86 @@ export function getCurrentYear(): DateRange {
   const to = new Date(now.getFullYear(), 11, 31);
   return { from, to };
 }
+
+// ============================================================================
+// KPIs Dashboard Cards
+// ============================================================================
+
+/**
+ * Busca o total de leads na base de dados
+ */
+export async function getTotalLeads(): Promise<number> {
+  try {
+    console.log('📊 [getTotalLeads] Buscando total de leads...');
+    
+    const { count, error } = await supabase
+      .from('leads')
+      .select('id', { count: 'exact', head: true });
+
+    if (error) {
+      console.error('📊 [getTotalLeads] Erro:', error);
+      throw error;
+    }
+
+    const total = count ?? 0;
+    console.log('📊 [getTotalLeads] Total encontrado:', total);
+    return total;
+    
+  } catch (error) {
+    console.error('Erro ao buscar total de leads:', error);
+    return 0;
+  }
+}
+
+/**
+ * Busca o total de imóveis disponíveis (disponibilidade = 'disponivel')
+ */
+export async function getAvailableProperties(): Promise<number> {
+  try {
+    console.log('🏠 [getAvailableProperties] Buscando imóveis disponíveis...');
+    
+    const { count, error } = await supabase
+      .from('imoveisvivareal')
+      .select('id', { count: 'exact', head: true })
+      .eq('disponibilidade', 'disponivel');
+
+    if (error) {
+      console.error('🏠 [getAvailableProperties] Erro:', error);
+      throw error;
+    }
+
+    const total = count ?? 0;
+    console.log('🏠 [getAvailableProperties] Total encontrado:', total);
+    return total;
+    
+  } catch (error) {
+    console.error('Erro ao buscar imóveis disponíveis:', error);
+    return 0;
+  }
+}
+
+/**
+ * Busca o total de imóveis na base de dados
+ */
+export async function getTotalProperties(): Promise<number> {
+  try {
+    console.log('🏢 [getTotalProperties] Buscando total de imóveis...');
+    
+    const { count, error } = await supabase
+      .from('imoveisvivareal')
+      .select('id', { count: 'exact', head: true });
+
+    if (error) {
+      console.error('🏢 [getTotalProperties] Erro:', error);
+      throw error;
+    }
+
+    const total = count ?? 0;
+    console.log('🏢 [getTotalProperties] Total encontrado:', total);
+    return total;
+    
+  } catch (error) {
+    console.error('Erro ao buscar total de imóveis:', error);
+    return 0;
+  }
+}
