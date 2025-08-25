@@ -45,6 +45,8 @@ export const ensureAuthenticated = async () => {
   return data as any;
 };
 
+// Debug Only ;(window as any).supabase = supabase
+
 // Teste básico de conectividade (silencioso caso falhe em dev)
 supabase
   .from('properties')

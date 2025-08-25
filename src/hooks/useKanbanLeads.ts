@@ -18,6 +18,14 @@ export function useKanbanLeads() {
   const [userRole, setUserRole] = useState<string>('corretor');
   const subscriptionRef = useRef<any>(null);
   const isSubscribedRef = useRef(false);
+  const userIdRef = useRef<string | null>(null);
+  const userRoleRef = useRef<string>('corretor');
+  const updateBufferRef = useRef<Map<string, number>>(new Map());
+
+  // Telemetria apenas em DEV (pode ser controlada por flag VITE_FEATURE_RT_DEBUG_LEADS)
+  const rtDebugEnabled = (import.meta as any)?.env?.DEV && (import.meta as any)?.env?.VITE_FEATURE_RT_DEBUG_LEADS !== 'false';
+  const rtLog = (...args: any[]) => { if (rtDebugEnabled) console.info('RT(leads):', ...args); };
+  const rtWarn = (...args: any[]) => { if (rtDebugEnabled) console.warn('RT(leads):', ...args); };
 
   // Verificar role do usuário
   const checkUserRole = useCallback(async () => {
@@ -39,6 +47,7 @@ export function useKanbanLeads() {
 
       const role = profileData?.role || 'corretor';
       setUserRole(role);
+      userRoleRef.current = role;
       return role;
     } catch (error) {
       console.error('Erro ao verificar role do usuário:', error);
@@ -57,6 +66,9 @@ export function useKanbanLeads() {
       if (!user) {
         throw new Error('Usuário não autenticado');
       }
+
+      // Guardar userId em ref para uso em handlers de realtime
+      userIdRef.current = user.id;
 
       // Verificar role do usuário
       const currentRole = await checkUserRole();
@@ -367,12 +379,13 @@ export function useKanbanLeads() {
         )
       );
 
-      // Fazer log da operação
+      // Fazer log da operação (usar ação existente para compatibilidade de tipos)
       logAudit({ 
-        action: 'leads.bulk_assign', 
+        action: 'lead.updated', 
         resource: 'leads', 
         resourceId: leadIds.join(','), 
         meta: { 
+          operation: 'bulk_assign',
           corretorId, 
           leadCount: leadIds.length,
           action: corretorId ? 'assign' : 'unassign'
@@ -399,121 +412,158 @@ export function useKanbanLeads() {
 
   // Configurar escuta em tempo real (separado para evitar re-subscriptions)
   useEffect(() => {
-    // Verificar se já temos subscription ativa
-    if (isSubscribedRef.current) {
-      //
-      return;
-    }
-
-    // Configurar subscription para mudanças em tempo real
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(7);
-    const channelName = `leads_changes_${timestamp}_${random}`;
-    
-    try {
-      const subscription = supabase
-        .channel(channelName)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'leads'
-          },
-          async (payload) => {
-            //
-            
-            // Verificar se o usuário atual está autenticado
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return;
-
-            // Verificar role do usuário atual
-            const currentRole = userRole || await checkUserRole();
-            
-            switch (payload.eventType) {
-              case 'INSERT': {
-                const newLead = databaseLeadToKanbanLead({
-                  ...payload.new as DatabaseLead,
-                  stage: (payload.new.stage || 'Novo Lead') as LeadStage,
-                  interest: payload.new.interest || null,
-                  estimated_value: payload.new.estimated_value || null,
-                  notes: payload.new.notes || null,
-                  updated_at: payload.new.updated_at || null
-                });
-                setLeads(prevLeads => {
-                  // Verificar se o lead já existe para evitar duplicatas
-                  const exists = prevLeads.some(lead => lead.id === newLead.id);
-                  if (!exists) {
-                    //
-                    return [newLead, ...prevLeads];
-                  }
-                  return prevLeads;
-                });
-                break;
-              }
-              case 'UPDATE': {
-                const updatedLead = databaseLeadToKanbanLead({
-                  ...payload.new as DatabaseLead,
-                  stage: (payload.new.stage || 'Novo Lead') as LeadStage,
-                  interest: payload.new.interest || null,
-                  estimated_value: payload.new.estimated_value || null,
-                  notes: payload.new.notes || null,
-                  updated_at: payload.new.updated_at || null
-                });
-                setLeads(prevLeads => 
-                  prevLeads.map(lead => 
-                    lead.id === updatedLead.id ? updatedLead : lead
-                  )
-                );
-                break;
-              }
-              case 'DELETE': {
-                setLeads(prevLeads => 
-                  prevLeads.filter(lead => lead.id !== payload.old.id)
-                );
-                break;
-              }
-            }
-          }
-        );
-
-      // Salvar referência
-      subscriptionRef.current = subscription;
-
-      subscription.subscribe((status: string) => {
-        //
-        if (status === 'SUBSCRIBED') {
-          isSubscribedRef.current = true;
-        }
-      });
-    } catch (error) {
-      console.error('❌ Erro ao configurar subscription de leads:', error);
-    }
-
-    // Cleanup
-    return () => {
-      //
+    // Helper para limpar canal atual (antes de inscrever/recriar e no unmount)
+    const cleanupChannel = () => {
       try {
         const ch = subscriptionRef.current;
         subscriptionRef.current = null;
         isSubscribedRef.current = false;
         if (ch && typeof ch.unsubscribe === 'function') {
-          // Tenta primeiro cancelar a inscrição de forma graciosa
           Promise.resolve(ch.unsubscribe()).catch(() => {
             // fallback silencioso
           }).finally(() => {
-            try {
-              supabase.removeChannel(ch);
-            } catch (_) {}
+            try { supabase.removeChannel(ch); } catch (_) {}
           });
         } else if (ch) {
           try { supabase.removeChannel(ch); } catch (_) {}
         }
-      } catch (error) {
-        console.error('❌ Erro ao limpar subscription de leads:', error);
+      } catch (e) {
+        rtWarn('cleanup error', e);
       }
     };
-  }, [userRole, checkUserRole]);
+
+    // Helpers para aplicar mudanças no estado com fail-safe de corretor
+    const applyInsert = (newLead: KanbanLead) => {
+      setLeads(prev => {
+        const exists = prev.some(l => l.id === newLead.id);
+        const next = exists ? prev : [newLead, ...prev];
+        if (userRoleRef.current === 'corretor' && userIdRef.current) {
+          return next.filter(l => l.id_corretor_responsavel === userIdRef.current);
+        }
+        return next;
+      });
+    };
+
+    const applyUpdate = (updatedLead: KanbanLead) => {
+      setLeads(prev => {
+        const next = prev.map(l => (l.id === updatedLead.id ? updatedLead : l));
+        if (userRoleRef.current === 'corretor' && userIdRef.current) {
+          return next.filter(l => l.id_corretor_responsavel === userIdRef.current);
+        }
+        return next;
+      });
+    };
+
+    const applyDelete = (deletedId: string) => {
+      setLeads(prev => prev.filter(l => l.id !== deletedId));
+    };
+
+    // Coalescer updates por lead.id
+    const scheduleCoalescedUpdate = (updatedLead: KanbanLead) => {
+      const key = updatedLead.id;
+      const existing = updateBufferRef.current.get(key);
+      if (existing) clearTimeout(existing);
+      const t = window.setTimeout(() => {
+        applyUpdate(updatedLead);
+        updateBufferRef.current.delete(key);
+      }, 75);
+      updateBufferRef.current.set(key, t);
+    };
+
+    // Setup assíncrono do canal
+    const setup = async () => {
+      // Se já houver canal, limpar antes de criar outro
+      if (subscriptionRef.current) {
+        rtLog('cleanup before subscribe');
+        cleanupChannel();
+      }
+
+      // Inicializar contexto de auth (userId e role em refs)
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        userIdRef.current = user?.id ?? null;
+      } catch (e) {
+        userIdRef.current = null;
+      }
+      try {
+        const role = await checkUserRole();
+        userRoleRef.current = role;
+      } catch (_) {}
+
+      const timestamp = Date.now();
+      const random = Math.random().toString(36).substring(7);
+      const channelName = `leads_changes_${timestamp}_${random}`;
+      rtLog('subscribing', channelName);
+
+      try {
+        const subscription = supabase
+          .channel(channelName)
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'leads' },
+            (payload) => {
+              const id = (payload.new as any)?.id || (payload.old as any)?.id;
+              rtLog('event', payload.eventType, id);
+              switch (payload.eventType) {
+                case 'INSERT': {
+                  const newLead = databaseLeadToKanbanLead({
+                    ...payload.new as DatabaseLead,
+                    stage: (payload.new.stage || 'Novo Lead') as LeadStage,
+                    interest: payload.new.interest || null,
+                    estimated_value: payload.new.estimated_value || null,
+                    notes: payload.new.notes || null,
+                    updated_at: payload.new.updated_at || null
+                  });
+                  applyInsert(newLead);
+                  break;
+                }
+                case 'UPDATE': {
+                  const updatedLead = databaseLeadToKanbanLead({
+                    ...payload.new as DatabaseLead,
+                    stage: (payload.new.stage || 'Novo Lead') as LeadStage,
+                    interest: payload.new.interest || null,
+                    estimated_value: payload.new.estimated_value || null,
+                    notes: payload.new.notes || null,
+                    updated_at: payload.new.updated_at || null
+                  });
+                  scheduleCoalescedUpdate(updatedLead);
+                  break;
+                }
+                case 'DELETE': {
+                  const deletedId = (payload.old as any)?.id as string;
+                  applyDelete(deletedId);
+                  break;
+                }
+              }
+            }
+          );
+
+        subscriptionRef.current = subscription;
+
+        subscription.subscribe((status: string) => {
+          if (status === 'SUBSCRIBED') {
+            isSubscribedRef.current = true;
+            rtLog('[SUBSCRIBED]', channelName);
+          }
+        });
+      } catch (e) {
+        console.error('❌ Erro ao configurar subscription de leads:', e);
+      }
+    };
+
+    setup();
+
+    // Cleanup
+    return () => {
+      rtLog('cleanup: unsubscribe + removeChannel');
+      // Limpar buffers de update
+      try {
+        updateBufferRef.current.forEach((t) => clearTimeout(t));
+        updateBufferRef.current.clear();
+      } catch (_) {}
+      cleanupChannel();
+    };
+  }, []);
 
   return {
     leads,

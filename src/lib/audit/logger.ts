@@ -6,6 +6,7 @@ export type AuditAction =
   | 'lead.updated'
   | 'lead.deleted'
   | 'lead.stage_changed'
+  | 'leads.bulk_assign'
   | 'property.created'
   | 'property.updated'
   | 'property.deleted'
