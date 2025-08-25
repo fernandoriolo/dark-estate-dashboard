@@ -105,6 +105,13 @@ export const DashboardCharts: React.FC = () => {
 				{ key: 'brokers', task: () => fetchLeadsPorCorretor().then(setBrokers) },
 				{ key: 'brokersStages', task: () => fetchLeadsCorretorEstagio().then(setBrokersStages) },
 				{ key: 'unassigned', task: () => fetchLeadsSemCorretor().then(setUnassignedLeads) },
+				{ key: 'leadsTempo', task: () => {
+					console.log('🎯 [DashboardCharts] Executando fetchLeadsPorTempo para timeRange:', timeRange);
+					return fetchLeadsPorTempo(timeRange).then((result) => {
+						console.log('🎯 [DashboardCharts] setLeadsTempo recebeu:', result);
+						setLeadsTempo(result);
+					});
+				}},
 				{ key: 'gauge', task: () => fetchTaxaOcupacao().then(setGauge) },
 				{ key: 'imoveis', task: () => fetchImoveisMaisProcurados().then(setImoveisProcurados) },
 				{ key: 'availableBrokers', task: () => fetchCorretoresComConversas().then(setAvailableBrokers) }
@@ -130,6 +137,7 @@ export const DashboardCharts: React.FC = () => {
 						case 'brokers': setBrokers([]); break;
 						case 'brokersStages': setBrokersStages(new Map()); break;
 						case 'unassigned': setUnassignedLeads(0); break;
+						case 'leadsTempo': setLeadsTempo([]); break;
 						case 'gauge': setGauge({ ocupacao: 0, total: 0, disponiveis: 0 } as any); break;
 						case 'imoveis': setImoveisProcurados([]); break;
 						case 'availableBrokers': setAvailableBrokers([]); break;
@@ -152,7 +160,7 @@ export const DashboardCharts: React.FC = () => {
 		} finally {
 			setIsLoading(false);
 		}
-	}, [vgvPeriod, refetchHeatmapData]);
+	}, [vgvPeriod, timeRange, refetchHeatmapData]);
 
 	// Hook de realtime para atualizações automáticas
 	const { isConnected: isRealtimeConnected, lastUpdate, updateCount } = useRealtimeDashboard(refetchAllData);
@@ -162,10 +170,7 @@ export const DashboardCharts: React.FC = () => {
 		fetchVgvByPeriod(vgvPeriod).then(setVgv).catch(() => setVgv([]));
 	}, [vgvPeriod]);
 
-	// Effect para atualizar dados temporais quando timeRange muda
-	React.useEffect(() => {
-		fetchLeadsPorTempo(timeRange).then(setLeadsTempo).catch(() => setLeadsTempo([]));
-	}, [timeRange]);
+	// Dados temporais agora são carregados via refetchAllData
 
 	// Função para buscar informações básicas do imóvel no hover
 	const handlePropertyHover = async (imovelId: string, event: React.MouseEvent) => {
@@ -221,8 +226,13 @@ export const DashboardCharts: React.FC = () => {
 	
 	// Dados de fallback para o gráfico temporal se não houver dados
 	const tempoData = React.useMemo(() => {
-		if (leadsTempo.length > 0) return leadsTempo;
+		console.log('🎨 [DashboardCharts] tempoData useMemo - leadsTempo:', leadsTempo);
+		if (leadsTempo.length > 0) {
+			console.log('🎨 [DashboardCharts] Usando dados reais, count:', leadsTempo.length);
+			return leadsTempo;
+		}
 		// Usar helper function para gerar fallback
+		console.log('🎨 [DashboardCharts] Usando fallback temporal');
 		return generateTemporalFallback(6);
 	}, [leadsTempo]);
 
@@ -766,7 +776,8 @@ export const DashboardCharts: React.FC = () => {
 											fontSize: '0.75rem', 
 											fontWeight: 500,
 											fontFamily: 'Inter, system-ui, sans-serif'
-										}
+										},
+										width: 120  // Aumentar largura para mostrar labels completas
 									}]}
 									series={canal.map((c, i) => {
 										const colors = [

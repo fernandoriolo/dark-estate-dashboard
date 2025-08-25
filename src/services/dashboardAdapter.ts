@@ -227,15 +227,22 @@ export async function fetchLeadsSemCorretor(): Promise<number> {
  */
 export async function fetchLeadsPorTempo(timeRange: TimeRange): Promise<{ month: string; count: number }[]> {
   try {
+    console.log('🕐 [fetchLeadsPorTempo] Iniciando busca para timeRange:', timeRange);
     const config = getTimeRangeConfig(timeRange);
-    const data = await getLeadsByPeriod(config);
+    console.log('🕐 [fetchLeadsPorTempo] Configuração:', config);
     
-    return data.map(item => ({
+    const data = await getLeadsByPeriod(config);
+    console.log('🕐 [fetchLeadsPorTempo] Dados recebidos:', data);
+    
+    const result = data.map(item => ({
       month: config.granularity === 'month' ? monthLabel(item.period) : item.period,
       count: item.value
     }));
+    
+    console.log('🕐 [fetchLeadsPorTempo] Resultado formatado:', result);
+    return result;
   } catch (error) {
-    console.error('Erro ao buscar leads por tempo:', error);
+    console.error('🕐 [fetchLeadsPorTempo] ERRO ao buscar leads por tempo:', error);
     return [];
   }
 }
