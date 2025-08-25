@@ -450,7 +450,7 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
   // Hooks de dados
   const { instances, loading: loadingInstances, error: errorInstances, refresh: refetchInstances, scopedInstance } = useChatInstancesFromMessages();
   const { conversas, loading: loadingConversas, error: errorConversas, refetch: refetchConversas, updateConversation } = useConversasList(selectedInstance || scopedInstance);
-  const { messages, loading: loadingMessages, error: errorMessages, openSession, refetch: refetchMessages } = useConversaMessages();
+  const { messages, loading: loadingMessages, error: errorMessages, openSession, refetch: refetchMessages, setMyInstance } = useConversaMessages();
 
   // Realtime (única assinatura): novas mensagens e deleções
   useConversasRealtime({
@@ -480,6 +480,12 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
   useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages.length, selectedConversation, loadingMessages]);
+
+  // Informar instância atual ao hook de mensagens para calcular handoff
+  useEffect(() => {
+    const eff = selectedInstance || scopedInstance || null;
+    setMyInstance(eff ? String(eff).trim().toLowerCase() : null);
+  }, [selectedInstance, scopedInstance, setMyInstance]);
 
   // Conversas filtradas por busca
   const filteredConversas = conversas.filter(conversa =>
@@ -949,40 +955,89 @@ export function ConversasViewPremium({}: ConversasViewPremiumProps) {
                           className="flex flex-col gap-2.5 px-1.5 pb-3"
                         >
                           {(() => {
+                            const currentInst = String((selectedInstance || scopedInstance || '')).toLowerCase();
                             const idxHandoff = messages.findIndex((m: any) => m && m.before_handoff === false);
-                            return messages.map((row: any, i: number) => (
-                            <motion.div 
-                              key={row.id} 
-                              variants={bubble} 
-                              layout
-                              animate={controls}
-                            >
-                              {i === idxHandoff && idxHandoff > 0 && (
-                                <div className="flex items-center gap-2 my-2">
-                                  <div className="h-px flex-1 bg-zinc-700/60" />
-                                  <span className="text-[11px] text-zinc-400 whitespace-nowrap">
-                                    Atendido pelo SDR até aqui
-                                  </span>
-                                  <div className="h-px flex-1 bg-zinc-700/60" />
-                                </div>
-                              )}
-                              <MessageBubble row={row} />
-                              
-                              <div className={(() => {
-                                const rawMessage = row?.message;
-                                const m = typeof rawMessage === 'string'
-                                  ? (() => { try { return JSON.parse(rawMessage); } catch { return {}; } })()
-                                  : (rawMessage || {});
-                                const isAI = String(m?.type || '').toLowerCase() === 'ai';
-                                return isAI 
-                                  ? "mt-1 text-right text-[11px] text-zinc-300" 
-                                  : "mt-1 text-left text-[11px] text-zinc-400";
-                              })()}
+                            const hasCurrent = !!currentInst && messages.some((m: any) => String(m?.instancia || '').toLowerCase() === currentInst);
+                            const idxFirstCurrent = hasCurrent ? messages.findIndex((m: any) => String(m?.instancia || '').toLowerCase() === currentInst) : -1;
+                            const idxForward = idxFirstCurrent >= 0
+                              ? messages.findIndex((m: any, ii: number) => ii > idxFirstCurrent && String(m?.instancia || '').toLowerCase() !== currentInst)
+                              : -1;
+                            return messages.map((row: any, i: number) => {
+                              // Se chegou o ponto de encaminhamento (mudança de instância), não mostrar mais mensagens do SDR além dele
+                              if (idxForward > 0 && i > idxForward) return null;
+                              if (idxForward > 0 && i === idxForward) {
+                                return (
+                                  <motion.div 
+                                    key={`forward-${row.id}`} 
+                                    variants={bubble} 
+                                    layout
+                                    animate={controls}
+                                  >
+                                    {profile?.role === 'gestor' ? (
+                                      <div
+                                        className="flex items-center gap-2 my-2 cursor-pointer select-none"
+                                        onClick={() => {
+                                          const targetInst = messages[idxForward]?.instancia;
+                                          if (targetInst) {
+                                            setSelectedInstance(String(targetInst).trim().toLowerCase());
+                                            if (selectedConversation) openSession(selectedConversation);
+                                          }
+                                        }}
+                                        title="Ir para conversa na instância do corretor"
+                                      >
+                                        <div className="h-px flex-1 bg-emerald-600/60" />
+                                        <span className="text-[11px] text-emerald-300 whitespace-nowrap">
+                                          Enviado para o corretor responsável — clicar para abrir
+                                        </span>
+                                        <div className="h-px flex-1 bg-emerald-600/60" />
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center gap-2 my-2">
+                                        <div className="h-px flex-1 bg-zinc-700/60" />
+                                        <span className="text-[11px] text-zinc-400 whitespace-nowrap">
+                                          Conversa encaminhada ao corretor
+                                        </span>
+                                        <div className="h-px flex-1 bg-zinc-700/60" />
+                                      </div>
+                                    )}
+                                  </motion.div>
+                                );
+                              }
+
+                              return (
+                              <motion.div 
+                                key={row.id} 
+                                variants={bubble} 
+                                layout
+                                animate={controls}
                               >
-                                {formatHour(row.data)}
-                              </div>
-                            </motion.div>
-                          ));
+                                {i === idxHandoff && idxHandoff > 0 && (
+                                  <div className="flex items-center gap-2 my-2">
+                                    <div className="h-px flex-1 bg-zinc-700/60" />
+                                    <span className="text-[11px] text-zinc-400 whitespace-nowrap">
+                                      Atendido pelo SDR até aqui
+                                    </span>
+                                    <div className="h-px flex-1 bg-zinc-700/60" />
+                                  </div>
+                                )}
+                                <MessageBubble row={row} />
+                                
+                                <div className={(() => {
+                                  const rawMessage = row?.message;
+                                  const m = typeof rawMessage === 'string'
+                                    ? (() => { try { return JSON.parse(rawMessage); } catch { return {}; } })()
+                                    : (rawMessage || {});
+                                  const isAI = String(m?.type || '').toLowerCase() === 'ai';
+                                  return isAI 
+                                    ? "mt-1 text-right text-[11px] text-zinc-300" 
+                                    : "mt-1 text-left text-[11px] text-zinc-400";
+                                })()}
+                                >
+                                  {formatHour(row.data)}
+                                </div>
+                              </motion.div>
+                              );
+                            });
                           })()}
                           <div ref={endOfMessagesRef} />
                         </motion.div>

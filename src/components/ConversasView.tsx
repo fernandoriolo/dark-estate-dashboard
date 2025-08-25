@@ -61,12 +61,17 @@ export function ConversasView() {
   }>({ isOpen: false, data: null });
   
   const { conversas, loading: loadingConversas, error: errorConversas, updateConversation } = useConversasList(selectedInstance);
-  const { messages, loading: loadingMessages, error: errorMessages, openSession, refetch } = useConversaMessages();
+  const { messages, loading: loadingMessages, error: errorMessages, openSession, refetch, setMyInstance } = useConversaMessages();
   const endOfMessagesRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages.length, selectedConversation, loadingMessages]);
+
+  // Definir instância ativa para computar o handoff (SDR → Instância atual)
+  React.useEffect(() => {
+    setMyInstance(selectedInstance ? String(selectedInstance).trim().toLowerCase() : null);
+  }, [selectedInstance, setMyInstance]);
   const { profile } = useUserProfile();
   const { toast } = useToast();
 
@@ -511,8 +516,16 @@ export function ConversasView() {
                 ) : (
                   <div className="space-y-4">
                     {(() => {
+                      const currentInst = String((selectedInstance || '')).toLowerCase();
                       const idxHandoff = messages.findIndex((m: any) => m && m.before_handoff === false);
-                      return messages.map((message: any, i: number) => (
+                      const hasCurrent = !!currentInst && messages.some((m: any) => String(m?.instancia || '').toLowerCase() === currentInst);
+                      const idxFirstCurrent = hasCurrent ? messages.findIndex((m: any) => String(m?.instancia || '').toLowerCase() === currentInst) : -1;
+                      const idxForward = idxFirstCurrent >= 0
+                        ? messages.findIndex((m: any, ii: number) => ii > idxFirstCurrent && String(m?.instancia || '').toLowerCase() !== currentInst)
+                        : -1;
+                      return messages.map((message: any, i: number) => {
+                        if (idxForward > 0 && i > idxForward) return null;
+                        return (
                       <div
                         key={message.id}
                         className={`flex ${message.message.type === 'ai' ? 'justify-end' : 'justify-start'}`}
@@ -524,6 +537,25 @@ export function ConversasView() {
                               Atendido pelo SDR até aqui
                             </span>
                             <div className="h-px flex-1 bg-gray-700/60" />
+                          </div>
+                        )}
+                        {profile?.role === 'gestor' && idxForward > 0 && i === idxForward && (
+                          <div
+                            className="flex items-center gap-2 my-2 w-full cursor-pointer select-none"
+                            onClick={() => {
+                              const targetInst = messages[idxForward]?.instancia;
+                              if (targetInst) {
+                                setSelectedInstance(String(targetInst).trim().toLowerCase());
+                                if (selectedConversation) openSession(selectedConversation);
+                              }
+                            }}
+                            title="Ir para conversa na instância do corretor"
+                          >
+                            <div className="h-px flex-1 bg-emerald-600/60" />
+                            <span className="text-[11px] text-emerald-300 whitespace-nowrap">
+                              Enviado para o corretor responsável — clicar para abrir
+                            </span>
+                            <div className="h-px flex-1 bg-emerald-600/60" />
                           </div>
                         )}
                         <div
@@ -570,7 +602,8 @@ export function ConversasView() {
                           </p>
                         </div>
                       </div>
-                    ));
+                        );
+                    });
                     })()}
                     <div ref={endOfMessagesRef} />
                   </div>
