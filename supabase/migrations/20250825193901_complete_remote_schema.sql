@@ -116,7 +116,6 @@ CREATE TABLE public.contracts (
     guarantor_address TEXT,
     guarantor_nationality TEXT,
     guarantor_marital_status TEXT,
-    property_id TEXT,
     property_title TEXT NOT NULL,
     property_address TEXT NOT NULL,
     property_type TEXT,
@@ -240,7 +239,6 @@ CREATE TABLE public.leads (
     email TEXT,
     phone TEXT,
     source TEXT,
-    property_id TEXT,
     message TEXT,
     created_at TIMESTAMPTZ DEFAULT now(),
     stage TEXT DEFAULT 'Novo Lead'::text,
@@ -1039,7 +1037,7 @@ CREATE INDEX IF NOT EXISTS idx_leads_company_id ON public.leads(company_id);
 CREATE INDEX IF NOT EXISTS idx_leads_corretor_responsavel ON public.leads(id_corretor_responsavel);
 CREATE INDEX IF NOT EXISTS idx_leads_created_at ON public.leads(created_at);
 CREATE INDEX IF NOT EXISTS idx_user_profiles_company_id ON public.user_profiles(company_id);
-CREATE INDEX IF NOT EXISTS idx_properties_company_id ON public.properties(company_id);
+-- Index removed - properties table no longer exists
 CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_id ON public.audit_logs(actor_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs(created_at);
 

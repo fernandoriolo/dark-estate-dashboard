@@ -41,14 +41,14 @@ INSERT INTO public.contract_templates (id, company_id, name, template_type, cont
 
 -- Demo role permissions
 INSERT INTO public.role_permissions (id, company_id, role, module, permission, granted, created_at) VALUES
-(gen_random_uuid(), '550e8400-e29b-41d4-a716-446655440001', 'gestor', 'properties', 'read', true, NOW()),
-(gen_random_uuid(), '550e8400-e29b-41d4-a716-446655440001', 'gestor', 'properties', 'write', true, NOW()),
+(gen_random_uuid(), '550e8400-e29b-41d4-a716-446655440001', 'gestor', 'imoveisvivareal', 'read', true, NOW()),
+(gen_random_uuid(), '550e8400-e29b-41d4-a716-446655440001', 'gestor', 'imoveisvivareal', 'write', true, NOW()),
 (gen_random_uuid(), '550e8400-e29b-41d4-a716-446655440001', 'gestor', 'leads', 'read', true, NOW()),
 (gen_random_uuid(), '550e8400-e29b-41d4-a716-446655440001', 'gestor', 'leads', 'write', true, NOW()),
-(gen_random_uuid(), '550e8400-e29b-41d4-a716-446655440001', 'corretor', 'properties', 'read', true, NOW()),
+(gen_random_uuid(), '550e8400-e29b-41d4-a716-446655440001', 'corretor', 'imoveisvivareal', 'read', true, NOW()),
 (gen_random_uuid(), '550e8400-e29b-41d4-a716-446655440001', 'corretor', 'leads', 'read', true, NOW()),
 (gen_random_uuid(), '550e8400-e29b-41d4-a716-446655440001', 'corretor', 'leads', 'write', true, NOW()),
-(gen_random_uuid(), '550e8400-e29b-41d4-a716-446655440002', 'gestor', 'properties', 'read', true, NOW()),
+(gen_random_uuid(), '550e8400-e29b-41d4-a716-446655440002', 'gestor', 'imoveisvivareal', 'read', true, NOW()),
 (gen_random_uuid(), '550e8400-e29b-41d4-a716-446655440002', 'gestor', 'leads', 'read', true, NOW());
 
 -- =============================================================================
